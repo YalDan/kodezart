@@ -428,3 +428,66 @@ async def test_cancelled_approval_read_never_returns_selection_or_writes(
     with pytest.raises(asyncio.CancelledError):
         await task
     fixture.assert_read_only()
+
+
+@pytest.mark.parametrize("changed", ["outside-descendant", "new-scope-root"])
+async def test_final_tree_and_scope_observations_each_detect_independent_movement(
+    ready_fixture, monkeypatch, changed
+):
+    rows = [
+        *pair(),
+        row("nested", parent="blocker"),
+        row("deep-check", parent="nested", label="criterion", kind="completed"),
+    ]
+    rows[-2].project_key = rows[-1].project_key = OTHER_PROJECT
+    fixture = await ready_fixture(rows)
+    fixture.state("blocker-check", "completed")
+    original = fixture.tracker.execution_approved
+    moved = False
+
+    async def approve(*, issue_key):
+        nonlocal moved
+        result = await original(issue_key=issue_key)
+        if not moved:
+            moved = True
+            if changed == "outside-descendant":
+                # Neither the original project members nor their immediate
+                # criterion children change. Only the full subtree sees it.
+                fixture.state("deep-check", "unstarted")
+            else:
+                # Existing trees remain byte-identical; only a new root joins
+                # the container. A tree-only final check cannot detect this.
+                fixture.server.issues["new-root"] = row("new-root")
+                fixture.server.issues["new-check"] = row(
+                    "new-check", parent="new-root", label="criterion"
+                )
+                fixture.fake.issues["new-root"] = fixture.fake.issues[
+                    "blocker"
+                ].model_copy(update={"issue_key": "new-root"})
+                fixture.fake.issues["new-check"] = fixture.fake.issues[
+                    "lane-check"
+                ].model_copy(
+                    update={"issue_key": "new-check", "parent_key": "new-root"}
+                )
+                fixture.fake.scope_memberships[PROJECT] += ("new-root", "new-check")
+        return result
+
+    monkeypatch.setattr(fixture.tracker, "execution_approved", approve)
+    with pytest.raises(ScopeReadError, match="changed during readiness"):
+        await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+    fixture.assert_read_only()
+
+
+@pytest.mark.parametrize("label", ["tracker", "decision"])
+async def test_closed_record_blocker_has_no_deliverable_gap(ready_fixture, label):
+    fixture = await ready_fixture(
+        [
+            row("record", label=label, kind="completed"),
+            row("lane", blockers=("record",)),
+            row("lane-check", parent="lane", label="criterion"),
+        ]
+    )
+    selection = await read_scope_ready(ref=PROJECT, tracker=fixture.tracker)
+    assert keys(selection) == ["lane"]
+    assert selection.blocked == ()
+    fixture.assert_read_only()
