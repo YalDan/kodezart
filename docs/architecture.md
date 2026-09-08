@@ -956,26 +956,28 @@ leased authoring and the live iteration-exit path remain separate consumers.
 The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
 scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
 The existing complete readiness read must uniquely select the issue. Its FIRE
-run identity, recorded repository and recorded `BaseSpec` must agree with the
-queued inputs before repository access. The loaded operation reaches this actual
-entry from application composition. Its existing `teams_scanned_by` and
-`teams_bound_to` rules must establish a known unbound team and a declared target
-repository; missing authority, explicit bindings and the implicit single-repository
-binding refuse here. A stale marker cannot override configured routing.
+run identity and recorded `BaseSpec` must agree with the queued inputs before
+repository access. The loaded operation reaches this actual entry from application
+composition. Its existing `teams_scanned_by` and `teams_bound_to` rules require a
+known team and declared target repository. Explicit and implicit single-repository
+bindings select that repository without reading an issue route marker; unbound
+teams require the native recorded repository to agree with the queued target.
+A stale marker cannot override configured routing.
 This bounded first-entry arm refuses
 existing deliverable, iteration, recovery or best-iteration refs until scoped
 resume-head selection is implemented. An integration ref remains base provenance.
 
 The preparer pins the actual remote head of the recorded base branch and calls
 the same native feasibility validator through the real `AgentService`. It then
-rereads the repository/base/work refs, complete readiness and remote head. An
-observed change refuses the prepared result. Cache and remote reads settle owned
+rereads the repository/base/work refs, complete readiness and remote head, and
+checks the original team binding and declared repository URLs. An observed change
+refuses the prepared result. Cache and remote reads settle owned
 subprocesses through cancellation, and validation retains the existing detached
 workspace, fresh-session and complete-family guards. Caller prompt text and
 write-capable tools never replace native criterion sources or evaluation tools.
 
-This is the recorded-repository first-entry arm only. Configured team routing,
-scoped resume-head selection, automatic broad-scope dispatch, ruling application,
+Both configured and recorded repository routes prepare first-entry fires.
+Scoped resume-head selection, automatic broad-scope dispatch, ruling application,
 leased state/Evidence writes and the native loop remain separate work. After a
 valid observation, the public entry explicitly refuses the unavailable ruling
 and loop graph; it does not dispatch legacy ticket generation or report a

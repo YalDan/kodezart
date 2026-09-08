@@ -53,19 +53,30 @@ async def native_repository(prepared, tmp_path):
     prepared.repository(url)
     prepared.operation = prepared.operation.model_copy(
         update={
-            "repos": (
+            "repos": [
                 prepared.operation.repos[0].model_copy(update={"url": url}),
                 prepared.operation.repos[1],
-            )
+            ]
         }
     )
     return prepared, url, bare, default_sha, dispatch_sha
 
 
+@pytest.mark.parametrize("route", ["recorded", "explicit", "implicit"])
 async def test_public_entry_validates_actual_recorded_head_in_a_detached_worktree(
-    native_repository, monkeypatch
+    native_repository, monkeypatch, route
 ):
     prepared, url, bare, default_sha, dispatch_sha = native_repository
+    if route != "recorded":
+        from kodezart.types.domain.operation import OperationConfig
+
+        data = prepared.operation.model_dump()
+        if route == "implicit":
+            data["repos"] = data["repos"][:1]
+        else:
+            data["teams"]["board"]["repository"] = url
+        prepared.operation = OperationConfig.model_validate(data)
+        prepared.repository("https://forge.invalid/stale/repository")
     acquire = AsyncMock(wraps=prepared.workspace.acquire)
     monkeypatch.setattr(prepared.workspace, "acquire", acquire)
     visited = []

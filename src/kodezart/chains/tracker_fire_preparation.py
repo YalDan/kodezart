@@ -78,11 +78,16 @@ class AddressedTrackerFirePreparation:
         team = targets[0].issue.team_key
         if team is None or team not in operation.teams_scanned_by(repo_url):
             raise refuse("recorded-route preparation requires a known unbound team")
-        if team in operation.teams_bound_to(repo_url):
-            raise refuse(
-                "recorded-route preparation cannot select a configured team route"
-            )
-        repository_url = await self._tracker.recorded_repository(issue_key=issue_key)
+        repository_urls = tuple(row.url for row in operation.repos)
+        team_binding = operation.teams[team].repository
+        bound = team in operation.teams_bound_to(repo_url)
+        # The existing dispatcher owns this precedence: configured teams use
+        # their binding; only unbound teams take authority from an issue marker.
+        repository_url = (
+            repo_url
+            if bound
+            else await self._tracker.recorded_repository(issue_key=issue_key)
+        )
         if repository_url is None or repository_url != repo_url:
             raise refuse("the queued repository differs from the native issue record")
         recorded_base = await self._tracker.read_base_spec(issue_key=issue_key)
@@ -114,7 +119,7 @@ class AddressedTrackerFirePreparation:
         )
         if observed.spec.subject != issue_key or observed.head_sha != head:
             raise refuse("the validator returned a different subject or head")
-        if (
+        if not bound and (
             await self._tracker.recorded_repository(issue_key=issue_key)
             != repository_url
         ):
@@ -138,4 +143,11 @@ class AddressedTrackerFirePreparation:
             != head
         ):
             raise refuse("the remote dispatch head changed during preparation")
+        current_team = operation.teams.get(team)
+        if (
+            current_team is None
+            or current_team.repository != team_binding
+            or tuple(row.url for row in operation.repos) != repository_urls
+        ):
+            raise refuse("operation routing changed during preparation")
         return observed

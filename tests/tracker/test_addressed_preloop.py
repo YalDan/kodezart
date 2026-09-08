@@ -443,16 +443,12 @@ async def test_validator_result_cannot_substitute_its_address(
 
 @pytest.mark.parametrize(
     "route",
-    ["bound-here", "bound-elsewhere", "implicit", "missing-team", "missing-repo"],
+    ["bound-elsewhere", "missing-team", "missing-repo"],
 )
 async def test_recorded_marker_cannot_override_operation_routing(prepared, route):
     operation = prepared.operation.model_dump()
-    if route == "bound-here":
-        operation["teams"]["board"]["repository"] = REPOSITORY
-    elif route == "bound-elsewhere":
+    if route == "bound-elsewhere":
         operation["teams"]["board"]["repository"] = operation["repos"][1]["url"]
-    elif route == "implicit":
-        operation["repos"] = operation["repos"][:1]
     elif route == "missing-team":
         operation["teams"] = {}
     else:
