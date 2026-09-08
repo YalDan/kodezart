@@ -129,7 +129,7 @@ def test_incomplete_malformed_or_foreign_data_refuses(damage):
     elif damage == "wrong-scope-key":
         values[2] = reading(SCOPE.key, {"kind": "project", "key": "foreign"})
     elif damage == "duplicate-roster":
-        values[3] = reading(SCOPE.key, ["one", "one"])
+        values[3] = reading(SCOPE.key, ["one", "two", "one"])
     elif damage == "foreign-member":
         values.append(reading("foreign", ["criteria-ready"]))
     elif damage == "duplicate-member":
@@ -181,3 +181,9 @@ def test_skipping_the_middle_phase_is_not_an_adjacent_transition():
     values[0] = reading(GROOM_MARKER_SOURCE, "issue_labels.groomed")
     with pytest.raises(RunShapeReadError, match="phase marker sources"):
         observe(tuple(values))
+
+
+def test_consistent_recorded_scope_cannot_be_replayed_under_a_foreign_subject():
+    foreign = AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="different/scope")
+    with pytest.raises(RunShapeReadError, match="scope identity disagrees"):
+        observe(inputs(), subject=foreign)
