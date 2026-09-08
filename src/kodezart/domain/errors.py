@@ -653,6 +653,38 @@ class CheckChainExecutionError(Exception):
         super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")
 
 
+class UnionHeadReadError(Exception):
+    """Current remote heads could not establish a complete union snapshot."""
+
+    def __init__(self, *, scope_key: str, branch: str | None, reason: str) -> None:
+        self.scope_key = scope_key
+        self.branch = branch
+        self.reason = reason
+        super().__init__(f"Union head observation for {scope_key!r} refused: {reason}")
+
+
+class UnionUnstableError(Exception):
+    """Every allowed union attempt was superseded by current remote heads."""
+
+    def __init__(
+        self,
+        *,
+        scope_key: str,
+        attempts: int,
+        lane_keys: tuple[str, ...],
+        measured_shas: tuple[str, ...],
+        current_shas: tuple[str, ...],
+    ) -> None:
+        self.scope_key = scope_key
+        self.attempts = attempts
+        self.lane_keys = lane_keys
+        self.measured_shas = measured_shas
+        self.current_shas = current_shas
+        super().__init__(
+            f"Union heads for {scope_key!r} changed across {attempts} attempts"
+        )
+
+
 class AuditClaimReadError(ValueError):
     """The claim's source or remote head cannot support this observation."""
 

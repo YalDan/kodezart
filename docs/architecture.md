@@ -620,6 +620,20 @@ The runner returns failed names and ordered outputs without classifying roots
 or cascades. Union composition and its result publication are separate consumers.
 
 `UnionComposition.verify` consumes the planner's ordered lane-head snapshot
+through an immutable measurement boundary. `UnionTick.verify` is its current-head
+consumer: one instance fixes the scope, repository configuration and selected
+base; each call supplies the complete ordered lane-branch roster. It reads the
+current remote SHAs, reuses its own unchanged result, and otherwise fetches with
+matching head reads on both sides before invoking the actual scratch composition.
+It re-reads every head before reporting a new result
+and repeats a stale attempt. The configured attempt bound produces
+`UnionUnstableError` if the heads keep moving, and an absent or unreadable head
+produces `UnionHeadReadError`. Native reads settle before cancellation returns;
+concurrent calls on one instance share the result. These are repeat-read
+observations, without atomic exclusion of a writer after the last read. The
+scope-walker tick invocation and durable result persistence remain separate work.
+
+The pinned composition consumes the ordered lane-head snapshot
 and an immutable selected base. It creates a detached Git worktree, merges
 those exact commit IDs in planner order, runs `RepoEntry.checks`, and removes
 the tree on return, refusal, exception, or cancellation. Scratch merges have
