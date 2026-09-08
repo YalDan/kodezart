@@ -2,11 +2,48 @@
 
 from enum import StrEnum
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.accept import FlaggedItem
+from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_state import LanePR
+from kodezart.types.domain.workflow import ExecutionContext
+
+
+class LaneDispatch(CamelCaseModel):
+    """The four recorded lane identities consumed at the delivery boundary."""
+
+    model_config = ConfigDict(frozen=True)
+
+    lane_key: str = Field(min_length=1)
+    issue_id: str = Field(min_length=1)
+    head_branch: str = Field(min_length=1)
+    resolved_base: BaseSpec
+
+
+class DeliveryContext(CamelCaseModel):
+    """Existing execution facts needed by the PR-description session.
+
+    The caller supplies these facts from the run that produced the handoff.
+    This is per-call input, not a new terminal payload or a reconstructed
+    ticket. In particular, tracker criteria are not converted to legacy
+    validated criteria by the coordinator.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    execution: ExecutionContext
+    fire_outcome: WorkflowOutcome
+    ticket: TicketDraftOutput
+    criteria: tuple[ValidatedCriterion, ...]
+    total_iterations: int = Field(ge=0)
+    flagged_items: tuple[FlaggedItem, ...]
+    visibility: RepoVisibility
 
 
 class CheckRedClass(StrEnum):

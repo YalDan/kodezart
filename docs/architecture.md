@@ -70,6 +70,7 @@ does not exist.
 | ContentScanner    | AgentContentScanner      | The judgment half, ordered after the patterns        |
 | OutboundContentGate | PatternOutboundContentGate | CLEAN / REDACTED / BLOCKED over N scanners      |
 | RefPublisher      | GitRefPublisher          | Points a named ref at an existing commit on the remote |
+| CheckChainRunner | SubprocessCheckChainRunner | Runs the ordered declared check steps in a scratch directory and captures every result |
 | Remediator        | RemediationChain         | One remediation round: failure evidence in, one targeted ticket out |
 
 The CI adapter's `rerun_checks` resolves the supplied ref once, validates that
@@ -117,6 +118,18 @@ pure two-digest comparison. It starts no session and never restamps a result.
 An issue body and each criterion body are graded and checked independently.
 Persistence, phase markers and issue readiness orchestration remain separate
 consumers of those results.
+
+The pure `organize_gap` function takes a complete scope revision snapshot,
+admissions keyed by each surface identity, open findings and the configured
+semantic body marker. It returns original issue records in snapshot order.
+Missing markers, absent or stale admissions, missing non-Canceled criterion
+children, or open findings put an issue in the work set. A stale criterion
+body puts its parent there through the same comparison, without lapsing the
+parent body judgment; execution-state changes alone do not. Record-shaped
+`tracker` and `decision` members and criterion children are never work targets.
+Incomplete parent identity or duplicate revision/admission records refuse
+computation. Collecting and persisting these snapshots and running leased
+author sessions remain orchestration work outside this pure function.
 
 ## Workflow Pipeline
 
@@ -413,3 +426,47 @@ Collectors for the lane's durable commit list and walker's recorded tick
 age, the supervisor tick, and alarm persistence under a surface lease remain
 unwired. This slice provides one pure signal and its read-only service; it
 does not declare the complete signal table or supervisor boot capability.
+
+`barren_tick_with_diff_growth` compares recorded files-changed and
+commits-ahead against their own configured bounds when a tick closes no
+previously-open reference. Its six readings carry the prior open identities,
+current closed identities, both lane-base growth counts and both limits.
+Only an identity present in both reference sets establishes progress;
+newly-added closed work and disappeared old work do not. Files take
+deterministic precedence if both limits are exceeded. The default bounds
+are ten files and five commits; both are configurable nonnegative counts.
+
+The read-only `observe_barren_tick` service uses `read_criteria` and the shared
+criterion gap arithmetic to obtain current closure. Done closes a criterion;
+cancellation or duplication needs an established supersession reference
+supplied by its owning reader. It retains the returned closure projection
+for replay and makes no tracker writes or version-control calls. The prior
+open identities and both diff counts must already be recorded inputs with
+explicit source references. Their collectors, supervisor scheduling and
+leased alarm persistence remain separate work.
+
+`surface_contended` counts distinct opaque run-holder identities for one
+complete `WritableSurface` address. Three readings carry that address, its
+ordered holder history and the configured limit (one holder by default).
+The address must match the alarm subject, and address/history references
+must name the same provenance source. Repeated writes by one holder count
+once; different runs writing the same address remain in its whole history.
+Different issue/marker/surface addresses are evaluated independently.
+
+`observe_surface_contention` only supplies the AppConfig limit to explicit
+provenance inputs. It does not provide a tracker provenance reader: ordered
+successful-write history carrying run identities across all six surface
+kinds still depends on the universal holder-aware writer foundation. Vendor
+account authors and change timestamps cannot supply those run identities.
+The pure count and replay tests do not establish that producer, its port
+conformance, or a supervisor's leased alarm writer.
+
+## Check-chain execution
+
+The check-chain runner executes each declared command through the host shell,
+in the supplied directory and in declared order. Earlier failures do not hide
+later observations. The configured per-step deadline includes launch and kills the shell process
+group while retaining partial output. Repeated cancellation cannot interrupt
+eventual-process cleanup; cancellation propagates after the attempt is reaped. Empty or ambiguous step identities refuse before execution.
+The runner returns failed names and ordered outputs without classifying roots
+or cascades. Union composition and its result publication are separate consumers.

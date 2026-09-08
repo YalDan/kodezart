@@ -140,6 +140,30 @@ class AppConfig(BaseSettings):
             "before an ageing observation fires."
         ),
     )
+    run_alarm_barren_tick_max_files_changed: int = Field(
+        default=10,
+        ge=0,
+        description=(
+            "Recorded files changed against the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
+    run_alarm_barren_tick_max_commits_ahead: int = Field(
+        default=5,
+        ge=0,
+        description=(
+            "Recorded commits ahead of the lane base allowed on a tick "
+            "that closes no previously-open reference."
+        ),
+    )
+    run_alarm_max_surface_holders: int = Field(
+        default=1,
+        ge=0,
+        description=(
+            "Distinct recorded run holders allowed on one writable surface "
+            "before a contention observation fires."
+        ),
+    )
     organize_max_admission_rounds: int = Field(
         default=3,
         ge=1,
@@ -326,6 +350,17 @@ class AppConfig(BaseSettings):
         ge=5.0,
         le=300.0,
         description="Seconds between CI status check polls.",
+    )
+    union_check_step_timeout_seconds: float = Field(
+        default=1800,
+        gt=0,
+        description="Wall-clock bound for one check step of a union composition.",
+    )
+    delivery_max_concurrent_watches: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Maximum lanes whose PR checks are watched concurrently.",
     )
     delivery_red_rerun_max_attempts: int = Field(
         default=1,

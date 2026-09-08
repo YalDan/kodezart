@@ -12,14 +12,17 @@ from pydantic import ValidationError
 from kodezart.chains.organize import OrganizeAdmission
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.organize import organize_gap
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
     AdmissionResult,
     AdmissionVerdict,
+    DefectRole,
     OrganizeAdmissionRequest,
     RefusalKind,
+    SpecFinding,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
@@ -36,6 +39,7 @@ from kodezart.types.domain.tracker import (
     IssueRelation,
     IssueRelationKind,
     TrackerIssue,
+    TrackerIssueRevision,
     WorkflowStateKind,
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
@@ -650,3 +654,357 @@ def test_the_organize_dispatch_census_names_its_type_and_read_only_policy():
     assert ast.unparse(keywords["permission_mode"]) == "EVAL_PERMISSION_MODE"
     assert ast.unparse(keywords["session_id"]) == "None"
     assert ast.unparse(keywords["agents"]) == "NO_SUBAGENTS"
+
+
+BODY_MARKER = "body_ready"
+
+
+def gap_revision(key, **changes):
+    return TrackerIssueRevision(
+        issue=issue(key, f"Body for {key}", **changes),
+        body_digest=f"opaque:{key}",
+    )
+
+
+def gap_admission(revision):
+    return AdmissionResult(
+        issue_id=revision.issue.issue_key,
+        verdict=AdmissionVerdict.BUILDABLE,
+        evidence="The body has a concrete implementation and verification story.",
+        admitted_body_digest=revision.body_digest,
+    )
+
+
+def organized_family(key=SUBJECT):
+    return (
+        gap_revision(key, issue_labels=[BODY_MARKER]),
+        gap_revision(
+            f"{key}/check",
+            parent_key=key,
+            issue_labels=["criterion"],
+            state_kind=WorkflowStateKind.COMPLETED,
+            state_name="Done",
+        ),
+    )
+
+
+def gap_of(revisions, *, admissions=None, findings=(), marker=BODY_MARKER):
+    return organize_gap(
+        revisions=revisions,
+        admissions=(
+            tuple(gap_admission(revision) for revision in revisions)
+            if admissions is None
+            else admissions
+        ),
+        open_findings=findings,
+        body_marker_key=marker,
+    )
+
+
+def test_organized_scope_has_empty_gap_and_preserves_source_records():
+    revisions = (*organized_family(), *organized_family("other/17"))
+    before = tuple(revision.model_dump_json() for revision in revisions)
+    assert gap_of(revisions) == ()
+    assert tuple(revision.model_dump_json() for revision in revisions) == before
+    assert gap_of(()) == ()
+
+
+@pytest.mark.parametrize("missing", ["marker", "verdict", "criterion", "liveness"])
+def test_each_missing_organize_fact_puts_only_its_issue_in_gap(missing):
+    parent, child = organized_family()
+    sibling = organized_family("other/17")
+    if missing == "marker":
+        parent = parent.model_copy(
+            update={
+                "issue": parent.issue.model_copy(update={"issue_labels": frozenset()})
+            }
+        )
+    revisions = (parent, *((child,) if missing != "criterion" else ()), *sibling)
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    if missing == "verdict":
+        admissions = tuple(a for a in admissions if a.issue_id != SUBJECT)
+    elif missing == "liveness":
+        admissions = tuple(
+            a.model_copy(update={"admitted_body_digest": "old body"})
+            if a.issue_id == SUBJECT
+            else a
+            for a in admissions
+        )
+    assert gap_of(revisions, admissions=admissions) == (parent.issue,)
+
+
+@pytest.mark.parametrize("role", list(DefectRole))
+def test_open_finding_of_either_role_puts_only_its_issue_in_gap(role):
+    parent, child = organized_family()
+    finding = SpecFinding(
+        issue_id=SUBJECT,
+        defect_class="unsupported-claim",
+        evidence="The recorded claim names no supporting observation.",
+        role=role,
+        mandate_text="Repeat every unsupported claim."
+        if role is DefectRole.MANDATE
+        else None,
+    )
+    revisions = (parent, child, *organized_family("other/17"))
+    assert gap_of(revisions, findings=(finding,)) == (parent.issue,)
+    assert gap_of(revisions, findings=()) == ()
+
+
+@pytest.mark.parametrize("state", list(WorkflowStateKind))
+def test_child_state_only_controls_non_canceled_existence_not_code_satisfaction(state):
+    parent, child = organized_family()
+    child = child.model_copy(
+        update={"issue": child.issue.model_copy(update={"state_kind": state})}
+    )
+    expected = (parent.issue,) if state is WorkflowStateKind.CANCELED else ()
+    assert gap_of((parent, child)) == expected
+
+
+def test_canceled_child_does_not_hide_another_live_criterion():
+    parent, child = organized_family()
+    canceled = gap_revision(
+        "old/check",
+        parent_key=SUBJECT,
+        issue_labels=["criterion"],
+        state_kind=WorkflowStateKind.CANCELED,
+    )
+    assert gap_of((parent, canceled, child)) == ()
+
+
+def test_deliverable_child_does_not_count_as_a_criterion():
+    parent, child = organized_family()
+    child = child.model_copy(
+        update={"issue": child.issue.model_copy(update={"issue_labels": frozenset()})}
+    )
+    assert gap_of((parent, child)) == (parent.issue, child.issue)
+
+
+@pytest.mark.parametrize("record_kind", ["tracker", "decision"])
+def test_record_shaped_members_are_outside_gap_even_without_markers_or_verdicts(
+    record_kind,
+):
+    record = gap_revision("record/1", issue_labels=[record_kind])
+    finding = SpecFinding(
+        issue_id="record/1",
+        defect_class="test",
+        evidence="Open finding.",
+        role=DefectRole.INSTANCE,
+    )
+    assert gap_of((record,), admissions=(), findings=(finding,)) == ()
+
+
+def test_gap_uses_the_configured_semantic_body_marker():
+    parent, child = organized_family()
+    assert gap_of((parent, child), marker="different_phase") == (parent.issue,)
+    assert gap_of((parent, child)) == ()
+
+
+def test_gap_preserves_input_order_and_exact_records():
+    parents = [gap_revision(key) for key in ("z/9", "a/1", "m/3")]
+    actual = gap_of(parents)
+    assert len(actual) == len(parents)
+    assert all(
+        result is source.issue for result, source in zip(actual, parents, strict=True)
+    )
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    ["duplicate_revision", "duplicate_admission", "orphan_criterion", "empty_marker"],
+)
+def test_gap_refuses_incoherent_snapshots_instead_of_dropping_evidence(malformed):
+    parent, child = organized_family()
+    revisions = (parent, child)
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    marker = BODY_MARKER
+    if malformed == "duplicate_revision":
+        revisions += (parent,)
+    elif malformed == "duplicate_admission":
+        admissions += (admissions[0],)
+    elif malformed == "orphan_criterion":
+        revisions = (child,)
+    else:
+        marker = "  "
+    with pytest.raises(ValueError, match="organize gap requires"):
+        gap_of(revisions, admissions=admissions, marker=marker)
+
+
+@pytest.mark.parametrize("stale", ["missing", "changed", "canceled_changed"])
+def test_child_surface_liveness_reenters_parent_without_lapsing_its_body(stale):
+    parent, child = organized_family()
+    extra = organized_family("other/17")
+    revisions = (parent, child, *extra)
+    if stale == "canceled_changed":
+        old = gap_revision(
+            "canceled/1",
+            parent_key=SUBJECT,
+            issue_labels=["criterion"],
+            state_kind=WorkflowStateKind.CANCELED,
+        )
+        revisions = (*revisions, old)
+        target = old
+    else:
+        target = child
+    admissions = tuple(gap_admission(revision) for revision in revisions)
+    if stale == "missing":
+        admissions = tuple(
+            a for a in admissions if a.issue_id != target.issue.issue_key
+        )
+    else:
+        revisions = tuple(
+            revision.model_copy(update={"body_digest": "later criterion body"})
+            if revision is target
+            else revision
+            for revision in revisions
+        )
+    before = tuple(a.model_dump_json() for a in admissions)
+    assert gap_of(revisions, admissions=admissions) == (parent.issue,)
+    assert admissions[0].admitted_body_digest == parent.body_digest
+    assert tuple(a.model_dump_json() for a in admissions) == before
+
+
+@pytest.mark.parametrize("role", list(DefectRole))
+def test_open_child_surface_finding_routes_to_parent_only(role):
+    parent, child = organized_family()
+    finding = SpecFinding(
+        issue_id=child.issue.issue_key,
+        defect_class="missing-evidence",
+        evidence="The Check references an unavailable observation.",
+        role=role,
+        mandate_text="Require the unavailable observation."
+        if role is DefectRole.MANDATE
+        else None,
+    )
+    assert gap_of(
+        (parent, child, *organized_family("other/17")), findings=(finding,)
+    ) == (parent.issue,)
+
+
+@pytest.fixture(params=["fake", "linear"])
+def organized_port(request):
+    revisions = (*organized_family(), *organized_family("other/17"))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    if request.param == "fake":
+        source = FakeTrackerPort(issues=[revision.issue for revision in revisions])
+    else:
+        server = FakeLinearMcpServer(
+            issues=[
+                FakeMcpIssue(
+                    id=revision.issue.issue_key,
+                    description=revision.issue.body,
+                    parent_id=revision.issue.parent_key,
+                    status=revision.issue.state_name,
+                    status_type=revision.issue.state_kind.value,
+                    labels=["acceptance-condition"]
+                    if "criterion" in revision.issue.issue_labels
+                    else ["body-phase-finished"],
+                )
+                for revision in revisions
+            ],
+            state_types={"Todo": "unstarted", "Done": "completed"},
+        )
+        source = tracker_over(
+            server,
+            issue_labels={
+                "criterion": "acceptance-condition",
+                BODY_MARKER: "body-phase-finished",
+            },
+        )
+    return source, keys
+
+
+async def read_gap_revisions(source, keys):
+    return tuple([await source.read_issue_revision(issue_key=key) for key in keys])
+
+
+@pytest.mark.parametrize("change", ["amended_body", "unchanged_body", "state_only"])
+async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
+    organized_port, change
+):
+    source, keys = organized_port
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+    judged = []
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "The current body is implementable.",
+                }
+            )
+        ]
+        judged.append(
+            await admission.assess(request().model_copy(update={"issue_key": key}))
+        )
+    baseline = tuple(value.model_dump_json() for value in judged)
+    assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+    child_key = keys[1]
+    before = await source.read_issue(issue_key=child_key)
+    if change == "amended_body":
+        await source.update_issue(
+            issue_key=child_key, body="Check: revised runnable condition."
+        )
+    elif change == "unchanged_body":
+        assert (
+            await source.edit_description(
+                target=child_key,
+                expected="prior body no longer present",
+                replacement=before.body,
+            )
+            is DescriptionEditResult.UNCHANGED
+        )
+    else:
+        assert before.state_kind is WorkflowStateKind.COMPLETED
+        moved = await source.restore_workflow_state(
+            issue_key=child_key, state_name="Todo"
+        )
+        assert moved.state_kind is WorkflowStateKind.UNSTARTED
+    calls = len(executor.calls)
+    acquisitions = list(workspace.arguments)
+    current = await read_gap_revisions(source, keys)
+    gap = gap_of(current, admissions=judged)
+    assert tuple(item.issue_key for item in gap) == (
+        (SUBJECT,) if change == "amended_body" else ()
+    )
+    assert await admission.is_live(judged[0]) is True
+    assert await admission.is_live(judged[1]) is (change != "amended_body")
+    assert await admission.is_live(judged[2]) is True
+    assert await admission.is_live(judged[3]) is True
+    assert tuple(value.model_dump_json() for value in judged) == baseline
+    assert len(executor.calls) == calls
+    assert workspace.arguments == acquisitions
+
+    if change == "amended_body":
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": child_key,
+                    "verdict": "buildable",
+                    "evidence": "The revised body was re-tested.",
+                }
+            )
+        ]
+        judged[1] = await admission.verify(
+            request().model_copy(update={"issue_key": child_key})
+        )
+        assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
+        assert judged[0].model_dump_json() == baseline[0]
+
+
+def test_gap_has_no_amendment_input_or_body_judgment_branch():
+    tree = ast.parse(inspect.getsource(organize_gap))
+    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    attributes = {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
+    assert not any("amend" in name.lower() for name in names | attributes)
+    assert not attributes & {"body", "title", "evidence", "verdict", "state_name"}
+    assert set(inspect.signature(organize_gap).parameters) == {
+        "revisions",
+        "admissions",
+        "open_findings",
+        "body_marker_key",
+    }

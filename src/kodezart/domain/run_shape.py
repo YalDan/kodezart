@@ -16,31 +16,42 @@ from kodezart.types.domain.run_alarm import (
     AlarmSubject,
     AlarmSubjectKind,
     RunAlarm,
+    surface_alarm_member_id,
 )
 from kodezart.types.domain.run_state import LaneEscalation
+from kodezart.types.domain.surface import WritableSurface
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
 ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
+BARREN_FILES_BOUND = "run_alarm_barren_tick_max_files_changed"
+BARREN_COMMITS_BOUND = "run_alarm_barren_tick_max_commits_ahead"
+SURFACE_HOLDERS_BOUND = "run_alarm_max_surface_holders"
 
 _ESCALATION = TypeAdapter(LaneEscalation)
 _RESOLUTION = TypeAdapter(EscalationResolution)
 _COMMITS = TypeAdapter(tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...])
 _COUNT = TypeAdapter(NonNegativeInt)
+_REFERENCES = TypeAdapter(
+    tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
+)
+_SURFACE = TypeAdapter(WritableSurface)
 
 
-def _unreadable(source_ref: str, reason: str) -> RunShapeReadError:
+def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
     return RunShapeReadError(
-        signal=AlarmSignal.ESCALATION_AGEING.value,
+        signal=signal.value,
         source_ref=source_ref,
         reason=reason,
     )
 
 
-def _decode[T](reading: AlarmReading, adapter: TypeAdapter[T]) -> T:
+def _decode[T](
+    reading: AlarmReading, adapter: TypeAdapter[T], signal: AlarmSignal
+) -> T:
     try:
         return adapter.validate_json(reading.value, strict=True)
     except ValidationError as exc:
-        raise _unreadable(reading.source_ref, "invalid recorded value") from exc
+        raise _unreadable(signal, reading.source_ref, "invalid recorded value") from exc
 
 
 def escalation_ageing(
@@ -63,15 +74,16 @@ def escalation_ageing(
     bound is reported first. Both readings remain available for replay.
     Missing or ambiguous history refuses observation instead of clearing it.
     """
+    signal = AlarmSignal.ESCALATION_AGEING
     try:
         escalation, resolution, commits, ticks, max_commits, max_ticks = readings
     except ValueError as exc:
         raise _unreadable(
-            subject.member_id or subject.scope_key, "incomplete readings"
+            signal, subject.member_id or subject.scope_key, "incomplete readings"
         ) from exc
 
-    record = _decode(escalation, _ESCALATION)
-    answer = _decode(resolution, _RESOLUTION)
+    record = _decode(escalation, _ESCALATION, signal)
+    answer = _decode(resolution, _RESOLUTION, signal)
     if (
         subject.kind is not AlarmSubjectKind.ESCALATION
         or subject.member_id != record.escalation_key
@@ -79,29 +91,31 @@ def escalation_ageing(
         or subject.lane_key is None
     ):
         raise _unreadable(
-            escalation.source_ref, "subject does not identify this escalation"
+            signal, escalation.source_ref, "subject does not identify this escalation"
         )
     if resolution.source_ref != escalation.source_ref:
         raise _unreadable(
-            resolution.source_ref, "resolution identifies another escalation"
+            signal, resolution.source_ref, "resolution identifies another escalation"
         )
     if (max_commits.source_ref, max_ticks.source_ref) != (
         ESCALATION_COMMITS_BOUND,
         ESCALATION_TICKS_BOUND,
     ):
         raise _unreadable(
-            subject.member_id, "age bounds do not name their AppConfig fields"
+            signal, subject.member_id, "age bounds do not name their AppConfig fields"
         )
 
-    commit_order = _decode(commits, _COMMITS)
-    tick_age = _decode(ticks, _COUNT)
-    commit_limit = _decode(max_commits, _COUNT)
-    tick_limit = _decode(max_ticks, _COUNT)
+    commit_order = _decode(commits, _COMMITS, signal)
+    tick_age = _decode(ticks, _COUNT, signal)
+    commit_limit = _decode(max_commits, _COUNT, signal)
+    tick_limit = _decode(max_ticks, _COUNT, signal)
     if len(set(commit_order)) != len(commit_order):
-        raise _unreadable(commits.source_ref, "recorded commit order repeats a SHA")
+        raise _unreadable(
+            signal, commits.source_ref, "recorded commit order repeats a SHA"
+        )
     if record.raised_at_sha not in commit_order:
         raise _unreadable(
-            commits.source_ref, "recorded commit order omits the raise SHA"
+            signal, commits.source_ref, "recorded commit order omits the raise SHA"
         )
     commit_age = len(commit_order) - commit_order.index(record.raised_at_sha) - 1
 
@@ -115,6 +129,139 @@ def escalation_ageing(
             return RunAlarm(
                 subject=subject,
                 signal=AlarmSignal.ESCALATION_AGEING,
+                readings=readings,
+                bound=AlarmBound(
+                    config_field=reading.source_ref,
+                    configured_value=configured,
+                    observed_value=observed,
+                ),
+                raised_at_sha=raised_at_sha,
+                raised_by=raised_by,
+            )
+    return None
+
+
+def surface_contended(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Count explicit run-holder identities for one complete surface address.
+
+    Three JSON readings, in order: the WritableSurface address, its ordered
+    holder history, and the configured distinct-holder limit. Address and
+    history must name the same provenance source. Holder identities are
+    opaque job identities supplied by the provenance reader; this function
+    cannot infer them from account authors, timestamps or text.
+
+    Repeated writes by one holder count once. Different runs holding the
+    same address remain in that address's history, so they use this same
+    signal arm. Original readings, including their order, survive replay.
+    """
+    signal = AlarmSignal.SURFACE_CONTENDED
+    try:
+        surface, history, max_holders = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    address = _decode(surface, _SURFACE, signal)
+    if (
+        subject.kind is not AlarmSubjectKind.SURFACE
+        or subject.member_id != surface_alarm_member_id(address)
+    ):
+        raise _unreadable(
+            signal, surface.source_ref, "subject identifies another surface"
+        )
+    if surface.source_ref != history.source_ref:
+        raise _unreadable(
+            signal, history.source_ref, "holder history identifies another source"
+        )
+    if max_holders.source_ref != SURFACE_HOLDERS_BOUND:
+        raise _unreadable(
+            signal,
+            max_holders.source_ref,
+            "holder bound does not name its AppConfig field",
+        )
+    holders = _decode(history, _REFERENCES, signal)
+    configured = _decode(max_holders, _COUNT, signal)
+    observed = len(set(holders))
+    if observed > configured:
+        return RunAlarm(
+            subject=subject,
+            signal=signal,
+            readings=readings,
+            bound=AlarmBound(
+                config_field=max_holders.source_ref,
+                configured_value=configured,
+                observed_value=observed,
+            ),
+            raised_at_sha=raised_at_sha,
+            raised_by=raised_by,
+        )
+    return None
+
+
+def barren_tick_with_diff_growth(
+    *,
+    subject: AlarmSubject,
+    readings: tuple[AlarmReading, ...],
+    raised_at_sha: str,
+    raised_by: str,
+) -> RunAlarm | None:
+    """Observe recorded growth without closure of any previously-open identity.
+
+    Six JSON readings, in order: previously-open reference identities,
+    currently-closed identities, recorded files changed, recorded commits
+    ahead, and the configured limits for files and commits. A newly-created
+    closed reference or a reference missing from the current snapshot is
+    not a closure of previous work. No text is interpreted as an identity.
+    Both growth terms are against the lane base, as recorded by its owner.
+
+    Either count strictly exceeding its limit fires; files take precedence
+    when both do. All original readings remain in order for exact replay.
+    """
+    signal = AlarmSignal.BARREN_TICK_WITH_DIFF_GROWTH
+    try:
+        previous, current, files, commits, max_files, max_commits = readings
+    except ValueError as exc:
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
+    if subject.kind is not AlarmSubjectKind.LANE:
+        raise _unreadable(
+            signal, subject.scope_key, "a barren tick requires a lane subject"
+        )
+    if (max_files.source_ref, max_commits.source_ref) != (
+        BARREN_FILES_BOUND,
+        BARREN_COMMITS_BOUND,
+    ):
+        raise _unreadable(
+            signal,
+            subject.scope_key,
+            "growth bounds do not name their AppConfig fields",
+        )
+    previous_open = _decode(previous, _REFERENCES, signal)
+    current_closed = _decode(current, _REFERENCES, signal)
+    for reading, identities in ((previous, previous_open), (current, current_closed)):
+        if len(set(identities)) != len(identities):
+            raise _unreadable(
+                signal,
+                reading.source_ref,
+                "a reference identity appears more than once",
+            )
+    files_changed = _decode(files, _COUNT, signal)
+    commits_ahead = _decode(commits, _COUNT, signal)
+    file_limit = _decode(max_files, _COUNT, signal)
+    commit_limit = _decode(max_commits, _COUNT, signal)
+    if set(previous_open) & set(current_closed):
+        return None
+    for reading, configured, observed in (
+        (max_files, file_limit, files_changed),
+        (max_commits, commit_limit, commits_ahead),
+    ):
+        if observed > configured:
+            return RunAlarm(
+                subject=subject,
+                signal=signal,
                 readings=readings,
                 bound=AlarmBound(
                     config_field=reading.source_ref,

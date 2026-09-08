@@ -11,6 +11,55 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class PRTrackerIdentityError(Exception):
+    """The publishable PR body lost its required tracker identity."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(
+            "gated PR body does not retain the fixed tracker issue identity "
+            f"{issue_key!r}"
+        )
+
+
+class DeliveryContextError(Exception):
+    """A delivery handoff does not identify one consistent execution."""
+
+    def __init__(self, *, lane_key: str, issue_id: str, reason: str) -> None:
+        self.lane_key = lane_key
+        self.issue_id = issue_id
+        self.reason = reason
+        super().__init__(f"delivery context for {lane_key!r}/{issue_id!r}: {reason}")
+
+
+class DeliveryRouteUnavailableError(Exception):
+    """An observed delivery needs a consumer that is not connected yet.
+
+    This carries the observed PR and check facts without inventing a lane
+    outcome or claiming that a required residual has been published.
+    """
+
+    def __init__(
+        self,
+        *,
+        lane_key: str,
+        issue_id: str,
+        reason: str,
+        pr_url: str | None,
+        pr_number: int | None,
+        checks_passed: bool | None,
+        checks_summary: str | None,
+    ) -> None:
+        self.lane_key = lane_key
+        self.issue_id = issue_id
+        self.reason = reason
+        self.pr_url = pr_url
+        self.pr_number = pr_number
+        self.checks_passed = checks_passed
+        self.checks_summary = checks_summary
+        super().__init__(f"delivery route for {lane_key!r}/{issue_id!r}: {reason}")
+
+
 class RunShapeReadError(Exception):
     """Recorded observations cannot establish a run-shape predicate."""
 
@@ -496,3 +545,13 @@ class OrganizeAdmissionIdentityError(Exception):
         super().__init__(
             f"organize admission returned issue {observed!r}, expected {expected!r}"
         )
+
+
+class CheckChainExecutionError(Exception):
+    """The configured chain could not be observed as command results."""
+
+    def __init__(self, *, cwd: str, step_name: str | None, reason: str) -> None:
+        self.cwd = cwd
+        self.step_name = step_name
+        self.reason = reason
+        super().__init__(f"Cannot execute check chain in {cwd!r}: {reason}")

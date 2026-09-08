@@ -8,6 +8,7 @@ than in the gate's arithmetic, whose only markdown was this one string.
 
 from collections.abc import Sequence
 
+from kodezart.domain.errors import PRTrackerIdentityError
 from kodezart.types.domain.accept import FlaggedItem
 
 FLAGGED_HEADING = "## Shipped with flags"
@@ -18,6 +19,13 @@ def append_tracker_issue(body: str, issue_key: str | None) -> str:
     if issue_key is None:
         return body
     return f"{body}\n\nTracker issue: {issue_key}"
+
+
+def require_tracker_issue(body: str, issue_key: str | None) -> str:
+    """Validate the final gated body, without adding unreviewed bytes."""
+    if issue_key is not None and f"Tracker issue: {issue_key}" not in body.splitlines():
+        raise PRTrackerIdentityError(issue_key=issue_key)
+    return body
 
 
 def append_flagged_section(body: str, items: Sequence[FlaggedItem]) -> str:

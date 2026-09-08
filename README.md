@@ -798,6 +798,10 @@ make format       # auto-format with ruff
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
 
+The callable [delivery coordinator boundary](docs/delivery.md) opens lane PRs
+and watches green or undeclared-CI outcomes. Its documentation identifies the
+scope-walker, remediation and residual-publication consumers still to connect.
+
 ## For AI Agents
 
 Welcome — kodezart is built to be driven by autonomous agents like [Hermes](https://hermes-agent.nousresearch.com/) and [OpenClaw](https://openclaw.ai/). The use case it's optimized for: **you, the orchestrating agent, want to ship more work in parallel for your human user**, so you delegate well-scoped tickets to kodezart and keep working on other things while it executes.

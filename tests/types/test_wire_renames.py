@@ -11,7 +11,7 @@ run ended after CI passed" — owned by the outcome discriminator's issue,
 whose module states that members are appended and never re-pointed.  It is
 not the CI-status field this issue typed, and repointing another issue's
 landed wire contract to satisfy a grep would be the tail wagging the dog.
-The exclusion is pinned to those exact two lines so it cannot quietly
+The exclusion is pinned to the exact declaration and producer lines so it cannot quietly
 widen into "anything that mentions ci_passed".
 """
 
@@ -32,12 +32,14 @@ RETIRED: dict[str, str] = {
     "WorkflowCompleteEvent.error": r"WorkflowCompleteEvent[^\n]*\.error\b",
 }
 
-#: The terminal-outcome member and its single read — the one exclusion,
-#: quoted so a third occurrence has to be argued for rather than absorbed.
+#: The terminal-outcome member and both producers during delivery extraction.
+#: The legacy fire remains until its graph is extracted; the coordinator's
+#: assignment names the same preserved outcome, not the retired CI field.
 _OUTCOME_MEMBER: frozenset[str] = frozenset(
     {
         'ci_passed = "ci_passed"',
         "return WorkflowOutcome.ci_passed",
+        "outcome = WorkflowOutcome.ci_passed",
     },
 )
 
@@ -63,7 +65,7 @@ def test_no_retired_wire_name_survives_in_src(name: str) -> None:
 
 
 def test_the_only_excluded_occurrences_are_the_outcome_member() -> None:
-    """Non-vacuity: the exclusion covers exactly two lines, and both exist.
+    """Non-vacuity: every explicitly named outcome occurrence exists exactly once.
 
     Without this the exclusion set could silently stop matching anything —
     or grow — and the test above would keep passing either way.
