@@ -15,8 +15,8 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.in_repo_prompt_registry import InRepoPromptRegistry
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.composition.prompts import boot_prompts
 from kodezart.core.config import AppConfig
@@ -236,7 +236,7 @@ async def test_workflow_e2e_creates_branch_and_pushes(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -388,7 +388,7 @@ async def test_workflow_e2e_exhausts_iterations(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -595,7 +595,7 @@ async def test_workflow_e2e_divergent_base_branch(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -896,7 +896,7 @@ async def test_workflow_e2e_subprocess_argv_threads_configured_remote(
         retry_initial_interval=1.0,
         delay_floor_for=no_delay_floor,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1136,7 +1136,7 @@ async def test_git_branch_merger_source_missing_error_references_configured_remo
 async def test_ralph_workflow_base_branch_not_found_error_references_configured_remote(
     remote_name: str,
 ) -> None:
-    """``RalphWorkflowEngine`` base-not-found error interpolates ``git_remote``.
+    """``AuthoredDeliveryCoordinator`` base-not-found error interpolates ``git_remote``.
 
     Drives the workflow through a successful consolidation (FakeBranchMerger
     returns ``FAST_FORWARDED``) and a FakeGitService whose
@@ -1145,7 +1145,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
     ``ralph_workflow.py:590-594``.  The raised ``RuntimeError`` substring
     must track the configured remote.
     """
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1295,7 +1295,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1452,7 +1452,7 @@ async def test_workflow_e2e_under_flipped_defaults_runs_the_create_only_path(
         workspace=workspace,
         persister=persister,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,
@@ -1681,7 +1681,7 @@ def _remediation_engine(
     *,
     executor: _RoundStackingExecutor,
     remediator: FakeRemediator,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """The real engine over real git, with only the model scripted."""
     git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
@@ -1704,7 +1704,7 @@ def _remediation_engine(
             remote="origin",
         ),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

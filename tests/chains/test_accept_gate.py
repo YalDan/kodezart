@@ -11,8 +11,8 @@ from inspect import signature
 
 import pytest
 
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.accept_gate import (
     accept_verdict,
     flagged_items,
@@ -338,14 +338,14 @@ def _engine(
     evaluation: AcceptanceCriteriaOutput,
     pr_creator: FakePRCreator | None = None,
     ref_publisher: FakeRefPublisher | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     service = AgentService(
         git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -373,7 +373,7 @@ def _engine(
     )
 
 
-async def _run(engine: RalphWorkflowEngine) -> list[object]:
+async def _run(engine: AuthoredDeliveryCoordinator) -> list[object]:
     return [
         event
         async for event in engine.run(
@@ -671,7 +671,7 @@ class FlaggingEvaluator:
 def _engine_over_a_real_loop(
     executor: FlaggingEvaluator,
     pr_creator: FakePRCreator,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """The workflow with the REAL ralph loop, so grading actually happens."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -680,7 +680,7 @@ def _engine_over_a_real_loop(
         persister=FakeChangePersister(),
     )
     prompts = make_prompt_provider()
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts,

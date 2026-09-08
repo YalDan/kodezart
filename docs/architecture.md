@@ -63,7 +63,7 @@ does not exist.
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
-| WorkflowEngine    | RalphWorkflowEngine      | LangGraph outer pipeline                             |
+| WorkflowEngine    | AuthoredDeliveryCoordinator | Authored orchestration around the shared fire graph |
 | JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
 | JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
@@ -183,11 +183,15 @@ author sessions remain orchestration work outside this pure function.
 
 ## Workflow Pipeline
 
-The outer workflow runs as a LangGraph StateGraph defined in
-`chains/ralph_workflow.py`:
+The delivery-free `RalphWorkflowEngine` in `chains/ralph_workflow.py` owns
+one compiled fire graph. `AuthoredDeliveryCoordinator` in
+`chains/authored_delivery.py` embeds that graph and owns the existing authored
+HTTP delivery operations. A CI remediation draft re-enters the same fire graph
+at criteria generation; it does not rebuild the ticket or create another set
+of fire nodes.
 
-Two nodes — `persist_ticket` and `persist_artifacts` — are added only when an
-ArtifactPersister is wired; the rest are always present.
+Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only
+when an ArtifactPersister is wired.
 
 ```mermaid
 stateDiagram-v2
@@ -198,72 +202,50 @@ stateDiagram-v2
     generate_ticket --> generate_criteria : no artifact persister
     persist_ticket --> generate_criteria
     generate_criteria --> validate_criteria
-    validate_criteria --> generate_criteria : regeneration demanded, bound not spent
-    validate_criteria --> complete : bound spent, criteria still infeasible
-    validate_criteria --> persist_artifacts : criteria dispatchable, persister wired
-    validate_criteria --> run_ralph_loop : criteria dispatchable, no persister
+    validate_criteria --> generate_criteria : regeneration remains
+    validate_criteria --> complete : infeasible and bound spent
+    validate_criteria --> persist_artifacts : persister wired
+    validate_criteria --> run_ralph_loop : no persister
     persist_artifacts --> run_ralph_loop
     run_ralph_loop --> merge_to_feature
-    merge_to_feature --> review_against_ticket : merged
-    merge_to_feature --> remediate : a remediable failure, rounds left
-    merge_to_feature --> land_best_iteration : the loop never accepted
-    merge_to_feature --> complete : nothing to land
+    merge_to_feature --> review_against_ticket : consolidated
+    merge_to_feature --> remediate : loop failed and rounds remain
+    merge_to_feature --> land_best_iteration : loop exhausted
+    merge_to_feature --> complete : consolidation failed
     land_best_iteration --> complete
-    review_against_ticket --> open_pr : review passed
-    review_against_ticket --> monitor_ci : a pull request is already open
-    review_against_ticket --> remediate : review failed, rounds left
-    review_against_ticket --> comment_failure : review failed, rounds spent
-    review_against_ticket --> complete : no forge configured
+    review_against_ticket --> remediate : review failed and rounds remain
+    review_against_ticket --> complete : reviewed or budget exhausted
     remediate --> generate_criteria
-    open_pr --> monitor_ci
-    open_pr --> complete : CI monitoring disabled
-    monitor_ci --> complete : CI passed
-    monitor_ci --> remediate : CI failed, rounds left
-    monitor_ci --> comment_failure : CI failed, rounds spent
-    comment_failure --> complete
     complete --> [*]
 ```
 
-1. **resolve_visibility** - Resolves the target repository's PRIVATE / PUBLIC /
-   UNKNOWN posture once, which is what the outbound gate is engaged under for
-   the rest of the run
-2. **generate_branch** - Asks the agent to generate a descriptive branch name
-   slug, then creates a feature branch (`kodezart/{slug}-{hex}`) and a ralph
-   working branch (`{feature}-ralph-{hex}`)
-3. **generate_ticket** - Delegates to the TicketGenerator to draft an
-   implementation ticket from the raw user prompt
-4. **persist_ticket** - Writes the ticket under `.kodezart/` in the worktree
-   (only when an ArtifactPersister is wired)
-5. **generate_criteria** - Asks the agent to analyze the codebase and derive
-   testable acceptance criteria from the ticket
-6. **validate_criteria** - Dispatches the drafted criteria to an adversarial
-   refuter, which returns a three-state verdict per criterion plus any jointly
-   unsatisfiable subsets. `infeasible` criteria and the members of a
-   contradiction are routed back to **generate_criteria** for amendment, up to
-   `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`; a set that still demands
-   regeneration once the bound is spent halts the run before the loop
-7. **persist_artifacts** - Writes the validated criteria beside the ticket
-   (only when an ArtifactPersister is wired)
-8. **run_ralph_loop** - Delegates to the QualityGate for iterative
-   execute/evaluate until criteria pass or max iterations
-9. **merge_to_feature** - Consolidates the ralph branch into the feature branch
-   and pushes; the consolidation status is what routes the rest of the run
-10. **land_best_iteration** - The stall exit: a run whose loop never accepted
-    still publishes its best iteration and opens a do-not-merge pull request
-    over it, so a human reads what was reached. Its `workflow_pr` event carries
-    `delivered: false`, and no work ref is recorded for it
-11. **review_against_ticket** - Reviews the merged work against the ticket's own
-    criteria, after the merge rather than inside the loop
-12. **remediate** - One remediation round: the failure evidence in, one targeted
-    ticket out, bounded by `KODEZART_REMEDIATION_MAX_ROUNDS`
-13. **open_pr** - Opens the delivery pull request. Its `workflow_pr` event
-    carries `delivered: true`, and the tracker write-back records that branch
-    and its pushed tip as the issue's deliverable work ref
-14. **monitor_ci** - Polls check runs for the pushed head
-15. **comment_failure** - Posts the failure the run ends on where a reader will
-    find it
-16. **complete** - The single terminal node: every path ends here, carrying the
-    run's outcome
+The initial authored run resolves visibility, generates its branch and ticket,
+then derives and validates criteria. The loop implements those criteria;
+consolidation records the selected branch and exact SHA before review. An
+unaccepted run publishes and selects its best iteration when a ref publisher
+is configured. It creates no PR. The shared remediation draft uses the same
+cumulative round budget and returns through criteria validation.
+
+`WorkflowState` and `WorkflowCompleteEvent` contain only fire facts. A clean
+fire ends `handed_off_for_delivery`; a review-budget failure retains its own
+outcome. Neither terminal contains PR or check fields, and artifact cleaning
+is not a fire operation.
+
+The authored outer coordinator performs its existing PR-description session,
+gates and creates the PR, watches checks when configured, and drafts CI
+remediation when budget remains. Its failure comment is an outer operation.
+It filters the internal fire terminal and emits one
+`AuthoredWorkflowCompleteEvent`, preserving the existing `workflow_complete`
+HTTP discriminator, PR/check fields and outcomes. An authored request without
+a tracker issue remains valid and gets no invented issue footer. Artifact
+cleaning runs here before PR creation. Backup cleanup runs after the final
+outer terminal; an intermediate fire handoff does not remove backups during
+CI remediation. With no forge, the same outer coordinator retains the
+existing no-adapter outcome.
+
+This extraction does not wire the tracker-native scope walker or replace its
+criterion trajectory producer. The lane-addressed `DeliveryCoordinator`
+retains its separate strict FIRE identity and dispatch contract.
 
 ## Ticket Generation Loop
 
@@ -663,6 +645,62 @@ also runs on errors and cancellation. This is a repeat-read observation, not an
 atomic snapshot or a full sweep: Evidence-sha/lapse handling, mandate completion,
 report publication, write-back and scheduler registration remain separate work.
 
+Revision comparisons share `AuditSourceReader` and `FreshAuditSession`.
+The source reader requires the criterion's native Evidence, validates its
+graded commit against the current recorded branch, and retains the exact
+criterion, Check, Evidence and lane comment. Its `require_unchanged` check
+re-reads the criterion, lane record and remote head before a consumer returns.
+The session helper owns a detached workspace at the immutable head, checks
+its head and cleanliness before and after fresh read-only execution, and
+settles acquisition, native reads and release through repeated cancellation.
+Callers supply a prompt and output schema and validate the returned structured
+value; the helpers neither inherit prior conclusions nor publish a verdict.
+
+`DetectorRemovalVerifier` composes these readers with the
+`audit_detection_removal` role. The fresh session compares the real graded and
+current revisions, tests the removal counterfactual, and searches for retained,
+moved or replacement detection. Removing a mechanism and its final effective
+test produces a refuted observation; retained detection keeps this particular
+arm quiet even when that test is red. Inconclusive comparisons use the existing
+unverifiable verdict.
+
+Before returning a proposed finding, the consumer re-reads its mechanism and
+test quotations from native baseline blobs and verifies their stated lines.
+It rejects excerpts that still exist at the current path. Native source lookup
+distinguishes an absent file from an unreadable commit or unsupported object.
+The session's semantic counterfactual remains a judgment: exact quotations do
+not prove the absence of all replacement detection. The test fixture executes
+the real current suite and baseline detector at the current head through the
+actual agent/workspace boundary; it does not call a live model. This component
+returns an observation, without scheduling a sweep, completing a mandate hunt,
+writing a refutation or bypassing required writer leases.
+
+
+## Standing over-claim observations
+
+`AuditOverclaimVerifier.observe` reads the criterion through `AuditSourceReader`
+and obtains one fresh `FreshAuditSession` judgment at the measured head. Its
+schema requires exactly one reading for each standing check: recomputed
+aggregates, independently witnessed completeness, verbatim adoption and
+compliance with the artifact's own rules. Refuted aggregates name the recomputed
+value; unverifiable readings name the missing artifact. Prior grading prose,
+author reasoning and old verdicts are not session inputs.
+
+For adoption, the session identifies source and artifact paths at the graded
+or current revisions. The harness reads their immutable Git objects and compares
+actual bytes independently of the session's coverage assessment. A differing
+pair refutes adoption even if the session reported all topics covered. Missing
+native objects remain unverifiable, foreign revisions and self-witnesses refuse,
+and equal pairs cannot fill a separately missing external witness. The model
+still owns semantic claim discovery and witness selection; a list of matching
+pairs is not proof that every possible adoption claim was discovered.
+
+The observation derives its overall three-state verdict from all four readings,
+then rechecks native criterion, lane-record and remote-head identity. It performs
+no tracker writes. Full sweep invocation, mandatory mandate completion and leased
+publication remain separate consumers. Native Git fixtures exercise all four
+categories using a scripted external judgment boundary; they validate execution
+and evidence handling without claiming live-model detection accuracy.
 
 ## Recorded criterion Evidence and lapse observations
 
@@ -706,6 +744,31 @@ forge comparison, state transitions, mandate-complete reports and the scheduled
 sweep remain separate consumers. The reader acquires no authoring lease and
 performs no tracker write; the required correction writers must use the ruled
 lease and inline verification boundaries.
+
+The separate `AuditForgeVerifier` checks a completed criterion's own explicit
+Evidence SHA through the existing CI monitor and completed-watch reader. Its
+request cannot supply a replacement SHA. The returned commit must match exactly;
+no branch name, newer branch run or ancestor run can substitute. Completed watch
+snapshots now retain their check names, and every explicitly configured
+`CheckStep.forge_check` must be present before accepting green. A readable red
+is still classified when another declared check is missing: reproduced failure
+can refute the forge claim without proving unrelated missing checks. An empty
+configured roster leaves the repository's observed CI roster authoritative.
+
+Green at that SHA holds the forge proposition. Red goes through the existing
+`classify_red_checks` with the operation's repository declarations and existing
+rerun bound, including native same-SHA rerun requests. A reproduced work defect is
+refuted; an unmet prerequisite or unclassified red is unverifiable. A flake with
+an exact-SHA green rerun holds, while a rerun with no observable checks remains
+unverifiable. A missing run never proves this proposition, including when the
+separate delivery policy declares the repository forge-exempt. Each call starts
+a fresh task-owned observation sequence so a caller's older CI watch or rerun
+cannot replace its evidence. The full criterion source is reread before return.
+
+This is a forge-claim observation, not a whole-criterion satisfaction verdict.
+It performs no tracker writes, correction or remediation. Scheduled sweep
+composition, mandate completion for refutations, lease-protected state changes
+and publication remain separate consumers.
 
 ## Tracker feasibility at the selected head
 

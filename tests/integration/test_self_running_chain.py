@@ -31,7 +31,7 @@ from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.agent import (
     AgentEvent,
     AssistantTextEvent,
-    WorkflowCompleteEvent,
+    AuthoredWorkflowCompleteEvent,
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import BaseSpec
@@ -96,7 +96,7 @@ class _MergingEngine:
             feature_tip_sha=FEATURE_TIP_SHA,
             delivered=True,
         )
-        yield WorkflowCompleteEvent(
+        yield AuthoredWorkflowCompleteEvent(
             feature_branch=FEATURE_BRANCH,
             ralph_branch="kodezart/k-1-ralph",
             total_iterations=1,

@@ -5,12 +5,14 @@ import inspect
 import pytest
 
 from kodezart.domain import outcome as outcome_module
-from kodezart.domain.outcome import classify_outcome
+from kodezart.domain.authored_outcome import (
+    classify_authored_outcome as classify_outcome,
+)
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import WorkflowState
+from kodezart.types.domain.workflow import AuthoredWorkflowState as WorkflowState
 from tests.fakes import make_criteria
 
 

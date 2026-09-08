@@ -12,3 +12,4 @@ class ObservedChecks(CamelCaseModel):
 
     commit_sha: str = Field(min_length=1)
     checks_passed: bool
+    check_names: frozenset[str]

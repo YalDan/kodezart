@@ -56,6 +56,15 @@ ORGANIZE_CASE: dict[str, object] = {
 }
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+    "audit_overclaim": (
+        PromptKey.AUDIT_OVERCLAIM,
+        {
+            "criterion_key": "external/check",
+            "graded_sha": "graded-commit",
+            "head_sha": "exact-head",
+            "check": "A source-addressed claim.",
+        },
+    ),
     "audit_mandate": (
         PromptKey.AUDIT_MANDATE,
         {
@@ -78,6 +87,15 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
         {
             "criterion_key": "external/check",
             "head_sha": "exact-head",
+            "check": "A behavioral claim.",
+        },
+    ),
+    "audit_detection_removal": (
+        PromptKey.AUDIT_DETECTION_REMOVAL,
+        {
+            "criterion_key": "external/check",
+            "graded_sha": "graded-commit",
+            "head_sha": "current-commit",
             "check": "A behavioral claim.",
         },
     ),

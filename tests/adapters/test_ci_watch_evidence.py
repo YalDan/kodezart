@@ -67,7 +67,9 @@ async def test_original_watch_is_read_without_another_forge_request(boundary):
     passed, _ = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
     assert passed is False
     count = len(requests)
-    expected = ObservedChecks(commit_sha=SHA, checks_passed=False)
+    expected = ObservedChecks(
+        commit_sha=SHA, checks_passed=False, check_names=frozenset({"unit"})
+    )
     assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
     assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
     assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"unit"}

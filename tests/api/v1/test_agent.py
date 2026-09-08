@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient, Response
 
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.main import create_app
 from kodezart.services.agent_service import AgentService
@@ -224,7 +224,7 @@ async def _workflow_client(
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -495,7 +495,7 @@ async def _workflow_client_with(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),

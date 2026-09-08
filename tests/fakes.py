@@ -418,6 +418,7 @@ class FakeGitService:
         remote_branches: list[str] | None = None,
         *,
         is_path_ignored_result: bool = False,
+        has_replace_refs_result: bool = False,
         remote_branch_shas: dict[str, str | None] | None = None,
         remote_branch_sha_sequences: dict[str, list[str | None]] | None = None,
         delete_remote_branch_error: Exception | None = None,
@@ -431,6 +432,7 @@ class FakeGitService:
         self.calls: list[tuple[str, ...]] = []
         self._merge_conflicts: dict[str, tuple[str, ...]] = dict(merge_conflicts or {})
         self.has_changes_result: bool = has_changes_result
+        self.has_replace_refs_result = has_replace_refs_result
         self._is_path_ignored_result: bool = is_path_ignored_result
         self._remote_branches: list[str] = remote_branches or []
         self._remote_branch_shas: dict[str, str | None] = (
@@ -485,6 +487,10 @@ class FakeGitService:
     async def has_changes(self, cwd: str) -> bool:
         self.calls.append(("has_changes", cwd))
         return self.has_changes_result
+
+    async def has_replace_refs(self, cwd: str) -> bool:
+        self.calls.append(("has_replace_refs", cwd))
+        return self.has_replace_refs_result
 
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         self.calls.append(("is_path_ignored", cwd, path))
@@ -1897,6 +1903,7 @@ class FakeCIMonitor:
         rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
         observation_reader: FakeCIObservationReader | None = None,
         observed_sha_by_ref: Mapping[str, str] | None = None,
+        check_names: frozenset[str] = frozenset(),
     ) -> None:
         self._passed = passed
         self._summary = summary
@@ -1906,6 +1913,7 @@ class FakeCIMonitor:
         self._rerun_results = list(rerun_results)
         self.observation_reader = observation_reader
         self.observed_sha_by_ref = dict(observed_sha_by_ref or {})
+        self.check_names = check_names
         self._attempts: ContextVar[
             tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
         ] = ContextVar("fake_ci_attempts", default=None)
@@ -1996,7 +2004,11 @@ class FakeCIMonitor:
             self.observation_reader._record(
                 repo_url,
                 ref,
-                ObservedChecks(commit_sha=sha, checks_passed=passed),
+                ObservedChecks(
+                    commit_sha=sha,
+                    checks_passed=passed,
+                    check_names=self.check_names | names,
+                ),
             )
         return (passed, summary)
 

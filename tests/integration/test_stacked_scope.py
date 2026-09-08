@@ -19,8 +19,8 @@ from kodezart.adapters.git_change_persister import GitChangePersister
 from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -124,7 +124,7 @@ async def _branch_from(
     return sha
 
 
-def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
+def _engine(repo: Path, tmp_path: Path) -> AuthoredDeliveryCoordinator:
     """The real engine over real git, with only the model scripted."""
     git = SubprocessGitService(remote="origin")
     cache = LocalBareRepoCache(git=git, base_dir=str(tmp_path / "cache"))
@@ -160,7 +160,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
         workspace=workspace,
         persister=persister,
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -205,7 +205,7 @@ def _engine(repo: Path, tmp_path: Path) -> RalphWorkflowEngine:
 
 
 async def _run(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     repo: Path,
     base_spec: BaseSpec,
 ) -> list[AgentEvent]:

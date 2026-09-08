@@ -17,6 +17,8 @@ from kodezart.types.domain.audit import (
     AuditMandateJudgment,
     WriteBackJudgment,
 )
+from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
+from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
@@ -66,6 +68,8 @@ RaiseSite = Literal[
     "organize_assess",
     "organize_verify",
     "audit_claim",
+    "audit_overclaim",
+    "audit_detection_removal",
     "write_back_verify",
     "audit_mandate",
     "branch_name",
@@ -888,10 +892,9 @@ class WorkflowCompleteEvent(AgentEvent):
 
     ``outcome`` is the sole terminal discriminator — required and
     non-nullable, so ``exclude_none=True`` can never drop it and no
-    serializer hack is needed to force it onto the wire.  ``ci_status``
-    now holds on the same ground, and ``merge_error`` says what its
-    string actually carries: the merge failure, never a general error
-    channel.
+    serializer hack is needed to force it onto the wire. Delivery facts
+    belong to the caller. ``merge_error`` carries only a consolidation
+    failure, never a general error channel.
     """
 
     type: Literal["workflow_complete"] = "workflow_complete"
@@ -903,11 +906,16 @@ class WorkflowCompleteEvent(AgentEvent):
     merged: bool = False
     final_commit_sha: str | None = None
     merge_error: str | None = None
+    trajectory: LoopTrajectory | None = None
+    criteria_validation: CriteriaValidation | None = None
+
+
+class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
+    """Existing authored HTTP terminal after external delivery completes."""
+
     pr_url: str | None = None
     pr_number: int | None = None
     ci_status: CIStatus = CIStatus.not_monitored
-    trajectory: LoopTrajectory | None = None
-    criteria_validation: CriteriaValidation | None = None
 
 
 class WorkflowVisibilityEvent(AgentEvent):
@@ -1039,7 +1047,9 @@ DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema
 AUDIT_MANDATE_SCHEMA: dict[str, object] = AuditMandateJudgment.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackJudgment.model_json_schema()
 
+AUDIT_OVERCLAIM_SCHEMA: dict[str, object] = AuditOverclaimJudgment.model_json_schema()
 AUDIT_CLAIM_SCHEMA: dict[str, object] = AuditClaimJudgment.model_json_schema()
+DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_schema()
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
@@ -1060,6 +1070,8 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
+    "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
+    "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_MANDATE_SCHEMA": AUDIT_MANDATE_SCHEMA,
 }

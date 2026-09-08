@@ -9,8 +9,8 @@ from collections.abc import AsyncIterator
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.config import AppConfig
@@ -227,8 +227,8 @@ def build_workflow_engine(
         skills=skills,
     )
 
-    def arm(forge: GitHubAPIClient | None) -> RalphWorkflowEngine:
-        return RalphWorkflowEngine(
+    def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
+        return AuthoredDeliveryCoordinator(
             service=agent_service,
             quality_gate=ralph_loop,
             ticket_generator=ticket_generator,

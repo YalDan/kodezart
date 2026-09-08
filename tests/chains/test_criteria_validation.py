@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator, Sequence
 import pytest
 from pydantic import ValidationError
 
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.redispatch import CORRECTION_HEADER
@@ -196,14 +196,14 @@ def _engine(
     artifact_persister: FakeArtifactPersister | None = None,
     ticket_generator: FakeTicketGenerator | None = None,
     pr_creator: FakePRCreator | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor,
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return AuthoredDeliveryCoordinator(
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -232,7 +232,7 @@ def _engine(
 
 
 async def _run(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     *,
     prompt: str = "do the thing",
     repo_url: str | None = None,
