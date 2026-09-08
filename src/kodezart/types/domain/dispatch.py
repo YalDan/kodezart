@@ -10,8 +10,10 @@ Approved-but-blocked is a correct resting state — a fact to report, never
 a contradiction to fix.
 """
 
+from collections import deque
 from datetime import datetime
 from enum import StrEnum
+from typing import Final
 
 from pydantic import ConfigDict, Field
 
@@ -271,6 +273,11 @@ class PassDelta(DispatchModel):
         return bool(self.changed)
 
 
+#: Bookkeeping can conservatively wake a lagging gate instead of retaining
+#: arbitrary full comment bodies for the entire service lifetime.
+_SELF_WRITE_RECEIPT_LIMIT: Final[int] = 256
+
+
 class SelfWriteLedger:
     """Atomic issue stamps and ordered explicit mutation receipts.
 
@@ -278,12 +285,17 @@ class SelfWriteLedger:
     Comment writes have no such response: they record their exact create,
     edit or delete instead. Each gate independently retains its observation
     and receipt position; reading never consumes another gate's receipts.
-    Restarting with no retained observation conservatively wakes once.
+    The newest 256 receipts are retained across all issues. An older
+    reader gets explicit unavailable history and conservatively wakes;
+    it never treats a partial suffix as complete evidence. This avoids a
+    reader-lifecycle registry and bounds retained full comment bodies.
     """
 
     def __init__(self) -> None:
         self._stamps: dict[str, datetime] = {}
-        self._mutations: dict[str, list[OwnMutation]] = {}
+        self._mutations: deque[tuple[str, int, OwnMutation]] = deque()
+        self._versions: dict[str, int] = {}
+        self._discarded: dict[str, int] = {}
 
     def record(self, *, issue_key: str, updated_at: datetime) -> None:
         """Remember the stamp our own write left on *issue_key*."""
@@ -295,14 +307,29 @@ class SelfWriteLedger:
 
     def record_mutation(self, *, issue_key: str, mutation: OwnMutation) -> None:
         """Append only the effects described by a successful native write."""
-        self._mutations.setdefault(issue_key, []).append(mutation)
+        if len(self._mutations) == _SELF_WRITE_RECEIPT_LIMIT:
+            discarded_issue, discarded_version, _ = self._mutations.popleft()
+            self._discarded[discarded_issue] = discarded_version
+        version = self._versions.get(issue_key, 0) + 1
+        self._versions[issue_key] = version
+        self._mutations.append((issue_key, version, mutation))
 
     def receipts(
         self, *, issue_key: str, after: int = 0
-    ) -> tuple[int, tuple[OwnMutation, ...]]:
-        """Return a stable cursor and receipts without consuming them."""
-        mutations = self._mutations.get(issue_key, [])
-        return len(mutations), tuple(mutations[after:])
+    ) -> tuple[int, tuple[OwnMutation, ...] | None]:
+        """Return a cursor and complete receipts, or None for evicted history.
+
+        Reads do not consume receipts, so gates and their rearm checkpoints
+        remain independent. The caller must wake when history is missing.
+        """
+        version = self._versions.get(issue_key, 0)
+        if after < self._discarded.get(issue_key, 0) or after > version:
+            return version, None
+        return version, tuple(
+            mutation
+            for key, held_version, mutation in self._mutations
+            if key == issue_key and held_version > after
+        )
 
 
 class PassRun(StrEnum):

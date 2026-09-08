@@ -335,7 +335,7 @@ class PassGate:
             own = self._ledger.wrote(
                 issue_key=issue.issue_key, updated_at=issue.updated_at
             )
-            if previous is not None and not own:
+            if previous is not None and mutations is not None and not own:
                 own = matches_own_mutations(
                     before=previous[0], after=snapshot, mutations=mutations
                 )

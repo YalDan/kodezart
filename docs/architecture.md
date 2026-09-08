@@ -1061,9 +1061,14 @@ Native fields outside the configured label vocabulary remain in the opaque
 projection. Stable bounding issue reads and two complete comment listings
 must agree before a container mark advances; unreadability, pagination
 ambiguity, source movement, or cancellation leaves that window unspent.
-Rearming a failed pass restores both observations and marks. Receipts are
-process-local and independently readable by multiple gates; a new gate with
-no retained comment baseline conservatively wakes once.
+Rearming a failed pass restores both observations and marks. The latest
+256 receipts across the service are retained, independently readable by
+multiple gates. If an observation or rearm checkpoint needs evicted history,
+the gate wakes conservatively; a partial receipt suffix is never treated as
+complete evidence. A new gate with no retained comment baseline likewise
+wakes once. This fixed bookkeeping window adds no operator configuration
+or reader-lifecycle registry. It bounds retained receipt bodies by count,
+not native comment size or the current snapshots themselves.
 
 This suppresses unchanged own claim/renew/release, marker, base, and mixed
 lifecycle churn while retaining differing principal fields, comments,

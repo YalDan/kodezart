@@ -440,3 +440,29 @@ async def test_label_addition_never_claims_other_labels_from_the_response(
     await tracker.set_issue_classification(issue_key=ISSUE, classification="criterion")
     await tracker.post_comment(issue_key=ISSUE, body="ours after the issue stamp")
     assert (await gate.delta()).changed == ((ISSUE,) if foreign else ())
+
+
+async def test_lagging_gate_and_rearm_wake_when_receipt_history_expires() -> None:
+    server = _server()
+    ledger = SelfWriteLedger()
+    tracker = _tracker(server, ledger)
+    marker = "<!-- retained note -->"
+    await tracker.upsert_comment(target=ISSUE, marker=marker, body="initial")
+    fast, lagging = _gate(tracker, ledger), _gate(tracker, ledger)
+    await fast.delta()
+    await lagging.delta()
+
+    # Fast readers continue to suppress ordinary own edits. The other gate
+    # retains an old snapshot, whose receipt prefix eventually expires.
+    for index in range(257):
+        await tracker.upsert_comment(target=ISSUE, marker=marker, body=f"edit {index}")
+        assert (await fast.delta()).changed == ()
+    fast.rearm()
+    assert (await fast.delta()).changed == ()
+
+    assert (await lagging.delta()).changed == (ISSUE,)
+    lagging.rearm()
+    assert (await lagging.delta()).changed == (ISSUE,)
+    await tracker.post_comment(issue_key=ISSUE, body="own after renewed observation")
+    assert (await fast.delta()).changed == ()
+    assert (await lagging.delta()).changed == ()
