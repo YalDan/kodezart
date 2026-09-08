@@ -58,6 +58,8 @@ does not exist.
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
+| TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
+| TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its recorded repository and base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
@@ -934,7 +936,10 @@ they cannot remove a tracker criterion from its obligations. The existing
 duplicate or ungrounded response refuses on exhaustion.
 
 The selected SHA is checked in a detached workspace before each session and
-after validation. Ordinary tracked, staged or untracked changes refuse through
+after validation. Active Git replacement refs refuse through the existing
+replacement-ref read, preventing a reused cache from substituting another
+commit's bytes under the selected identity. That read also settles before
+workspace release on cancellation. Ordinary tracked, staged or untracked changes refuse through
 `GitService.has_changes`; ignored test outputs follow Git's existing ignore
 behavior. The full criterion family is read again before returning, and any
 observed change refuses. This is optimistic source coherence, not an atomic
@@ -946,3 +951,27 @@ This consumer returns a source-addressed observation. It does not apply
 amendments, cancellations or state transitions, authorize dispatch, persist an
 artifact, or supply the missing full FIRE composition. Approval eligibility,
 leased authoring and the live iteration-exit path remain separate consumers.
+
+
+The public `OriginRoutedWorkflowEngine.run` now prepares an explicitly addressed
+scoped FIRE through `AddressedTrackerFirePreparation` when a tracker is composed.
+The existing complete readiness read must uniquely select the issue. Its FIRE
+run identity, recorded repository and recorded `BaseSpec` must agree with the
+queued inputs before repository access. This bounded first-entry arm refuses
+existing deliverable, iteration, recovery or best-iteration refs until scoped
+resume-head selection is implemented. An integration ref remains base provenance.
+
+The preparer pins the actual remote head of the recorded base branch and calls
+the same native feasibility validator through the real `AgentService`. It then
+rereads the repository/base/work refs, complete readiness and remote head. An
+observed change refuses the prepared result. Cache and remote reads settle owned
+subprocesses through cancellation, and validation retains the existing detached
+workspace, fresh-session and complete-family guards. Caller prompt text and
+write-capable tools never replace native criterion sources or evaluation tools.
+
+This is the recorded-repository first-entry arm only. Configured team routing,
+scoped resume-head selection, automatic broad-scope dispatch, ruling application,
+leased state/Evidence writes and the native loop remain separate work. After a
+valid observation, the public entry explicitly refuses the unavailable ruling
+and loop graph; it does not dispatch legacy ticket generation or report a
+completed FIRE. The authored entry path retains its existing behavior.

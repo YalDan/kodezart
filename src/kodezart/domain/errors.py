@@ -761,5 +761,14 @@ class TrackerFeasibilityReadError(Exception):
     """The selected tracker family or repository changed before judgment settled."""
 
 
+class TrackerFirePreparationError(Exception):
+    """An addressed fire cannot establish its native first-entry source facts."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"tracker fire {issue_key!r} cannot prepare: {reason}")
+
+
 class PRStateReadError(ValueError):
     """A native PR observation cannot establish the requested identity."""

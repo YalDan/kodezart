@@ -140,6 +140,7 @@ async def test_native_stage_barriers_name_keys_before_actual_engine_dispatch(
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
         tracker=tracker,
+        tracker_preparer=None,
     )
     with pytest.raises(error, match=offending):
         await _drive(engine, repo_url=FORGE_ORIGIN, scope=SCOPE)

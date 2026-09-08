@@ -383,6 +383,7 @@ async def test_actual_scoped_entry_reads_readiness_before_existing_walker_refusa
         forge_arm=ForbiddenWorkflowEngine(),
         forge_less_arm=ForbiddenWorkflowEngine(),
         tracker=fixture.tracker,
+        tracker_preparer=None,
     )
     with pytest.raises(ScopedExecutionUnavailableError, match="Scoped graph execution"):
         await _drive(engine, repo_url=FORGE_ORIGIN, scope=PROJECT)
