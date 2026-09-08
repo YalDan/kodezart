@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+from tests.fakes import FakeMcpIssue
 from tests.model_members import CLASSIFICATION, model_workspace
 
 from kodezart.core.protocols import TrackerPort
@@ -320,7 +321,8 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
                 f"pointer target identity differs for {pointer.target}"
             )
         if (
-            not pointer.comment_target
+            (pointer.number is not None or "criterion" in target.issue_labels)
+            and not pointer.comment_target
             and pointer.url is not None
             and urlsplit(pointer.url)._replace(fragment="").geturl() != target.url
         ):
@@ -1033,6 +1035,42 @@ async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeyp
     monkeypatch.setattr(workspace.tracker, "read_planning_issue", redirecting)
     with pytest.raises(AssertionError, match="model snapshot drift: target external"):
         await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+
+
+@pytest.mark.parametrize("target_kind", ["context", "numbered", "criterion"])
+async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
+    workspace, target_kind
+):
+    # Actual 644 amendment cites ordinary parent 744 with this short native URL.
+    # The measured issue response reports the longer canonical slug URL.
+    await workspace.put(
+        FakeMcpIssue(
+            id="KOD-744",
+            description="## D2 — Architecture acceptance",
+            labels=["acceptance-condition"] if target_kind == "criterion" else [],
+            parent_id="member/beta" if target_kind == "criterion" else None,
+            url="https://linear.app/duckburg/issue/KOD-744/architecture-review",
+        )
+    )
+    label = "KOD-744 D2" if target_kind == "numbered" else "KOD-744"
+    await workspace.seed(
+        [
+            {
+                "key": "KOD-644",
+                "body": f"Source amendment: [{label}](<https://linear.app/duckburg/issue/KOD-744>).",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    if target_kind == "context":
+        failures, _ = await model_agreement(
+            workspace.tracker, classification=CLASSIFICATION
+        )
+        assert failures == ()
+    else:
+        with pytest.raises(AssertionError, match=r"pointer URL differs.*KOD-744"):
+            await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    workspace.read_only()
 
 
 @pytest.mark.live
