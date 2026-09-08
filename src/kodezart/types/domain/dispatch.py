@@ -209,6 +209,16 @@ class DispatchReport(DispatchModel):
     from.  ``None`` on the two outcomes that enqueued nothing — a pass that
     claimed no issue resolved no base, which is a different fact from a
     base that resolved to trunk."""
+    criterion_keys: tuple[str, ...] = ()
+    """The open criterion sub-issues the dispatched fire is FOR.
+
+    Empty for a producer that selects whole issues: its unit of work is the
+    issue, and naming children it never read would be a claim about a gap
+    it did not compute.  A producer that selects over a lane's gap carries
+    exactly the criteria still open, so what the fire was sent to close is
+    readable from the report rather than reconstructed from the board
+    afterwards."""
+
     superseded_base: BaseSpec | None = None
     """The base a PREVIOUS dispatch of this issue recorded, when the graph
     has moved under it since.  ``None`` covers two states deliberately —

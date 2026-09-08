@@ -14,7 +14,7 @@ a skipped one is never recorded as a run.
 from datetime import datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.services.fire_dispatcher import FireDispatcher
+from kodezart.core.protocols import DispatchProducer
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
 from kodezart.services.pass_gate import PassGate
 from kodezart.types.domain.dispatch import DispatchOutcome, PassRun
@@ -27,11 +27,11 @@ class GatedDispatchPass:
         self,
         *,
         gate: PassGate | None,
-        dispatcher: FireDispatcher,
+        dispatcher: DispatchProducer,
         lifecycle: LifecycleWatcher,
     ) -> None:
         self._gate: PassGate | None = gate
-        self._dispatcher: FireDispatcher = dispatcher
+        self._dispatcher: DispatchProducer = dispatcher
         self._lifecycle: LifecycleWatcher = lifecycle
         self._log: BoundLogger = get_logger(__name__)
 

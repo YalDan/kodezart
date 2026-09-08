@@ -25,6 +25,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
     DeliveryProbe,
+    DispatchProducer,
     GitService,
     JobQueue,
     JobRegistry,
@@ -355,7 +356,7 @@ async def build_prompt_passes(
     ]
 
 
-def fire_report(dispatchers: Mapping[str, FireDispatcher]) -> FireReport:
+def fire_report(dispatchers: Mapping[str, DispatchProducer]) -> FireReport:
     """Every dispatcher on the lane hears every finished fire.
 
     The watcher is one object over N repositories and knows nothing about

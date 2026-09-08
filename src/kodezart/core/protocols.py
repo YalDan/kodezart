@@ -14,7 +14,7 @@ from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
 )
 from kodezart.types.domain.criteria import ValidatedCriterion
-from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.dispatch import DispatchReport, PassSignal
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
@@ -37,7 +37,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_records import RunIdentity, RunRecord
+from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -1419,6 +1419,36 @@ class WorkflowEngine(Protocol):
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
+        ...
+
+
+@runtime_checkable
+class DispatchProducer(Protocol):
+    """Selects at most one issue per pass, and hears how its fire ended.
+
+    The seam between a scheduled tick and the arithmetic that decides what
+    goes next.  A tick composes a gate with a producer; it neither ranks a
+    board nor walks a scope, so the two producers that do are one port to
+    it rather than two branches inside it.
+
+    ``record_run_outcome`` is on the same port because the news travels
+    back the way the selection travelled out: the producer that started a
+    fire is the one that has to remember a failure, and a fan-out that had
+    to know which of them did would be a second copy of the routing the
+    passes already compute.
+    """
+
+    async def run_pass(self) -> DispatchReport:
+        """Run one selection pass and report exactly what it did."""
+        ...
+
+    async def record_run_outcome(
+        self,
+        issue_key: str,
+        outcome: RunOutcome,
+        failure_class: str | None,
+    ) -> None:
+        """Take the news that a fire on *issue_key* ended."""
         ...
 
 

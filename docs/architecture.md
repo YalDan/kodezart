@@ -85,6 +85,8 @@ does not exist.
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
 | WorkflowEngine    | AuthoredDeliveryCoordinator | Authored orchestration around the shared fire graph |
 | JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
+| DispatchProducer | FireDispatcher | Ranks an approved scan and launches one fire per pass |
+| DispatchProducer | ScopeDispatcher | Walks a scope's ready set and launches one lane per pass, over criterion sub-issues rather than a deliverable's workflow field |
 | JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
 | PromptProvider    | InRepoPromptRegistry     | Prompt sets as directories of templates              |

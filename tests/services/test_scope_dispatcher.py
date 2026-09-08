@@ -1,0 +1,341 @@
+"""The walker as a dispatch producer: one fire per pass over a live ready set.
+
+Nothing is stubbed between the walk and the queue.  ``ScopeDispatcher`` is
+driven over the shipped ``read_scope_ready`` and the shipped
+``FireDispatcher``, wired exactly as the unscoped tick wires it, so "the
+lane dispatched" is observed as a job on the queue and "the lane was held"
+as a claim that was never spent.
+"""
+
+from kodezart.services.base_resolver import BaseResolver
+from kodezart.services.claim_heartbeat import ClaimHeartbeat
+from kodezart.services.dispatch_pass import GatedDispatchPass
+from kodezart.services.fire_context import FireContextAssembler
+from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
+from kodezart.services.lifecycle_watcher import LifecycleWatcher
+from kodezart.services.pass_gate import PassGate
+from kodezart.services.run_recorder import RunRecorder
+from kodezart.services.scope_dispatcher import ScopeDispatcher
+from kodezart.services.tracker_lifecycle import TrackerLifecycleWriter
+from kodezart.types.domain.branch import WorkRef, WorkRefRole
+from kodezart.types.domain.dispatch import (
+    DispatchOutcome,
+    ExclusionClause,
+    IssueExclusion,
+    PassRun,
+    PassSignal,
+)
+from kodezart.types.domain.job import JobState
+from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.tracker import IssuePriority, WorkflowStateKind
+from tests.fakes import (
+    FIXTURE_EPOCH,
+    FakeDeliveryProbe,
+    FakeGitService,
+    FakeJobQueue,
+    FakeRepoCache,
+    FakeTrackerPort,
+    PassThroughGate,
+    make_tracker_issue,
+)
+from tests.services.test_dispatch_pass import (
+    ASSET_FETCH_TIMEOUT_SECONDS,
+    ASSET_MAX_BYTES,
+    ASSET_MAX_COUNT,
+    HOLDER,
+    INTEGRATION_DIR,
+    LANE,
+    LEASE_SECONDS,
+    PAGE_SIZE,
+    PRIMARY_REPO,
+    RATE_LIMIT_COOLDOWN_SECONDS,
+    REMOTE,
+    RENEWAL_FRACTION,
+    TICK_STARTED_AT,
+    TRUNK,
+    operation_config,
+)
+
+PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="fixture-project")
+CRITERION = frozenset({"criterion"})
+#: The pushed head of every lane branch the fake remote carries.
+DELIVERED_SHA = "a" * 40
+
+
+def lane_issue(
+    key: str,
+    *,
+    priority: IssuePriority = IssuePriority.NONE,
+    blocked_by: tuple[str, ...] = (),
+    state_kind: WorkflowStateKind = WorkflowStateKind.UNSTARTED,
+    state_name: str = "Todo",
+    parent_key: str | None = None,
+):
+    """A deliverable the walk may select: approved, in the project."""
+    return make_tracker_issue(
+        key,
+        priority=priority,
+        blocked_by=blocked_by,
+        state_kind=state_kind,
+        state_name=state_name,
+        parent_key=parent_key,
+        project_id=PROJECT.key,
+    )
+
+
+def criterion(key: str, *, parent: str, met: bool = False):
+    """A criterion sub-issue — never a scan candidate, always a gap member."""
+    return make_tracker_issue(
+        key,
+        parent_key=parent,
+        issue_labels=CRITERION,
+        queue_states=(),
+        state_kind=(
+            WorkflowStateKind.COMPLETED if met else WorkflowStateKind.UNSTARTED
+        ),
+        state_name="Done" if met else "Todo",
+        project_id=PROJECT.key,
+    )
+
+
+def board(*issues, approved=(PROJECT,), **kwargs):
+    """A tracker whose project holds *issues*, the deliverables its members."""
+    return FakeTrackerPort(
+        issues=issues,
+        scope_containers=[
+            ScopeContainer(
+                ref=PROJECT,
+                name="fixture project",
+                description="",
+                url="https://tracker.invalid/p",
+            ),
+        ],
+        scope_memberships={
+            PROJECT: [
+                issue.issue_key
+                for issue in issues
+                if "criterion" not in issue.issue_labels
+            ],
+        },
+        scope_label_members={ref: frozenset({ScopeLabel.APPROVED}) for ref in approved},
+        **kwargs,
+    )
+
+
+def remote_of(tracker):
+    """A fake remote carrying one lane branch per issue on the board."""
+    return FakeGitService(
+        remote_branch_shas={branch_of(key): DELIVERED_SHA for key in tracker.issues},
+    )
+
+
+def branch_of(issue_key):
+    return f"lane/{issue_key}"
+
+
+def walk(tracker, *, delivered=(), git=None, ref=PROJECT):
+    """The shipped walker over the shipped dispatcher's own wiring."""
+    queue = FakeJobQueue()
+    probe = FakeDeliveryProbe(delivered=delivered)
+    dispatcher = FireDispatcher(
+        tracker=tracker,
+        queue=queue,
+        registry=queue,
+        delivery=probe,
+        operation=operation_config(),
+        repo_url=PRIMARY_REPO,
+        lane=LANE,
+        holder=HOLDER,
+        claim_lease_seconds=LEASE_SECONDS,
+        query_page_size=PAGE_SIZE,
+        cooldown=LaneCooldown(cooldown_seconds=RATE_LIMIT_COOLDOWN_SECONDS),
+        assembler=FireContextAssembler(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            max_count=ASSET_MAX_COUNT,
+            max_bytes=ASSET_MAX_BYTES,
+            fetch_timeout_seconds=ASSET_FETCH_TIMEOUT_SECONDS,
+        ),
+        resolver=BaseResolver(
+            tracker=tracker,
+            git=remote_of(tracker) if git is None else git,
+            remote=REMOTE,
+        ),
+        cache=FakeRepoCache(),
+        trunk=TRUNK,
+        integration_workspace_dir=INTEGRATION_DIR,
+    )
+    walker = ScopeDispatcher(ref=ref, tracker=tracker, dispatcher=dispatcher)
+    return walker, queue, probe
+
+
+def close(tracker, criterion_key):
+    """Grade a criterion, exactly as a graded fire's write-back leaves it."""
+    tracker.issues[criterion_key] = tracker.issues[criterion_key].model_copy(
+        update={"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"},
+    )
+
+
+def deliver(tracker, issue_key):
+    """Record the branch a finished fire pushed, as its writer would."""
+    tracker.recorded_work_refs[issue_key] = [
+        WorkRef(
+            issue_id=issue_key,
+            role=WorkRefRole.DELIVERABLE,
+            branch=branch_of(issue_key),
+            pushed_head_sha=DELIVERED_SHA,
+            recorded_at=FIXTURE_EPOCH,
+        ),
+    ]
+
+
+def finish(tracker, queue, report):
+    """Release what a finished fire released: the claim and the job."""
+    tracker.claims.pop(report.claimed_issue_key)
+    queue.mark(report.job_id, JobState.TERMINAL)
+
+
+def enqueued(queue):
+    return [request.issue_key for _, request in queue.submissions]
+
+
+async def test_a_blocked_lane_is_held_across_ticks_until_its_blockers_subtree_closes():
+    """The lane waits on the blocker's CRITERIA, not on the blocker's state."""
+    tracker = board(
+        lane_issue("blocker"),
+        criterion("blocker-check", parent="blocker"),
+        lane_issue("lane", blocked_by=("blocker",)),
+        criterion("lane-check", parent="lane"),
+    )
+    walker, queue, _ = walk(tracker)
+
+    first = await walker.run_pass()
+
+    assert enqueued(queue) == ["blocker"]
+    assert (
+        IssueExclusion(
+            issue_key="lane",
+            clause=ExclusionClause.LIVE_BLOCKER,
+            detail="blocker",
+        )
+        in first.exclusions
+    )
+
+    close(tracker, "blocker-check")
+    deliver(tracker, "blocker")
+    finish(tracker, queue, first)
+    second = await walker.run_pass()
+
+    assert enqueued(queue) == ["blocker", "lane"]
+    assert second.claimed_issue_key == "lane"
+    assert second.criterion_keys == ("lane-check",)
+
+
+async def test_a_done_blocker_parent_with_an_open_criterion_still_blocks_its_lane():
+    """A Done deliverable with an open criterion is a blocker that stands."""
+    tracker = board(
+        lane_issue("blocker"),
+        criterion("blocker-check", parent="blocker"),
+        lane_issue("lane", blocked_by=("blocker",)),
+        criterion("lane-check", parent="lane"),
+    )
+    walker, queue, _ = walk(tracker)
+
+    first = await walker.run_pass()
+    assert enqueued(queue) == ["blocker"]
+
+    tracker.issues["blocker"] = tracker.issues["blocker"].model_copy(
+        update={"state_kind": WorkflowStateKind.COMPLETED, "state_name": "Done"},
+    )
+    deliver(tracker, "blocker")
+    finish(tracker, queue, first)
+    second = await walker.run_pass()
+
+    assert enqueued(queue) == ["blocker", "blocker"]
+    assert "lane" not in tracker.claims
+    assert (
+        IssueExclusion(
+            issue_key="lane",
+            clause=ExclusionClause.LIVE_BLOCKER,
+            detail="blocker",
+        )
+        in second.exclusions
+    )
+
+
+async def test_the_gated_pass_runs_the_scope_dispatcher_and_follows_the_fire():
+    """The tick composes with the walker exactly as it does with the scan."""
+    tracker = board(
+        lane_issue("lane"),
+        criterion("lane-check", parent="lane"),
+    )
+    walker, queue, _ = walk(tracker)
+    lifecycle = LifecycleWatcher(
+        recorder=RunRecorder(records={}, sinks={}),
+        queue=queue,
+        registry=queue,
+        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        heartbeat=ClaimHeartbeat(
+            tracker=tracker,
+            holder=HOLDER,
+            lease_seconds=LEASE_SECONDS,
+            renewal_fraction=RENEWAL_FRACTION,
+        ),
+        report=walker.record_run_outcome,
+    )
+    pass_ = GatedDispatchPass(
+        lifecycle=lifecycle,
+        gate=PassGate(
+            tracker=tracker,
+            ledger=tracker.self_writes,
+            signals=[PassSignal.approved_changed],
+            team_keys=operation_config().team_keys_for_repo(PRIMARY_REPO),
+            repo_urls=[PRIMARY_REPO],
+            page_size=PAGE_SIZE,
+        ),
+        dispatcher=walker,
+    )
+
+    assert await pass_.run(TICK_STARTED_AT) is PassRun.RAN
+
+    assert enqueued(queue) == ["lane"]
+    assert tracker.claims["lane"].holder == HOLDER
+    assert len(lifecycle.following) == 1
+
+
+async def test_a_scope_with_no_ready_lane_enqueues_nothing_and_reports_empty():
+    """Every criterion met is a scope at rest, not a pass with nothing to say."""
+    tracker = board(
+        lane_issue("lane"),
+        criterion("lane-check", parent="lane", met=True),
+        lane_issue("other"),
+        criterion("other-check", parent="other", met=True),
+    )
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.outcome is DispatchOutcome.empty_eligible_set
+    assert report.eligible == ()
+    assert queue.submissions == []
+    assert tracker.claims == {}
+
+
+async def test_ready_selection_makes_no_writes_before_the_claim():
+    """The walk is a read; the claim is the first mark it leaves anywhere."""
+    tracker = board(
+        lane_issue("lane"),
+        criterion("lane-check", parent="lane"),
+        lane_issue("held", blocked_by=("lane",)),
+        criterion("held-check", parent="held"),
+    )
+    walker, _, _ = walk(tracker)
+
+    await walker.run_pass()
+
+    assert tracker.issue_writes == []
+    assert tracker.comment_writes == []
+    assert tracker.queue_writes == []
+    assert tracker.lease_writes == []
+    assert tracker.claim_writes == ["lane"]
