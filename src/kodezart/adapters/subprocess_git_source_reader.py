@@ -42,6 +42,16 @@ class SubprocessGitSourceReader:
     async def read_source(
         self, *, cwd: str, commit_sha: str, path: str
     ) -> GitSourceBlob:
+        source = await self.find_source(cwd=cwd, commit_sha=commit_sha, path=path)
+        if source is None:
+            raise GitSourceReadError(
+                ref=commit_sha, path=path, reason="source path is missing or ambiguous"
+            )
+        return source
+
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
         canonical = PurePosixPath(path)
         if (
             _OBJECT_ID.fullmatch(commit_sha) is None
@@ -64,6 +74,8 @@ class SubprocessGitSourceReader:
             path=path,
             args=("ls-tree", "-z", "--full-tree", commit_sha, "--", path),
         )
+        if not listing:
+            return None
         records = listing.split(b"\x00")
         if len(records) != 2 or records[-1] != b"":
             raise GitSourceReadError(

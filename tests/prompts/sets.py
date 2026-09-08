@@ -90,6 +90,15 @@ EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
             "check": "A behavioral claim.",
         },
     ),
+    "audit_detection_removal": (
+        PromptKey.AUDIT_DETECTION_REMOVAL,
+        {
+            "criterion_key": "external/check",
+            "graded_sha": "graded-commit",
+            "head_sha": "current-commit",
+            "check": "A behavioral claim.",
+        },
+    ),
     "organize_assess": (PromptKey.ORGANIZE_ASSESS, ORGANIZE_CASE),
     "organize_author": (PromptKey.ORGANIZE_AUTHOR, ORGANIZE_CASE),
     "organize_verify": (PromptKey.ORGANIZE_VERIFY, ORGANIZE_CASE),

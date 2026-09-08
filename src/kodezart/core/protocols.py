@@ -112,6 +112,12 @@ class GitSourceReader(Protocol):
         """Read exact regular-file bytes; missing/unsupported objects refuse."""
         ...
 
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
+        """Return None only for a successfully read, absent path at that commit."""
+        ...
+
 
 @runtime_checkable
 class GitService(Protocol):

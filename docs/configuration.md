@@ -427,6 +427,13 @@ The audit claim role is `audit_claim` in both prompt sets. Its `criterion_key`,
 operation configuration. It uses the existing scheduled-session grant and
 configured evaluation policy; no prior session identifier is accepted.
 
+The `audit_detection_removal` role additionally receives `graded_sha` from the
+criterion's current native Evidence. Its complete model-owned output schema
+requires source quotations and a concrete absence demonstration for each
+reported loss of detection. Both prompt sets use their configured evaluative
+policy. No detector-to-mechanism registry is inferred from file names or added
+to operation configuration.
+
 
 ### Inline write-back verification
 

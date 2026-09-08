@@ -656,6 +656,25 @@ settles acquisition, native reads and release through repeated cancellation.
 Callers supply a prompt and output schema and validate the returned structured
 value; the helpers neither inherit prior conclusions nor publish a verdict.
 
+`DetectorRemovalVerifier` composes these readers with the
+`audit_detection_removal` role. The fresh session compares the real graded and
+current revisions, tests the removal counterfactual, and searches for retained,
+moved or replacement detection. Removing a mechanism and its final effective
+test produces a refuted observation; retained detection keeps this particular
+arm quiet even when that test is red. Inconclusive comparisons use the existing
+unverifiable verdict.
+
+Before returning a proposed finding, the consumer re-reads its mechanism and
+test quotations from native baseline blobs and verifies their stated lines.
+It rejects excerpts that still exist at the current path. Native source lookup
+distinguishes an absent file from an unreadable commit or unsupported object.
+The session's semantic counterfactual remains a judgment: exact quotations do
+not prove the absence of all replacement detection. The test fixture executes
+the real current suite and baseline detector at the current head through the
+actual agent/workspace boundary; it does not call a live model. This component
+returns an observation, without scheduling a sweep, completing a mandate hunt,
+writing a refutation or bypassing required writer leases.
+
 
 ## Standing over-claim observations
 
