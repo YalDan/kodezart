@@ -62,6 +62,11 @@ def admission_route(
     return AdmissionRoute.REAUTHOR
 
 
+def is_organize_subject(issue: TrackerIssue) -> bool:
+    """The phase work roster excludes criteria and record-shaped issues."""
+    return not bool(issue.issue_labels & {"criterion", "tracker", "decision"})
+
+
 def organize_gap(
     *,
     revisions: Sequence[TrackerIssueRevision],
@@ -101,7 +106,7 @@ def organize_gap(
     gap: list[TrackerIssue] = []
     for revision in revisions:
         issue = revision.issue
-        if issue.issue_labels & {"criterion", "tracker", "decision"}:
+        if not is_organize_subject(issue):
             continue
         surfaces = (revision, *children.get(issue.issue_key, ()))
         has_lapsed_surface = any(

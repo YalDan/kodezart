@@ -782,11 +782,15 @@ class TrackerPort(Protocol):
         """
         ...
 
-    def require_issue_classification_reads(self) -> None:
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
         """Require semantic criterion, tracker and decision classification.
 
+        Additional semantic keys name other required issue-label mappings.
         Missing configuration refuses before a record issue can be mistaken
-        for a deliverable. This declaration performs no tracker write.
+        for a deliverable or an unmapped phase can appear open. This declaration
+        performs no tracker write.
         """
         ...
 

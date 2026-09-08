@@ -480,6 +480,24 @@ The alarm vocabulary and payload validation are available independently of
 signal computation, supervisor scheduling and leased alarm writes; those
 consumers are not enabled by constructing a model.
 
+`services.scope_tally.observe_scope_tally` reads current native membership and
+strict issue classification twice before computing `tally_unmoved`. Its roster
+uses the same ORGANIZE work-target predicate as the gap: criterion and
+record-shaped issues are excluded without pruning deliverable descendants.
+The governed GROOM → TICKET → CRITERIA sequence selects adjacent configured
+terminal markers independently of table order. A member carrying the next
+marker while fewer than all members carry the current marker returns a scope
+alarm. Missing phase labels count as open; unreadable or changed membership
+and classification refuse. Required semantic mappings must be present, and
+aliased phase or classification markers refuse instead of changing the roster.
+
+The signal retains the exact configuration references, native scope address,
+roster keys and member label projections as readings, so replay needs no port.
+A missing member reading or null/empty marker set counts as open in the pure
+predicate. The final execution transition still requires a native member
+lane-dispatched event reader and explicitly refuses before querying; the lane
+arm, supervisor scheduling and leased alarm publication remain unfinished.
+
 `domain.run_shape.escalation_ageing` measures an unresolved escalation in
 recorded lane commits after its raise SHA and recorded walker ticks since
 raise. Either count exceeding its own AppConfig limit returns the observation;
@@ -522,10 +540,21 @@ The read-only `observe_barren_tick` service uses `read_criteria` and the shared
 criterion gap arithmetic to obtain current closure. Done closes a criterion;
 cancellation or duplication needs an established supersession reference
 supplied by its owning reader. It retains the returned closure projection
-for replay and makes no tracker writes or version-control calls. The prior
-open identities and both diff counts must already be recorded inputs with
-explicit source references. Their collectors, supervisor scheduling and
-leased alarm persistence remain separate work.
+for replay and makes no tracker writes or version-control calls. Its shared
+`read_barren_tick` assembly also retains the exact criterion snapshot used
+for that observation. `observe_recorded_barren_tick` supplies both growth
+counters from an actual `LaneRecordReader` read, carrying the native comment
+identity and that record's head on each projection. It checks the addressed
+comment and complete criterion snapshot again before returning; source drift
+refuses both an alarm and a quiet result. It reads the declared counters
+without inferring them from commit rows or checking their agreement, which
+belongs to the separate record-consistency signal.
+
+The previous tick's open identities and established supersession references
+still require explicit supplied provenance. Their collectors, supervisor
+scheduling and leased alarm persistence remain separate work. These bounded
+record reads do not provide an atomic tracker transaction or an execution
+event stream.
 
 `surface_contended` counts distinct opaque run-holder identities for one
 complete `WritableSurface` address. Three readings carry that address, its
