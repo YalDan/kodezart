@@ -666,6 +666,18 @@ Native and fake tracker fixtures show that duplicate or amended criterion text
 does not change the addressed keys. Evaluator state/body writer adoption and
 the separate model-membership and spec-backend invariants remain unfinished.
 
+`resolve_criterion` is the shared native-key resolver in `criterion_sources`.
+It reads the complete current child family through `TrackerPort.read_criteria`
+and returns the one full `TrackerIssue` with the requested own key. A missing,
+multiple or unreadable match raises `CriterionResolutionError` naming both
+the key and its owning issue; no text matching, checkbox address or cached
+criterion set participates. Duplicate pagination of the same native object is
+still handled by the adapter's existing enumeration contract. Audit claim,
+Evidence, repository-source and forge consumers use this resolver and retain
+their own state eligibility and final source-coherence checks. The generic
+resolver admits every workflow state and performs no write. Leased state and
+Evidence writer adoption remains separate.
+
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone
 membership through the port, including archived issues, and preserves the

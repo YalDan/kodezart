@@ -16,8 +16,9 @@ from kodezart.core.protocols import (
     WorkspaceProvider,
 )
 from kodezart.core.stream_drain import drain
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_remote_head, read_workspace_head
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
@@ -74,17 +75,14 @@ class AuditClaimVerifier:
         self._remote = config.git_remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
-        members = await self._tracker.read_criteria(issue_key=request.lane_issue_key)
-        selected = [row for row in members if row.issue_key == request.criterion_key]
         try:
-            (criterion,) = selected
-        except ValueError as exc:
-            raise AuditClaimReadError(
-                "the lane has no unique requested criterion"
-            ) from exc
-        if criterion.parent_key != request.lane_issue_key:
-            raise AuditClaimReadError("the criterion no longer belongs to the lane")
-        return criterion
+            return await resolve_criterion(
+                tracker=self._tracker,
+                issue_key=request.lane_issue_key,
+                criterion_key=request.criterion_key,
+            )
+        except CriterionResolutionError as exc:
+            raise AuditClaimReadError(str(exc)) from exc
 
     async def verify(self, request: AuditClaimRequest) -> AuditClaimObservation:
         """Judge the current Check at an exact, live remote head in a fresh session."""

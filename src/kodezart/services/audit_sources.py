@@ -9,6 +9,7 @@ from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, Trac
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.repo_observations import ensure_repository
@@ -60,19 +61,11 @@ class AuditSourceReader:
         self._remote = config.git_remote
 
     async def _criterion(self, request: AuditClaimRequest) -> TrackerIssue:
-        rows = await self._tracker.read_criteria(issue_key=request.lane_issue_key)
-        keys = [row.issue_key for row in rows]
-        if len(set(keys)) != len(keys) or any(
-            row.parent_key != request.lane_issue_key
-            or "criterion" not in row.issue_labels
-            for row in rows
-        ):
-            raise ValueError("the current criterion family has ambiguous membership")
-        selected = [row for row in rows if row.issue_key == request.criterion_key]
-        try:
-            (criterion,) = selected
-        except ValueError as exc:
-            raise ValueError("the lane has no unique requested criterion") from exc
+        criterion = await resolve_criterion(
+            tracker=self._tracker,
+            issue_key=request.lane_issue_key,
+            criterion_key=request.criterion_key,
+        )
         if criterion.state_kind is not WorkflowStateKind.COMPLETED and (
             criterion.state_kind is not WorkflowStateKind.STARTED
             or criterion.state_name != self._review_state
