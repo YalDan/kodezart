@@ -197,6 +197,7 @@ class TrackerFeasibilityValidator:
                             agents=NO_SUBAGENTS,
                             session_policy=self._prompts.session_policy(key),
                             session_id=None,
+                            run_identity=request.run_identity,
                             output_format={
                                 "type": "json_schema",
                                 "schema": TRACKER_CRITERIA_VALIDATION_SCHEMA,

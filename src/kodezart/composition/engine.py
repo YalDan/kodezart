@@ -12,6 +12,7 @@ from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.remediation import RemediationChain
+from kodezart.chains.rule_open_questions import TrackerRulingProposer
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.chains.tracker_feasibility import TrackerFeasibilityValidator
@@ -145,7 +146,7 @@ class OriginRoutedWorkflowEngine:
                     criterion_count=len(prepared.criteria),
                 )
                 raise ScopedExecutionUnavailableError(
-                    "Tracker fire ruling and loop execution are not implemented",
+                    "Tracker ruling publication and loop execution are not implemented",
                     ref=resolved.ref,
                 )
             msg = "Scoped graph execution is not implemented"
@@ -288,27 +289,42 @@ def build_workflow_engine(
             artifact_persister=artifact_persister,
         )
 
+    validator = (
+        None
+        if tracker is None
+        else TrackerFeasibilityValidator(
+            tracker=tracker,
+            cache=cache,
+            git=git,
+            workspace=workspace,
+            runner=agent_service,
+            prompts=prompts,
+            skills=skills,
+            config=config,
+        )
+    )
     return OriginRoutedWorkflowEngine(
         forge_arm=arm(github_api),
         forge_less_arm=arm(None),
         tracker=tracker,
         tracker_preparer=None
-        if tracker is None
+        if tracker is None or validator is None
         else AddressedTrackerFirePreparation(
             tracker=tracker,
             operation=operation,
             git=git,
             cache=cache,
             remote=config.git_remote,
-            validator=TrackerFeasibilityValidator(
+            validator=validator,
+            ruling_proposer=TrackerRulingProposer(
                 tracker=tracker,
+                validator=validator,
                 cache=cache,
                 git=git,
                 workspace=workspace,
                 runner=agent_service,
                 prompts=prompts,
                 skills=skills,
-                config=config,
             ),
         ),
     )

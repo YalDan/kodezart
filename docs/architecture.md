@@ -71,6 +71,7 @@ does not exist.
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | TrackerCriteriaValidator | TrackerFeasibilityValidator | Fresh native criterion judgment at an explicitly pinned head |
+| ValidatedRulingProposer | TrackerRulingProposer | Fresh native ruling proposal from the retained feasibility observation |
 | TrackerFirePreparer | AddressedTrackerFirePreparation | Read-only preparation of one addressed ready issue from its verified repository route and recorded base |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
@@ -1053,10 +1054,19 @@ existing deliverable, iteration, recovery or best-iteration refs until scoped
 resume-head selection is implemented. An integration ref remains base provenance.
 
 The preparer pins the actual remote head of the recorded base branch and calls
-the same native feasibility validator through the real `AgentService`. It then
-rereads the repository/base/work refs, complete readiness and remote head, and
-checks the original team identity/binding and declared repository URLs. An observed change
-refuses the prepared result. Cache and remote reads settle owned
+the same native feasibility validator through the real `AgentService`. The
+existing approval and configured criteria-stage check admits the native source;
+no separate staging toggle is introduced. It retains that one `TrackerSpec` and
+feasibility observation for `TrackerRulingProposer.propose_validated`, without a
+second validation or spec capture. Native body/version, approval and complete
+child-family rereads test coherence rather than replacing the captured input.
+
+After feasibility and again after the ruling session, one shared guard rereads
+the repository/base/work refs, complete readiness and remote head, and compares
+the original team identity/binding and declared repository URLs. An observed
+change refuses the prepared result. Both fresh sessions receive the original
+FIRE run identity, so a granted SDK session's Record clause addresses the same
+run row; no session token or run identity is minted at this boundary. Cache and remote reads settle owned
 subprocesses through cancellation, and validation retains the existing detached
 workspace, fresh-session and complete-family guards. Caller prompt text and
 write-capable tools never replace native criterion sources or evaluation tools.
@@ -1064,8 +1074,9 @@ write-capable tools never replace native criterion sources or evaluation tools.
 Both configured and recorded repository routes prepare first-entry fires.
 Scoped resume-head selection, automatic broad-scope dispatch, ruling application,
 leased state/Evidence writes and the native loop remain separate work. After a
-valid observation, the public entry explicitly refuses the unavailable ruling
-and loop graph; it does not dispatch legacy ticket generation or report a
+coherent proposal, including an empty one, the public entry explicitly refuses
+unavailable ruling publication and loop execution. No proposal is treated as a
+publication receipt; it does not dispatch legacy ticket generation or report a
 completed FIRE. The authored entry path retains its existing behavior.
 
 

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequenc
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
-from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.agent import AgentEvent, RulingOutput
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.audit import (
     TrackerArtifact,
@@ -86,6 +86,17 @@ class TrackerCriteriaValidator(Protocol):
     async def validate(
         self, request: TrackerFeasibilityRequest
     ) -> TrackerFeasibilityObservation: ...
+
+
+@runtime_checkable
+class ValidatedRulingProposer(Protocol):
+    """Read-only proposals using an already captured native entry observation."""
+
+    async def propose_validated(
+        self,
+        request: TrackerFeasibilityRequest,
+        observation: TrackerFeasibilityObservation,
+    ) -> RulingOutput: ...
 
 
 @runtime_checkable

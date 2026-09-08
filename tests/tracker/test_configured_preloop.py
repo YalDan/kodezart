@@ -46,9 +46,9 @@ async def test_bound_route_reaches_native_validation_without_marker_authority(
             prepared.repository("https://forge.invalid/later/repository")
 
         prepared.executor.during = move
-    with pytest.raises(ScopedExecutionUnavailableError, match="ruling and loop"):
+    with pytest.raises(ScopedExecutionUnavailableError, match="publication and loop"):
         await prepared.drive()
-    assert len(prepared.executor.calls) == 1
+    assert len(prepared.executor.calls) == 2
     marker_read.assert_not_awaited()
     assert prepared.executor.calls[0]["session_id"] is None
     assert prepared.workspace.calls[0][0] == "acquire"

@@ -89,9 +89,11 @@ async def test_public_entry_validates_actual_recorded_head_in_a_detached_worktre
         assert Path(path, "source.txt").read_text() == "recorded dispatch head\n"
 
     prepared.executor.during = observe
-    with pytest.raises(ScopedExecutionUnavailableError, match="ruling and loop"):
+    prepared.executor.during_ruling = observe
+    with pytest.raises(ScopedExecutionUnavailableError, match="publication and loop"):
         await prepared.drive(repo_url=url)
-    assert len(visited) == 1 and not Path(visited[0]).exists()
+    assert len(visited) == 2 and all(not Path(path).exists() for path in visited)
+    assert len(set(visited)) == 2
     assert acquire.await_args.kwargs["ref"] == dispatch_sha
     assert acquire.await_args.kwargs["create_branch"] is False
     assert not prepared.workspace._workspaces

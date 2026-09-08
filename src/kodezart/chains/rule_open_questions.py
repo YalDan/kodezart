@@ -43,6 +43,11 @@ from kodezart.types.domain.tracker_feasibility import (
 )
 
 
+def _require_commit(request: TrackerFeasibilityRequest) -> None:
+    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", request.head_sha) is None:
+        raise RulingProposalError("a ruling session requires a complete commit SHA")
+
+
 class TrackerRulingProposer:
     """Observe native sources and propose answers without publishing or admitting.
 
@@ -85,10 +90,8 @@ class TrackerRulingProposer:
         self, observation: TrackerFeasibilityObservation
     ) -> dict[str, TrackerIssue]:
         subject = observation.spec.subject
-        if await self._tracker.read_fire_spec(issue_key=subject) != observation.spec:
-            raise RulingProposalError(
-                "the fire specification changed after feasibility"
-            )
+        if not await self._tracker.execution_approved(issue_key=subject):
+            raise RulingProposalError("execution approval is no longer present")
         criteria = tuple(await self._tracker.read_criteria(issue_key=subject))
         if criteria != observation.criteria:
             raise RulingProposalError("the criterion family changed after feasibility")
@@ -96,8 +99,10 @@ class TrackerRulingProposer:
         rows = index_issue_tree(
             root=subject, rows=await self._tracker.scope_issues(ref=ref), ref=ref
         )
-        if rows[subject].body != observation.spec.body or any(
-            rows.get(row.issue_key) != row for row in criteria
+        if (
+            rows[subject].body != observation.spec.body
+            or rows[subject].updated_at.isoformat() != observation.spec.read_at_version
+            or any(rows.get(row.issue_key) != row for row in criteria)
         ):
             raise RulingProposalError(
                 "the native subtree differs from the fire sources"
@@ -106,9 +111,17 @@ class TrackerRulingProposer:
 
     async def propose(self, request: TrackerFeasibilityRequest) -> RulingOutput:
         """Return only coherent proposals; neither writes nor advances the fire."""
-        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", request.head_sha) is None:
-            raise RulingProposalError("a ruling session requires a complete commit SHA")
+        _require_commit(request)
         observation = await self._validator.validate(request)
+        return await self.propose_validated(request, observation)
+
+    async def propose_validated(
+        self,
+        request: TrackerFeasibilityRequest,
+        observation: TrackerFeasibilityObservation,
+    ) -> RulingOutput:
+        """Retain the prepared source; rereads check coherence, never replace it."""
+        _require_commit(request)
         if (
             observation.spec.subject != request.issue_key
             or observation.head_sha != request.head_sha
@@ -181,6 +194,7 @@ class TrackerRulingProposer:
                     agents=NO_SUBAGENTS,
                     session_policy=self._prompts.session_policy(key),
                     session_id=None,
+                    run_identity=request.run_identity,
                     output_format={
                         "type": "json_schema",
                         "schema": RULING_PROPOSAL_SCHEMA,

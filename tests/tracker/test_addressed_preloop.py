@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -16,6 +16,7 @@ from kodezart.domain.errors import (
     TrackerFirePreparationError,
 )
 from kodezart.services.agent_service import AgentService
+from kodezart.types.domain.agent import RULING_PROPOSAL_SCHEMA
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.operation import (
     OperationConfig,
@@ -76,15 +77,32 @@ class NativeExecutor(FakeAgentExecutor):
     """Retain explicit native-key responses instead of the authored fake defaults."""
 
     during = None
+    during_ruling = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ruling_output = {"rulings": [], "unresolvedQuestions": []}
 
     def _is_criteria_validation_schema(self, output_format):
         return False
 
     async def stream(self, **arguments):
-        if self.during is not None:
-            await self.during()
-        async for event in super().stream(**arguments):
-            yield event
+        is_ruling = (
+            arguments.get("output_format", {}).get("schema") == RULING_PROPOSAL_SCHEMA
+        )
+        callback = self.during_ruling if is_ruling else self.during
+        if callback is not None:
+            await callback()
+        original = self._events
+        if is_ruling:
+            self._events = [
+                result_event(subtype="success", structured_output=self.ruling_output)
+            ]
+        try:
+            async for event in super().stream(**arguments):
+                yield event
+        finally:
+            self._events = original
 
 
 @dataclass
@@ -281,18 +299,26 @@ async def test_actual_public_builder_runs_native_preloop_then_refuses_missing_gr
     monkeypatch.setattr(prepared.tracker, "read_fire_spec", read)
     acquire = AsyncMock(wraps=prepared.workspace.acquire)
     monkeypatch.setattr(prepared.workspace, "acquire", acquire)
-    with pytest.raises(ScopedExecutionUnavailableError, match="ruling and loop"):
+    with pytest.raises(ScopedExecutionUnavailableError, match="publication and loop"):
         await prepared.drive()
     read.assert_awaited_once_with(issue_key=ISSUE)
-    assert len(prepared.executor.calls) == 1
-    call = prepared.executor.calls[0]
-    assert BODY in call["prompt"] and TODO in call["prompt"]
-    assert PRIOR not in call["prompt"] and "criterion/fake" not in call["prompt"]
-    assert call["session_id"] is None
-    assert "Edit" not in call["allowed_tools"] and "Write" not in call["allowed_tools"]
-    acquire.assert_awaited_once_with(
-        repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False
-    )
+    assert len(prepared.executor.calls) == 2
+    validation, proposal = prepared.executor.calls
+    assert BODY in validation["prompt"] and TODO in validation["prompt"]
+    assert PRIOR not in validation["prompt"]
+    assert BODY in proposal["prompt"] and PRIOR in proposal["prompt"]
+    for actual in (validation, proposal):
+        assert "criterion/fake" not in actual["prompt"]
+        assert actual["session_id"] is None
+        assert actual["run_identity"] == IDENTITY
+        assert (
+            "Edit" not in actual["allowed_tools"]
+            and "Write" not in actual["allowed_tools"]
+        )
+    assert acquire.await_args_list == [
+        call(repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False),
+        call(repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False),
+    ]
     assert prepared.workspace.calls[-1] == ("release", "/tmp/fake-workspace")
     prepared.no_writes()
 
