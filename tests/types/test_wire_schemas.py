@@ -32,7 +32,7 @@ from kodezart.types.domain.agent import (
     TicketReviewOutput,
 )
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
-from kodezart.types.domain.organize import AdmissionResult
+from kodezart.types.domain.organize import AdmissionJudgment
 from tests.types.schema_nodes import DEFS, schema_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,7 +66,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
-    "ORGANIZE_ADMISSION_SCHEMA": AdmissionResult,
+    "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
 }
 
 

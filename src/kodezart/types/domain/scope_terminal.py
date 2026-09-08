@@ -24,6 +24,9 @@ class ScopeResidualClass(StrEnum):
     FAILING_CRITERION = "failing_criterion"
     LANE_WITHOUT_OPEN_PR = "lane_without_open_pr"
     UNRECORDED_AT_TERMINAL = "unrecorded_at_terminal"
+    CHECK_ENVIRONMENT_PREREQUISITE = "check_environment_prerequisite"
+    CHECK_RED_UNCLASSIFIED = "check_red_unclassified"
+    CHECK_RUN_ABSENT = "check_run_absent"
 
 
 class ScopeRecordKind(StrEnum):

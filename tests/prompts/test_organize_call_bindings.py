@@ -41,6 +41,7 @@ AUTHOR_ROLES = [PromptKey.ORGANIZE_AUTHOR, PromptKey.ORGANIZE_CRITERIA_AUTHOR]
 
 def refusal() -> AdmissionResult:
     return AdmissionResult(
+        admitted_body_digest="revision:one",
         issue_id="external/42",
         verdict=AdmissionVerdict.NOT_BUILDABLE,
         invented_decision="The response fields are unspecified.",

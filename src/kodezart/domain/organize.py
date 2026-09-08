@@ -10,6 +10,17 @@ from kodezart.types.domain.organize import (
 from kodezart.types.domain.tracker import TrackerIssue
 
 
+def is_admission_live(*, admitted_body_digest: str, current_body_digest: str) -> bool:
+    """A judgment applies only to the exact body revision it examined.
+
+    Digests are opaque; this predicate neither normalizes them nor fills a
+    missing one. Reading liveness never changes the original judgment.
+    """
+    if not admitted_body_digest.strip() or not current_body_digest.strip():
+        raise ValueError("admission liveness requires both nonempty body digests")
+    return admitted_body_digest == current_body_digest
+
+
 def admission_route(
     result: AdmissionResult,
     *,

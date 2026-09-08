@@ -25,7 +25,7 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.organize import AdmissionResult
+from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
@@ -950,7 +950,7 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
-ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionResult.model_json_schema()
+ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather

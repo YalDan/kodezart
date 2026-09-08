@@ -20,11 +20,15 @@ def test_admission_verdict_cannot_be_coerced_to_boolean(verdict):
 
 
 def boolean_coercion_lines(source):
-    """Track the two admission types through parameters and local bindings."""
+    """Track admission types through parameters and local bindings."""
     import ast
 
     tree = ast.parse(source)
-    constructors = {"AdmissionVerdict": "verdict", "AdmissionResult": "result"}
+    constructors = {
+        "AdmissionVerdict": "verdict",
+        "AdmissionResult": "result",
+        "AdmissionJudgment": "result",
+    }
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.ImportFrom)
@@ -106,6 +110,7 @@ def test_no_source_call_booleanizes_admission_verdict():
         "bool(AdmissionVerdict.BUILDABLE)",
         "def f(verdict: AdmissionVerdict): return bool(verdict)",
         "def f(result: AdmissionResult): return bool(result.verdict)",
+        "def f(judgment: AdmissionJudgment): return bool(judgment.verdict)",
         (
             "def f(result: AdmissionResult):\n"
             "    verdict = result.verdict\n    return bool(verdict)"
@@ -145,9 +150,12 @@ def test_static_detector_accepts_explicit_comparison_and_unrelated_boolean():
     ],
 )
 def test_admission_result_round_trips_without_changing_verdict(verdict, fields):
+    from pydantic import ValidationError
+
     from kodezart.types.domain.organize import AdmissionResult
 
     result = AdmissionResult(
+        admitted_body_digest="revision:one",
         issue_id="ISSUE-1",
         verdict=AdmissionVerdict(verdict),
         evidence="observed",
@@ -155,6 +163,63 @@ def test_admission_result_round_trips_without_changing_verdict(verdict, fields):
     )
     assert AdmissionResult.model_validate_json(result.model_dump_json()) == result
     assert result.verdict.value == verdict
+    assert result.admitted_body_digest == "revision:one"
+    with pytest.raises(ValidationError, match="frozen"):
+        result.admitted_body_digest = "revision:two"
+
+
+@pytest.mark.parametrize("verdict", list(AdmissionVerdict))
+@pytest.mark.parametrize("digest", [None, "", " \n\t"])
+def test_every_verdict_requires_a_nonempty_admitted_body_digest(verdict, digest):
+    from pydantic import ValidationError
+
+    from kodezart.types.domain.organize import AdmissionResult, RefusalKind
+
+    fields = {
+        "issue_id": "surface/one",
+        "verdict": verdict,
+        "evidence": "Observed.",
+        "invented_decision": "Choose the model.",
+        "missing_artifact": "Schema.",
+        "pending_blocker_id": "blocker/one",
+        "refusal_kind": (
+            RefusalKind.SPEC_GAP if verdict is AdmissionVerdict.NOT_BUILDABLE else None
+        ),
+    }
+    with pytest.raises(ValidationError, match="admitted_body_digest"):
+        AdmissionResult.model_validate({**fields, "admitted_body_digest": digest})
+    with pytest.raises(ValidationError, match="admittedBodyDigest"):
+        AdmissionResult.model_validate(fields)
+
+
+@pytest.mark.parametrize(
+    "admitted,current,expected",
+    [
+        ("revision:one", "revision:one", True),
+        ("revision:one", "revision:two", False),
+        ("revision:one ", "revision:one", False),
+        ("REVISION", "revision", False),
+        ("opaque-not-a-sha", "opaque-not-a-sha", True),
+    ],
+)
+def test_admission_liveness_is_exact_digest_arithmetic(admitted, current, expected):
+    from kodezart.domain.organize import is_admission_live
+
+    assert (
+        is_admission_live(admitted_body_digest=admitted, current_body_digest=current)
+        is expected
+    )
+
+
+@pytest.mark.parametrize("field", ["admitted_body_digest", "current_body_digest"])
+@pytest.mark.parametrize("missing", ["", " \n"])
+def test_liveness_cannot_treat_unavailable_digests_as_live(field, missing):
+    from kodezart.domain.organize import is_admission_live
+
+    fields = {"admitted_body_digest": "revision", "current_body_digest": "revision"}
+    fields[field] = missing
+    with pytest.raises(ValueError, match="nonempty"):
+        is_admission_live(**fields)
 
 
 @pytest.mark.parametrize(
@@ -179,6 +244,7 @@ def test_admission_refusal_requires_actionable_fields(verdict, fields):
         fields = {**fields, "refusal_kind": "spec_gap"}
     with pytest.raises(ValidationError):
         AdmissionResult(
+            admitted_body_digest="revision:one",
             issue_id="ISSUE-1",
             verdict=AdmissionVerdict(verdict),
             evidence="observed",
@@ -296,6 +362,7 @@ def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
             {
                 "issue_id": "ISSUE-1",
                 "verdict": "not_buildable",
+                "admitted_body_digest": "revision:one",
                 "invented_decision": "Choose the storage model.",
                 "evidence": "The specification leaves that choice open.",
                 **extra_fields,
@@ -315,6 +382,7 @@ def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
             {
                 "issue_id": "ISSUE-1",
                 "verdict": verdict,
+                "admitted_body_digest": "revision:one",
                 "missing_artifact": "schema",
                 "pending_blocker_id": "ISSUE-9",
                 "evidence": "Observed on the issue body.",
@@ -331,6 +399,7 @@ def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
         {
             "issue_id": "ISSUE-1",
             "verdict": verdict,
+            "admitted_body_digest": "revision:one",
             "missing_artifact": "schema",
             "pending_blocker_id": "ISSUE-9",
             "evidence": "Observed on the issue body.",
@@ -362,6 +431,7 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
         {
             "issue_id": "ISSUE-1",
             "verdict": "not_buildable",
+            "admitted_body_digest": "revision:one",
             "invented_decision": invented_decision,
             "evidence": "The same evidence is used for either classification.",
             "refusal_kind": refusal_kind,

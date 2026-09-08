@@ -21,6 +21,7 @@ def unverifiable_result(**overrides):
         {
             "issue_id": ISSUE,
             "verdict": AdmissionVerdict.UNVERIFIABLE,
+            "admitted_body_digest": "revision:one",
             "missing_artifact": "The schema produced by the named blocker.",
             "pending_blocker_id": BLOCKER,
             "evidence": "The referenced schema cannot yet be examined.",
@@ -91,6 +92,7 @@ def test_unverifiable_prose_cannot_approve_or_escalate_without_an_edge(evidence)
 @pytest.mark.parametrize("verdict", list(AdmissionVerdict))
 def test_result_cannot_be_routed_using_another_issues_edges(verdict):
     result = AdmissionResult(
+        admitted_body_digest="revision:one",
         issue_id=ISSUE,
         verdict=verdict,
         invented_decision="Choose a storage model.",
@@ -113,6 +115,7 @@ def test_result_cannot_be_routed_using_another_issues_edges(verdict):
 @pytest.mark.parametrize("has_blocker", [False, True])
 def test_buildable_requires_no_pending_blocker_proof(has_blocker):
     result = AdmissionResult(
+        admitted_body_digest="revision:one",
         issue_id=ISSUE,
         verdict=AdmissionVerdict.BUILDABLE,
         evidence="The body can be implemented without inventing a decision.",

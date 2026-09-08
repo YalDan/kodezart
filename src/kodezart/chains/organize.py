@@ -11,9 +11,14 @@ from kodezart.core.protocols import (
 )
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
+from kodezart.domain.organize import is_admission_live
 from kodezart.domain.prompt_variables import organize_variables
 from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, RaiseSite
-from kodezart.types.domain.organize import AdmissionResult, OrganizeAdmissionRequest
+from kodezart.types.domain.organize import (
+    AdmissionJudgment,
+    AdmissionResult,
+    OrganizeAdmissionRequest,
+)
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
@@ -56,10 +61,23 @@ class OrganizeAdmission:
             request, key=PromptKey.ORGANIZE_VERIFY, site="organize_verify"
         )
 
+    async def is_live(self, result: AdmissionResult) -> bool:
+        """Read current revision without dispatching a session or restamping it."""
+        revision = await self._tracker.read_issue_revision(issue_key=result.issue_id)
+        if revision.issue.issue_key != result.issue_id:
+            raise OrganizeAdmissionIdentityError(
+                expected=result.issue_id, observed=revision.issue.issue_key
+            )
+        return is_admission_live(
+            admitted_body_digest=result.admitted_body_digest,
+            current_body_digest=revision.body_digest,
+        )
+
     async def _judge(
         self, request: OrganizeAdmissionRequest, *, key: PromptKey, site: RaiseSite
     ) -> AdmissionResult:
-        subject = await self._tracker.read_issue(issue_key=request.issue_key)
+        revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
+        subject = revision.issue
         linked_keys = sorted(
             {relation.issue_key for relation in subject.relations} - {subject.issue_key}
         )
@@ -127,11 +145,13 @@ class OrganizeAdmission:
                     result_event=result,
                     rate_limit_rejected=rate_limit_rejected,
                 )
-            admission = AdmissionResult.model_validate(result.structured_output)
-            if admission.issue_id != subject.issue_key:
+            judgment = AdmissionJudgment.model_validate(result.structured_output)
+            if judgment.issue_id != subject.issue_key:
                 raise OrganizeAdmissionIdentityError(
-                    expected=subject.issue_key, observed=admission.issue_id
+                    expected=subject.issue_key, observed=judgment.issue_id
                 )
-            return admission
+            return AdmissionResult(
+                **judgment.model_dump(), admitted_body_digest=revision.body_digest
+            )
         finally:
             await self._workspace.release(workspace)

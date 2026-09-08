@@ -11,6 +11,25 @@ class WorkspaceError(Exception):
     """Raised when workspace acquisition or release fails."""
 
 
+class RunShapeReadError(Exception):
+    """Recorded observations cannot establish a run-shape predicate."""
+
+    def __init__(self, *, signal: str, source_ref: str, reason: str) -> None:
+        self.signal = signal
+        self.source_ref = source_ref
+        self.reason = reason
+        super().__init__(f"{signal} cannot read {source_ref!r}: {reason}")
+
+
+class BodyDigestCapabilityError(Exception):
+    """The configured tracker cannot provide stable body revisions."""
+
+    def __init__(self, *, reason: str) -> None:
+        self.capability = "body_digest_stability"
+        self.reason = reason
+        super().__init__(f"required tracker capability {self.capability}: {reason}")
+
+
 class SurfaceLeaseError(Exception):
     """A surface acquisition or write lacks the required live lease.
 
@@ -62,6 +81,22 @@ class StaleWriteError(Exception):
         super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
         self.target = target
         self.expected = expected
+
+
+class EscalationReadError(Exception):
+    """Resolution cannot be established from a readable, unique escalation."""
+
+    def __init__(
+        self, *, issue_key: str, lane_key: str, escalation_key: str, reason: str
+    ) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.escalation_key = escalation_key
+        self.reason = reason
+        super().__init__(
+            f"escalation {escalation_key!r} on {issue_key!r} "
+            f"in lane {lane_key!r} could not be read: {reason}"
+        )
 
 
 class CriterionReadError(Exception):

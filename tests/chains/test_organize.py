@@ -15,6 +15,7 @@ from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
+    AdmissionJudgment,
     AdmissionResult,
     AdmissionVerdict,
     OrganizeAdmissionRequest,
@@ -37,6 +38,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeLinearMcpServer,
@@ -261,7 +263,7 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
             default_set=set_name
         ).session_policy(key)
         assert call["cwd"] == "/tmp/fake-workspace"
-        assert call["output_format"]["schema"] == AdmissionResult.model_json_schema()
+        assert call["output_format"]["schema"] == AdmissionJudgment.model_json_schema()
     attempts = [log for log in logs if log["event"] == "organize_admission_attempt"]
     assert len(attempts) == 2
     for attempt in attempts:
@@ -304,6 +306,167 @@ async def test_verify_rereads_mutated_tracker_bodies_instead_of_reusing_assess_i
     for key in (SUBJECT, "linked/a", "criterion/a"):
         assert f"Fresh {key} body." not in first
         assert f"Fresh {key} body." in second
+
+
+async def test_surface_liveness_reads_never_retest_or_restamp():
+    source = tracker()
+    executor = RecordingExecutor([])
+    workspace = RecordingWorkspace()
+    admission = consumer(source, executor, workspace)
+    keys = (SUBJECT, "criterion/a", "criterion/b")
+    results = {}
+    for key in keys:
+        executor.events = [
+            result(
+                structured_output={
+                    "issue_id": key,
+                    "verdict": "buildable",
+                    "evidence": "Observed.",
+                }
+            )
+        ]
+        results[key] = await admission.assess(
+            request().model_copy(update={"issue_key": key})
+        )
+    original_records = {key: value.model_dump_json() for key, value in results.items()}
+    calls = len(executor.calls)
+    acquired = list(workspace.arguments)
+    original_body = source.issues["criterion/a"].body
+    await source.update_issue(issue_key="criterion/a", body="An amended Check body.")
+    for key in keys:
+        assert await admission.is_live(results[key]) is (key != "criterion/a")
+    assert len(executor.calls) == calls
+    assert workspace.arguments == acquired
+    assert {
+        key: value.model_dump_json() for key, value in results.items()
+    } == original_records
+    assert source.comment_writes == source.workflow_writes == []
+    assert source.issue_creations == []
+
+    executor.events = [
+        result(
+            structured_output={
+                "issue_id": "criterion/a",
+                "verdict": "buildable",
+                "evidence": "Re-tested.",
+            }
+        )
+    ]
+    renewed = await admission.verify(
+        request().model_copy(update={"issue_key": "criterion/a"})
+    )
+    assert renewed.admitted_body_digest != results["criterion/a"].admitted_body_digest
+    assert await admission.is_live(renewed) is True
+    assert await admission.is_live(results["criterion/a"]) is False
+    writes = list(source.issue_writes)
+    assert (
+        await source.edit_description(
+            target="criterion/a",
+            expected=original_body,
+            replacement="An amended Check body.",
+        )
+        is DescriptionEditResult.UNCHANGED
+    )
+    assert await admission.is_live(renewed) is True
+    assert source.issue_writes == writes
+
+
+@pytest.mark.parametrize("method", ["assess", "verify"])
+async def test_body_edit_during_session_does_not_stamp_the_later_revision(method):
+    source = tracker()
+    before = await source.read_issue_revision(issue_key=SUBJECT)
+
+    class EditingExecutor(RecordingExecutor):
+        async def stream(self, **kwargs):
+            await source.update_issue(
+                issue_key=SUBJECT, body="Written after judgment input."
+            )
+            async for event in super().stream(**kwargs):
+                yield event
+
+    executor = EditingExecutor([result()])
+    admission = consumer(source, executor, RecordingWorkspace())
+    judged = await getattr(admission, method)(request())
+    assert judged.admitted_body_digest == before.body_digest
+    assert before.issue.body in executor.calls[0]["prompt"]
+    assert "Written after judgment input." not in executor.calls[0]["prompt"]
+    assert await admission.is_live(judged) is False
+    assert len(executor.calls) == 1
+
+
+async def test_agent_cannot_supply_its_own_revision_metadata():
+    output = {**result().structured_output, "admitted_body_digest": "invented-revision"}
+    workspace = RecordingWorkspace()
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        await consumer(
+            tracker(), RecordingExecutor([result(structured_output=output)]), workspace
+        ).assess(request())
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
+
+
+async def test_liveness_read_refuses_missing_or_mismatched_source_identity():
+    source = tracker()
+    executor = RecordingExecutor([result()])
+    admission = consumer(source, executor, RecordingWorkspace())
+    original = await admission.assess(request())
+    saved_revision = await source.read_issue_revision(issue_key="linked/a")
+
+    async def wrong_revision(**kwargs):
+        return saved_revision
+
+    source.read_issue_revision = wrong_revision
+    with pytest.raises(OrganizeAdmissionIdentityError) as caught:
+        await admission.is_live(original)
+    assert caught.value.expected == SUBJECT
+    assert caught.value.observed == "linked/a"
+
+    async def missing_revision(**kwargs):
+        raise KeyError("missing revision")
+
+    source.read_issue_revision = missing_revision
+    with pytest.raises(KeyError, match="missing revision"):
+        await admission.is_live(original)
+    assert len(executor.calls) == 1
+
+
+@pytest.mark.parametrize("issue_key", [SUBJECT, "criterion/native"])
+async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key):
+    server = FakeLinearMcpServer(
+        issues=[
+            FakeMcpIssue(id=SUBJECT, description="Parent body."),
+            FakeMcpIssue(
+                id="criterion/native",
+                parent_id=SUBJECT,
+                labels=["acceptance-condition"],
+                description="Criterion body.",
+            ),
+        ]
+    )
+    source = tracker_over(server)
+    executor = RecordingExecutor(
+        [
+            result(
+                structured_output={
+                    "issue_id": issue_key,
+                    "verdict": "buildable",
+                    "evidence": "Observed.",
+                }
+            )
+        ]
+    )
+    admission = consumer(source, executor, RecordingWorkspace())
+    judged = await admission.verify(
+        request().model_copy(update={"issue_key": issue_key})
+    )
+    recorded = judged.model_dump_json()
+    assert await admission.is_live(judged) is True
+    await source.post_comment(issue_key=issue_key, body="A later discussion.")
+    await source.update_issue(issue_key=issue_key, title="A later title")
+    assert await admission.is_live(judged) is True
+    await source.update_issue(issue_key=issue_key, body="A later body")
+    assert await admission.is_live(judged) is False
+    assert judged.model_dump_json() == recorded
+    assert len(executor.calls) == 1
 
 
 @pytest.mark.parametrize("method", ["assess", "verify"])
@@ -406,7 +569,10 @@ async def test_all_three_verdicts_return_without_coercion_or_phase_writes(
         RecordingExecutor([result(structured_output=output)]),
         RecordingWorkspace(),
     ).assess(request())
-    assert actual == AdmissionResult.model_validate(output)
+    revision = await source.read_issue_revision(issue_key=SUBJECT)
+    assert actual == AdmissionResult.model_validate(
+        {**output, "admitted_body_digest": revision.body_digest}
+    )
     assert source.workflow_writes == []
 
 

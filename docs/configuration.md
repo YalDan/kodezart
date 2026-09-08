@@ -12,9 +12,18 @@ for configuration. All settings are loaded from environment variables with the
 
 ## Settings Reference
 
+Escalation ageing uses recorded run progress. The implementation defaults
+allow five lane commits or ten walker ticks after a question is raised;
+operators can set either count to zero to observe the first subsequent
+commit or tick. A counter must exceed its configured limit. These settings
+feed the read-only observation service; the supervisor's walker integration
+and leased alarm writer remain separate work.
+
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
 | --------------------------------- | ------------ | ------------------------ | ----------- | -------------------------------------------------------- |
 | `KODEZART_PROJECT_NAME`           | `str`        | `kodezart`               |             | FastAPI application title                                |
+| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_COMMITS` | `int` | `5` | >= 0 | Recorded lane commits allowed after an unanswered escalation's raise SHA. |
+| `KODEZART_RUN_ALARM_ESCALATION_AGE_MAX_TICKS` | `int` | `10` | >= 0 | Recorded walker ticks allowed after an unanswered escalation was raised. |
 | `KODEZART_DEBUG`                  | `bool`       | `false`                  |             | Enables `/docs` and `/redoc` Swagger UI                  |
 | `KODEZART_LOG_LEVEL`              | `str`        | `INFO`                   |             | Logging level (DEBUG, INFO, WARNING, ERROR)              |
 | `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
