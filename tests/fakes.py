@@ -49,7 +49,7 @@ from kodezart.domain.errors import (
     WorkspaceError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
-from kodezart.domain.fire_spec import tracker_spec_from_issues
+from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
@@ -3237,6 +3237,7 @@ class FakeTrackerPort:
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
+        criteria_stage_label_key: str | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
@@ -3263,6 +3264,7 @@ class FakeTrackerPort:
             ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
         self.scope_label_members = dict(scope_label_members or {})
+        self.criteria_stage_label_key = criteria_stage_label_key
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
@@ -3425,6 +3427,9 @@ class FakeTrackerPort:
     def require_scope_plan_reads(self) -> None:
         """Supported: fixture issues retain their semantic label keys."""
 
+    def require_issue_classification_reads(self) -> None:
+        """Supported: criterion and record classifications are explicit facts."""
+
     def require_criterion_reads(self) -> None:
         """Supported: the fake reads independently stored criterion children."""
 
@@ -3502,7 +3507,13 @@ class FakeTrackerPort:
         return container
 
     async def execution_approved(self, *, issue_key: str) -> bool:
-        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
             ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
             if key not in self.issues:
                 raise ScopeReadError("issue is missing", ref=ref)
@@ -3510,6 +3521,11 @@ class FakeTrackerPort:
                 await self.read_issue(issue_key=key),
                 ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
             )
+
+        subject = await hydrate(issue_key)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == issue_key else await hydrate(key)
 
         async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
             await asyncio.sleep(0)
@@ -3523,11 +3539,12 @@ class FakeTrackerPort:
                 container.parent,
             )
 
-        return await resolve_execution_approval(
+        approved = await resolve_execution_approval(
             issue_key=issue_key,
             read_issue=read_issue,
             read_container=read_container,
         )
+        return subject[0], approved
 
     async def create_issue(
         self,
@@ -3563,17 +3580,33 @@ class FakeTrackerPort:
         return criteria
 
     async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
-        subject, criteria = await self._read_criterion_family(issue_key=issue_key)
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        subject, approved = await self._read_execution_approval(issue_key=issue_key)
+        require_fire_entry(
+            subject=subject,
+            approved=approved,
+            criteria_stage_label_key=self.criteria_stage_label_key,
+        )
+        _, criteria = await self._read_criterion_family(
+            issue_key=issue_key, subject=subject
+        )
         return tracker_spec_from_issues(subject=subject, criteria=criteria)
 
     async def _read_criterion_family(
-        self, *, issue_key: str
+        self, *, issue_key: str, subject: TrackerIssue | None = None
     ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
         if issue_key not in self.issues:
             raise CriterionReadError(
                 issue_key=issue_key, reason="parent issue is absent"
             )
-        parent = await self.read_issue(issue_key=issue_key)
+        parent = (
+            subject
+            if subject is not None
+            else await self.read_issue(issue_key=issue_key)
+        )
         return parent, tuple(
             sorted(
                 (

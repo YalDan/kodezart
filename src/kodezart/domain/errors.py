@@ -253,6 +253,15 @@ class CriterionReadError(Exception):
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
 
 
+class FireSpecEntryError(Exception):
+    """The current subject lacks its machine completion or human approval."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
+
+
 class EmptyFireCriteriaError(Exception):
     """A successful tracker spec read found no criterion sub-issues."""
 
@@ -338,6 +347,18 @@ class ScopePlanRefusalError(ScopeReadError):
                 )
             )
         super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+
+class ScopeSupersessionReadError(ScopeReadError):
+    """Readiness needs a cancellation reference without an established reader."""
+
+    def __init__(self, *, ref: ScopeRef, criterion_keys: Sequence[str]) -> None:
+        self.criterion_keys = tuple(criterion_keys)
+        super().__init__(
+            "criterion supersession resolution is unavailable: "
+            + ", ".join(self.criterion_keys),
+            ref=ref,
+        )
 
 
 class ScopedExecutionUnavailableError(Exception):

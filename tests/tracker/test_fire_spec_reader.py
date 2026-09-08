@@ -12,7 +12,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.fire_spec import TrackerSpec
 from tests.fakes import FakeLinearMcpServer, FakeMcpIssue, FakeTrackerPort
-from tests.tracker.conftest import FIXTURE_NOW, fixture_server
+from tests.tracker.conftest import FIRE_ENTRY_LABELS, FIXTURE_NOW, fixture_server
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 SUBJECT = "subject/42"
@@ -25,7 +25,12 @@ BODY = "**Outcome:** Preserve this tracker-native text.\n\nIt is not a ticket dr
 def server():
     server = fixture_server()
     issues = [
-        FakeMcpIssue(id=SUBJECT, description=BODY, updated_at=FIXTURE_NOW),
+        FakeMcpIssue(
+            id=SUBJECT,
+            labels=FIRE_ENTRY_LABELS,
+            description=BODY,
+            updated_at=FIXTURE_NOW,
+        ),
         FakeMcpIssue(
             id=CRITERION,
             parent_id=SUBJECT,
@@ -35,7 +40,9 @@ def server():
         FakeMcpIssue(id="ordinary/1", parent_id=SUBJECT),
         FakeMcpIssue(id="grandchild/1", parent_id=CRITERION, labels=[LABEL]),
         FakeMcpIssue(
-            id="empty/1", description="- [x] A parent checkbox is not a child."
+            id="empty/1",
+            labels=FIRE_ENTRY_LABELS,
+            description="- [x] A parent checkbox is not a child.",
         ),
     ]
     server.issues.update({issue.id: issue for issue in issues})
@@ -87,7 +94,7 @@ async def test_a_spec_read_hydrates_its_subject_exactly_once(tracker, server):
 
 async def test_incomplete_child_listing_is_not_an_empty_spec():
     server = FakeLinearMcpServer(
-        issues=[FakeMcpIssue(id=SUBJECT)],
+        issues=[FakeMcpIssue(id=SUBJECT, labels=FIRE_ENTRY_LABELS)],
         tool_errors={"list_issues": "unavailable"},
     )
     with pytest.raises(CriterionReadError):
@@ -104,7 +111,12 @@ async def test_subject_changed_during_membership_read_does_not_mix_text_and_vers
 
     server = ChangingParentServer(
         issues=[
-            FakeMcpIssue(id=SUBJECT, description=BODY, updated_at=FIXTURE_NOW),
+            FakeMcpIssue(
+                id=SUBJECT,
+                labels=FIRE_ENTRY_LABELS,
+                description=BODY,
+                updated_at=FIXTURE_NOW,
+            ),
             FakeMcpIssue(
                 id=CRITERION,
                 parent_id=SUBJECT,
@@ -190,7 +202,7 @@ async def test_check_content_is_read_without_rewriting_criterion_or_parent(
 async def test_unknown_backend_state_refuses_at_spec_read_without_guessing_by_name():
     server = FakeLinearMcpServer(
         issues=[
-            FakeMcpIssue(id=SUBJECT, description=BODY),
+            FakeMcpIssue(id=SUBJECT, labels=FIRE_ENTRY_LABELS, description=BODY),
             FakeMcpIssue(
                 id=CRITERION,
                 parent_id=SUBJECT,

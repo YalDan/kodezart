@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Mapping, Sequence
 
-from kodezart.domain.dispatch import blocker_keys, live_blocker
+from kodezart.domain.dispatch import blocker_keys
 from kodezart.domain.errors import ScopeCycleError
 from kodezart.types.domain.topology import BlockedIssue, ReadyIssue, TopologyPlan
 from kodezart.types.domain.tracker import TrackerIssue, is_open, priority_rank
@@ -43,6 +43,7 @@ def plan_topology(
     *,
     issues: Sequence[TrackerIssue],
     candidate_keys: frozenset[str],
+    blocking_issue_keys: frozenset[str] | None = None,
 ) -> TopologyPlan:
     """Rank candidates with no open blocker by effective priority, then age.
 
@@ -58,6 +59,10 @@ def plan_topology(
     blockers do not prevent readiness. Only ``blockedBy`` relations count;
     parentage and reverse/related edges never manufacture a dependency.
 
+    A caller with live subtree closure supplies ``blocking_issue_keys``.
+    That path never consults a blocker's workflow state. Omitting it retains
+    the issue-state rule used by the older unscoped dispatcher.
+
     Exact priority/age ties retain snapshot order. No future lane order or
     concurrency limit is computed: the walker takes one fire and re-reads.
     """
@@ -70,6 +75,8 @@ def plan_topology(
     if unknown_candidates:
         names = ", ".join(sorted(unknown_candidates))
         raise ValueError(f"candidate issues absent from topology snapshot: {names}")
+    if blocking_issue_keys is not None and blocking_issue_keys - by_key.keys():
+        raise ValueError("blocking issues absent from topology snapshot")
     graph = {
         key: tuple(dict.fromkeys(blocker_keys(issue))) for key, issue in by_key.items()
     }
@@ -92,17 +99,22 @@ def plan_topology(
     for key, issue in by_key.items():
         if key not in candidate_keys:
             continue
-        if live_blocker(issue, blockers=by_key) is None:
+        live = tuple(
+            blocker
+            for blocker in graph[key]
+            if (
+                is_open(by_key[blocker].state_kind)
+                if blocking_issue_keys is None
+                else blocker in blocking_issue_keys
+            )
+        )
+        if not live:
             ready.append(ReadyIssue(issue=issue, effective_priority=effective[key]))
         else:
             blocked.append(
                 BlockedIssue(
                     issue_key=key,
-                    blocker_keys=tuple(
-                        blocker
-                        for blocker in graph[key]
-                        if is_open(by_key[blocker].state_kind)
-                    ),
+                    blocker_keys=live,
                 ),
             )
     ready.sort(

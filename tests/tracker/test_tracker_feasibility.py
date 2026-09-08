@@ -35,7 +35,7 @@ from tests.fakes import (
 )
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
-from tests.tracker.conftest import FIXTURE_NOW, fixture_server
+from tests.tracker.conftest import FIRE_ENTRY_LABELS, FIXTURE_NOW, fixture_server
 from tests.tracker.test_audit_claim import result_event
 
 SUBJECT = "subject/42"
@@ -68,7 +68,7 @@ def output(**changes):
 def server():
     server = fixture_server()
     server.issues[SUBJECT] = FakeMcpIssue(
-        id=SUBJECT, description=BODY, updated_at=FIXTURE_NOW
+        id=SUBJECT, labels=FIRE_ENTRY_LABELS, description=BODY, updated_at=FIXTURE_NOW
     )
     server.state_types["Todo"] = "unstarted"
     for index, key in enumerate((*KEYS, DONE)):

@@ -15,7 +15,8 @@ import pytest
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
     FakeLinearMcpServer,
@@ -28,6 +29,11 @@ from tests.fakes import (
 from tests.tracker.marker_config import MARKER_PREFIXES
 
 FIXTURE_NOW: datetime = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+
+FIRE_SCOPE_LABEL = "execution-consent"
+FIRE_STAGE_LABEL = "criteria-prepared"
+FIRE_STAGE_KEY = "criteria_ready"
+FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]
 
 APPROVER = "fixture-approver"
 BYSTANDER = "fixture-bystander"
@@ -203,8 +209,14 @@ def linear_over_fake_mcp(
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
         marker_prefixes=MARKER_PREFIXES,
-        issue_labels={"criterion": "acceptance-condition"},
-        scope_labels=scope_labels if scope_labels is not None else {},
+        issue_labels={
+            "criterion": "acceptance-condition",
+            FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
+        },
+        criteria_stage_label_key=FIRE_STAGE_KEY,
+        scope_labels=scope_labels
+        if scope_labels is not None
+        else {"approved": FIRE_SCOPE_LABEL},
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -275,7 +287,14 @@ async def fake_port_over_fixture(server: FakeLinearMcpServer) -> TrackerPort:
     for. Use pytest's loop: an ``asyncio.run`` here displaces its current
     loop and can leak that loop's selector sockets between cases.
     """
-    return await _snapshot(linear_over_fake_mcp(server))
+    port = await _snapshot(linear_over_fake_mcp(server))
+    port.criteria_stage_label_key = FIRE_STAGE_KEY
+    port.scope_label_members = {
+        ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
+        for key, issue in server.issues.items()
+        if FIRE_SCOPE_LABEL in issue.labels
+    }
+    return port
 
 
 #: Real adapters — every one must serve the fixture workspace unchanged.
