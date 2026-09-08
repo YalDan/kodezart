@@ -562,6 +562,16 @@ reset the baseline. The actual ruling node, verified leased artifact writes,
 lane-membership producer and persisted window advancement remain separate
 implementation work.
 
+The criterion-lifecycle code conformance module checks both identity owners:
+`CriterionRef` is constructed by the full tracker-spec reader and `RulingId`
+by the ruling mint. Its shared static guard covers direct, qualified, imported
+and assigned constructor aliases, including calls in function headers. Ruling
+address fields retain the minted type through containers and forward references;
+text, other untyped values and rebinding the identity name fail the guard.
+Native and fake tracker fixtures show that duplicate or amended criterion text
+does not change the addressed keys. Evaluator state/body writer adoption and
+the separate model-membership and spec-backend invariants remain unfinished.
+
 `structural_write_uncrosses_milestone` compares complete lane membership
 snapshots. The collector reads both the fire subtree and native milestone
 membership through the port, including archived issues, and preserves the
