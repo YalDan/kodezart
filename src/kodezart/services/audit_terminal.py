@@ -1,8 +1,6 @@
 """Read actual tracker/forge terminal facts without requiring a merge."""
 
-import asyncio
-
-from kodezart.core.owned_tasks import finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, PRStateReader, RepoCache, TrackerPort
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.lane_records import LaneRecordReader
@@ -55,13 +53,9 @@ class AuditTerminalReader:
         return tuple(sorted(rows, key=lambda row: row.issue_key))
 
     async def _head(self, repository: str, branch: str) -> str | None:
-        observed, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._git.remote_branch_sha(repository, self._remote, branch)
-            )
+        observed = await settle(
+            self._git.remote_branch_sha(repository, self._remote, branch)
         )
-        if cancelled:
-            raise asyncio.CancelledError
         if observed is not None and not observed.strip():
             raise AuditClaimReadError("remote branch returned an empty commit identity")
         return observed

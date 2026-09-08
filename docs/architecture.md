@@ -1055,3 +1055,16 @@ logs it once and stops. Legacy marker reads and releases remain available.
 The shared claim contract permits unsupported refusal only before mutation;
 capable test doubles still exercise grant, renewal, expiry and replay behavior.
 This does not implement surface-set leases or provide a native fencing token.
+
+### Owned resource operations
+
+`settle` finishes one owned operation before propagating repeated caller
+cancellation. Read-only audit and admission workspaces use `owned_workspace`
+to finish acquisition, release the exact acquired path even if cancellation
+arrived before entry, and settle release on every exit. Integrity checks and
+fresh session policy stay inside each caller's workspace lifetime.
+
+`finish_owned` still returns the cancellation flag where a caller must first
+record acquisition or retain cleanup-error precedence: scratch worktree
+creation, process startup, tracker boot and application shutdown. Those cases
+cannot propagate cancellation immediately after acquisition.

@@ -1,9 +1,8 @@
 """Native criterion, grading and branch snapshots for revision-reading audits."""
 
-import asyncio
 from dataclasses import dataclass
 
-from kodezart.core.owned_tasks import finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
 from kodezart.domain.errors import AuditEvidenceReadError
@@ -112,9 +111,7 @@ class AuditSourceReader:
                     raise ValueError("the graded commit is not on the recorded branch")
                 return head
 
-            head, cancelled = await finish_owned(asyncio.create_task(resolve()))
-            if cancelled:
-                raise asyncio.CancelledError
+            head = await settle(resolve())
             snapshot = AuditSourceSnapshot(
                 request=request,
                 criterion=criterion,

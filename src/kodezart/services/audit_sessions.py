@@ -1,11 +1,10 @@
 """Owned fresh read-only execution shared by concrete audit consumers."""
 
-import asyncio
 import re
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
-from kodezart.core.owned_tasks import finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -15,6 +14,7 @@ from kodezart.core.protocols import (
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -41,11 +41,7 @@ class FreshAuditSession:
         self._skills = skills
 
     async def _require_head(self, workspace: str, head_sha: str) -> None:
-        replacements, cancelled = await finish_owned(
-            asyncio.create_task(self._git.has_replace_refs(workspace))
-        )
-        if cancelled:
-            raise asyncio.CancelledError
+        replacements = await settle(self._git.has_replace_refs(workspace))
         if replacements:
             raise AuditClaimReadError("the audit repository substitutes Git objects")
         if await read_workspace_head(git=self._git, workspace=workspace) != (
@@ -71,16 +67,9 @@ class FreshAuditSession:
         """
         if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head_sha) is None:
             raise AuditClaimReadError("an audit session needs a complete commit SHA")
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_path=repository, ref=head_sha, create_branch=False
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace, repo_path=repository, ref=head_sha
+        ) as workspace:
             await self._require_head(workspace, head_sha)
             result, rate_limited = await drain(
                 self._runner.stream_in_workspace(
@@ -111,9 +100,3 @@ class FreshAuditSession:
                 )
             await self._require_head(workspace, head_sha)
             return result.structured_output
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError

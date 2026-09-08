@@ -279,6 +279,7 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
         workspace.arguments
         == [
             {
+                "repo_path": None,
                 "repo_url": REPO,
                 "ref": BASE,
                 "create_branch": False,

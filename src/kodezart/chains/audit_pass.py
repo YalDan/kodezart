@@ -1,11 +1,9 @@
 """Fresh current-head claim judgments, before full sweep publication."""
 
-import asyncio
 import json
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
-from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     GitService,
@@ -24,6 +22,7 @@ from kodezart.services.git_observations import (
     read_workspace_head,
 )
 from kodezart.services.lane_records import LaneRecordReader
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
@@ -112,18 +111,9 @@ class AuditClaimVerifier:
         prompt = self._prompts.template_for(key).render(
             {"criterion_key": criterion.issue_key, "head_sha": head, "check": check}
         )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_path=repository,
-                    ref=head,
-                    create_branch=False,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace, repo_path=repository, ref=head
+        ) as workspace:
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the audit repository substitutes Git objects"
@@ -195,12 +185,6 @@ class AuditClaimVerifier:
                 record_ref=comment.comment_key,
                 check=check,
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError
 
 
 class AuditMandateHunt:
@@ -274,19 +258,12 @@ class AuditMandateHunt:
                 finding_surface=None,
                 evidence="The addressed surface set could not be fully read.",
             )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_url=request.repo_url,
-                    ref=request.head_sha,
-                    create_branch=False,
-                    cache_key=request.cache_key,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.head_sha,
+            cache_key=request.cache_key,
+        ) as workspace:
             if await read_replace_refs(git=self._git, workspace=workspace):
                 raise AuditClaimReadError(
                     "the mandate repository substitutes Git objects"
@@ -399,9 +376,3 @@ class AuditMandateHunt:
                 finding_surface=finding_surface,
                 evidence=judgment.evidence,
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError

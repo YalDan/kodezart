@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from kodezart.core.owned_tasks import finish_owned as _finish_owned
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import CheckChainRunner, GitService
 from kodezart.domain import check_chain
 from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
@@ -88,14 +89,12 @@ class UnionComposition:
                     raise asyncio.CancelledError
                 for head in snapshot.lane_heads:
                     try:
-                        _, cancelled = await _finish_owned(
-                            asyncio.create_task(
-                                self._git.merge_scratch_head(
-                                    cwd=worktree,
-                                    head_sha=head.head_sha,
-                                    author_name=self._author_name,
-                                    author_email=self._author_email,
-                                )
+                        await settle(
+                            self._git.merge_scratch_head(
+                                cwd=worktree,
+                                head_sha=head.head_sha,
+                                author_name=self._author_name,
+                                author_email=self._author_email,
                             )
                         )
                     except MergeConflictError as exc:
@@ -120,8 +119,6 @@ class UnionComposition:
                             git=self._git, repository=repo_path, scope_key=scope_key
                         )
                         return result
-                    if cancelled:
-                        raise asyncio.CancelledError
                 if not repo.checks:
                     raise CheckChainExecutionError(
                         cwd=worktree,
@@ -156,18 +153,8 @@ class UnionComposition:
                 )
             finally:
                 if created or self._git.is_repo(worktree):
-                    _, cancelled = await _finish_owned(
-                        asyncio.create_task(
-                            self._git.remove_worktree(repo_path, worktree)
-                        )
-                    )
-                    if cancelled:
-                        raise asyncio.CancelledError
+                    await settle(self._git.remove_worktree(repo_path, worktree))
 
     async def _scratch_sha(self, worktree: str) -> str:
-        sha, cancelled = await _finish_owned(
-            asyncio.create_task(self._git.current_sha(worktree))
-        )
-        if cancelled:
-            raise asyncio.CancelledError
+        sha = await settle(self._git.current_sha(worktree))
         return sha

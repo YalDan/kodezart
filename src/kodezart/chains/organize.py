@@ -1,11 +1,8 @@
 """Tracker-backed admission sessions, independent on every assess and verify call."""
 
-import asyncio
-
 from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     AgentRunner,
     PromptSetProvider,
@@ -16,6 +13,7 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import is_admission_live
 from kodezart.domain.prompt_variables import organize_variables
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, RaiseSite
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
@@ -103,19 +101,12 @@ class OrganizeAdmission:
                 "base_ref": request.base_ref,
             }
         )
-        workspace, cancelled = await finish_owned(
-            asyncio.create_task(
-                self._workspace.acquire(
-                    repo_url=request.repo_url,
-                    ref=request.base_ref,
-                    create_branch=False,
-                    cache_key=request.cache_key,
-                )
-            )
-        )
-        try:
-            if cancelled:
-                raise asyncio.CancelledError
+        async with owned_workspace(
+            self._workspace,
+            repo_url=request.repo_url,
+            ref=request.base_ref,
+            cache_key=request.cache_key,
+        ) as workspace:
             await self._log.ainfo(
                 "organize_admission_attempt",
                 issue_key=subject.issue_key,
@@ -162,9 +153,3 @@ class OrganizeAdmission:
             return AdmissionResult(
                 **judgment.model_dump(), admitted_body_digest=revision.body_digest
             )
-        finally:
-            _, cancelled = await finish_owned(
-                asyncio.create_task(self._workspace.release(workspace))
-            )
-            if cancelled:
-                raise asyncio.CancelledError

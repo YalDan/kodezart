@@ -382,7 +382,11 @@ async def test_actual_agent_service_forwards_fresh_dispatch_and_detached_workspa
     observation = await verifier.verify(REQUEST)
     assert observation.judgment.verdict is AuditVerdict.HOLDS
     acquire.assert_awaited_once_with(
-        repo_path="/tmp/fake-cache", ref=HEAD, create_branch=False
+        repo_path="/tmp/fake-cache",
+        repo_url=None,
+        ref=HEAD,
+        create_branch=False,
+        cache_key=None,
     )
     (call,) = executor.calls
     assert call["session_id"] is None
