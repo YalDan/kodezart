@@ -122,6 +122,23 @@ the opened transport before mapping reconciliation or execution can start.
 The declaration itself performs no writes or lease acquisition. Scope-walker
 dispatch remains a separate unfinished consumer of this mandatory boot boundary.
 
+`read_scope_plan` applies native stage barriers at the actual scoped engine
+entry before any execution arm is selected. Its `require_scope_plan_reads`
+declaration requires semantic criterion and decision mappings; a missing mapping
+cannot turn an open decision into an empty set. The shared `read_scope_members`
+reader preserves direct criterion children even when container filtering omits
+them, and serves audit collection as well as planning.
+
+Planning follows all referenced issue dependencies, rechecks outside dependency
+facts and the scope family, and refuses changed observations. Open decisions,
+backlog-kind criteria and criterion edges leaving their parent's subtree yield
+`ScopePlanRefusalError` with the offending native keys. Existing topology
+arithmetic owns cycle detection. A successful snapshot is not approval or a
+ready-set claim: approval-qualified selection, full walker dispatch and pre-loop
+criterion revalidation remain separate. Valid scoped entries still raise the
+explicit unavailable-walker error, while invalid scopes now fail earlier with
+their measured stage-barrier reasons.
+
 `LaneRecordReader` reads the owning issue's complete comment listing through
 `TrackerPort`, locates the exact configured `marker_prefixes.run_state` marker,
 and returns the native comment and decoded `LaneRunState` from that same read.

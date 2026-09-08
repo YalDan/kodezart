@@ -32,7 +32,7 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
-from kodezart.services.scope_resolution import resolve_scope
+from kodezart.services.scope_planning import read_scope_plan
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.run_records import RunIdentity
@@ -109,7 +109,8 @@ class OriginRoutedWorkflowEngine:
             if self._tracker is None:
                 msg = "Scoped execution requires a configured tracker"
                 raise ScopedExecutionUnavailableError(msg, ref=scope)
-            resolved = await resolve_scope(ref=scope, tracker=self._tracker)
+            plan = await read_scope_plan(ref=scope, tracker=self._tracker)
+            resolved = plan.scope
             await self._log.ainfo(
                 "workflow_scope_resolved",
                 scope_kind=resolved.ref.kind.value,

@@ -3419,6 +3419,9 @@ class FakeTrackerPort:
         self.issue_reads.append(issue_key)
         return self.issues[issue_key]
 
+    def require_scope_plan_reads(self) -> None:
+        """Supported: fixture issues retain their semantic label keys."""
+
     def require_criterion_reads(self) -> None:
         """Supported: the fake reads independently stored criterion children."""
 

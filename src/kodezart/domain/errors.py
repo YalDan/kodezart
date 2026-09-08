@@ -310,6 +310,36 @@ class ScopeReadError(Exception):
         self.ref: ScopeRef = ref
 
 
+class ScopePlanRefusalError(ScopeReadError):
+    """Live scope facts violate the stage barrier before dispatch can begin."""
+
+    def __init__(
+        self,
+        *,
+        ref: ScopeRef,
+        open_decisions: Sequence[str],
+        backlog_criteria: Sequence[str],
+        cross_subtree_edges: Sequence[tuple[str, str]],
+    ) -> None:
+        self.open_decisions = tuple(open_decisions)
+        self.backlog_criteria = tuple(backlog_criteria)
+        self.cross_subtree_edges = tuple(cross_subtree_edges)
+        details = []
+        if self.open_decisions:
+            details.append("open decisions: " + ", ".join(self.open_decisions))
+        if self.backlog_criteria:
+            details.append("backlog-kind criteria: " + ", ".join(self.backlog_criteria))
+        if self.cross_subtree_edges:
+            details.append(
+                "cross-subtree criterion edges: "
+                + ", ".join(
+                    f"{source} -> {target}"
+                    for source, target in self.cross_subtree_edges
+                )
+            )
+        super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+
 class ScopedExecutionUnavailableError(Exception):
     """An addressed scope cannot execute through the legacy workflow pipeline."""
 

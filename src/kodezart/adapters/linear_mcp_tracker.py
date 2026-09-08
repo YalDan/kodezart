@@ -624,6 +624,15 @@ class LinearMcpTracker:
         """The full issue — body, state, relations, parent, assignee."""
         return self._to_issue(await self._read_issue_wire(issue_key))
 
+    def require_scope_plan_reads(self) -> None:
+        """A clean plan must be able to see both criteria and open decisions."""
+        for classification in ("criterion", "decision"):
+            if classification not in self._issue_labels:
+                raise OperationMemberAbsentError(
+                    missing=f"issue_labels[{classification!r}]",
+                    stops="scope plan barriers cannot be read",
+                )
+
     def require_criterion_reads(self) -> None:
         """Supported: read_criteria hydrates the issue's criterion children."""
 

@@ -770,6 +770,14 @@ class TrackerPort(Protocol):
         """The full issue — body, state, relations, parent, assignee."""
         ...
 
+    def require_scope_plan_reads(self) -> None:
+        """Require semantic criterion and decision reads before scope planning.
+
+        Missing configuration or capability raises rather than projecting an
+        empty decision set. This declaration performs no tracker write.
+        """
+        ...
+
     def require_criterion_reads(self) -> None:
         """Require criterion-child reads before boot can enable execution.
 
