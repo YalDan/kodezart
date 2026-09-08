@@ -8,13 +8,17 @@ extending, and a marker the log does not answer with.
 """
 
 import asyncio
-from collections.abc import Mapping
+from collections import deque
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 
 import pytest
 
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
+from kodezart.domain.errors import SurfaceLeaseError
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeLinearMcpServer
 from tests.tracker.conftest import CLAIMED_ISSUE, FIXTURE_NOW, fixture_server
@@ -225,3 +229,158 @@ async def test_renewal_edits_the_marker_in_place_and_keeps_its_order() -> None:
     assert [call for call in server.tool_calls("save_comment") if "id" in call] == [
         {"id": marker.id, "body": server.comments[0].body}
     ]
+
+
+class _InTurn:
+    """Land the creations in a stated order, whoever asks for one first.
+
+    Both holders write a multi-target set in the same canonical order, so
+    the split — each of them earliest on a different target — needs the
+    creations themselves interleaved. The order is stated as the sequence
+    of holders whose writes land, and a holder that never gets its turn
+    fails the case rather than hanging it.
+    """
+
+    #: Loop turns a waiting holder is given before the case is called stuck.
+    SPINS = 1000
+
+    def __init__(self, server: FakeLinearMcpServer, *, order: Sequence[str]) -> None:
+        self._server = server
+        self._order = deque(order)
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "save_comment" and "id" not in arguments:
+            holder = _holder_of(str(arguments["body"]))
+            for _ in range(self.SPINS):
+                if self._order and self._order[0] == holder:
+                    break
+                await asyncio.sleep(0)
+            else:
+                raise AssertionError(f"{holder} never reached its turn to write")
+            self._order.popleft()
+        return await self._server.call_tool(name=name, arguments=arguments)
+
+
+def _holder_of(body: str) -> str:
+    """The holder a marker body declares."""
+    for line in body.splitlines():
+        if line.startswith("holder: "):
+            return line.removeprefix("holder: ")
+    raise AssertionError(f"no holder in {body!r}")
+
+
+CONTAINER = WritableSurface(
+    kind=SurfaceKind.CONTAINER_DESCRIPTION,
+    ref=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
+)
+ISSUE_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+)
+MARKER_A = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+    marker="A",
+)
+MARKER_B = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+    marker="B",
+)
+
+
+async def test_holders_earliest_on_different_targets_both_withdraw() -> None:
+    """A set spanning two targets can be split, and half a set is nothing."""
+    server = fixture_server()
+    spanning = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+    # The container is written first by both, so this order makes job-a
+    # earliest there and job-b earliest on the issue.
+    caller = _InTurn(server, order=("job-a", "job-b", "job-b", "job-a"))
+    first, second = (
+        tracker_over(server, caller=caller),
+        tracker_over(server, caller=caller),
+    )
+
+    outcomes = await asyncio.gather(
+        first.acquire_surfaces(
+            surfaces=spanning, holder="job-a", lease_seconds=LEASE_SECONDS
+        ),
+        second.acquire_surfaces(
+            surfaces=spanning, holder="job-b", lease_seconds=LEASE_SECONDS
+        ),
+        return_exceptions=True,
+    )
+
+    assert [type(outcome) for outcome in outcomes] == [SurfaceLeaseError] * 2
+    assert {
+        outcome.current_holder
+        for outcome in outcomes
+        if isinstance(outcome, SurfaceLeaseError)
+    } == {"job-a", "job-b"}
+    assert server.comments == []
+
+
+async def test_a_container_surface_parks_its_marker_on_the_container() -> None:
+    """A lease over a container addresses the container's own comment log."""
+    server = fixture_server()
+    tracker = tracker_over(server)
+    held = frozenset({CONTAINER})
+
+    lease = await tracker.acquire_surfaces(
+        surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS
+    )
+
+    assert lease.surfaces == held
+    assert [call["projectId"] for call in server.tool_calls("save_comment")] == [
+        "fixture-scope"
+    ]
+    assert [comment.issue_id for comment in server.comments] == ["fixture-scope"]
+    renewed = await tracker.renew_surfaces(
+        surfaces=held, holder="job-a", lease_seconds=LEASE_SECONDS * 2
+    )
+    assert renewed is not None
+    assert renewed.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS * 2)
+    await tracker.release_surfaces(surfaces=held, holder="job-a")
+    assert server.comments == []
+
+
+async def test_disjoint_sets_on_one_issue_are_two_independent_grants() -> None:
+    server = fixture_server()
+    tracker = tracker_over(server)
+
+    first = await tracker.acquire_surfaces(
+        surfaces=frozenset({MARKER_A}), holder="job-a", lease_seconds=LEASE_SECONDS
+    )
+    second = await tracker.acquire_surfaces(
+        surfaces=frozenset({MARKER_B}), holder="job-b", lease_seconds=LEASE_SECONDS
+    )
+
+    assert (first.holder, second.holder) == ("job-a", "job-b")
+    assert len(server.comments) == 2
+    await tracker.release_surfaces(surfaces=frozenset({MARKER_A}), holder="job-a")
+    assert len(server.comments) == 1
+
+
+async def test_a_refused_acquisition_takes_its_own_markers_back_off() -> None:
+    """The refused holder holds nothing, and left nothing to expire."""
+    server = fixture_server()
+    tracker = tracker_over(server)
+    await tracker.acquire_surfaces(
+        surfaces=frozenset({ISSUE_DESCRIPTION, MARKER_A}),
+        holder="job-a",
+        lease_seconds=LEASE_SECONDS,
+    )
+    standing = [comment.id for comment in server.comments]
+
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_A, MARKER_B}),
+            holder="job-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+
+    assert refused.value.current_holder == "job-a"
+    assert refused.value.marker == "A"
+    assert [comment.id for comment in server.comments] == standing
