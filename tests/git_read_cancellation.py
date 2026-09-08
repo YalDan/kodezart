@@ -26,7 +26,9 @@ async def assert_git_read_settles_before_release(
         if count == read_number:
             program = (
                 "from pathlib import Path\nimport os, time\n"
-                f"Path({str(started)!r}).write_text(str(os.getpid()))\n"
+                f"pending = Path({str(started) + '.pending'!r})\n"
+                "pending.write_text(str(os.getpid()))\n"
+                f"pending.replace({str(started)!r})\n"
                 f"while not Path({str(finish)!r}).exists(): time.sleep(0.01)\n"
                 f"Path({str(completed)!r}).write_text('complete')\n"
             )
