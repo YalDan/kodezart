@@ -56,6 +56,16 @@ ORGANIZE_CASE: dict[str, object] = {
 }
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+    "fire_time_ruling": (
+        PromptKey.FIRE_TIME_RULING,
+        {
+            "issue_key": "external/subject",
+            "issue_body": "The declared deliverable and open question.",
+            "criteria": "Native criterion keys and their full source bodies.",
+            "base_ref": "resolved-dispatch-head",
+            "validation_findings": "Independent feasibility observations.",
+        },
+    ),
     "audit_overclaim": (
         PromptKey.AUDIT_OVERCLAIM,
         {
