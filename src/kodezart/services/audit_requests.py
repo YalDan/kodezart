@@ -9,7 +9,8 @@ from kodezart.domain.comment_markers import (
     configured_marker_prefix,
 )
 from kodezart.domain.dispatch import clause_recorded_repository
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AuditClaimReadError, DuplicateCommentMarkerError
+from kodezart.domain.tracker_writes import comment_under_marker
 from kodezart.services.audit_collection import (
     AuditCandidateSnapshot,
     read_audit_candidate_snapshot,
@@ -65,14 +66,19 @@ class AuditRequestReader:
         comments = await self._tracker.list_comments(issue_key=issue.issue_key)
         if any(item.issue_key != issue.issue_key for item in comments):
             raise AuditClaimReadError("lane discovery returned a foreign comment")
-        matching = [
-            item
-            for item in comments
-            if item.body.partition("\n")[0].startswith(f"[{prefix}:")
-        ]
-        if len(matching) != 1:
+        try:
+            located = comment_under_marker(
+                target=issue.issue_key,
+                marker=f"[{prefix}:",
+                comments=comments,
+                prefix=True,
+            )
+        except DuplicateCommentMarkerError as exc:
+            raise AuditClaimReadError(
+                "the issue has no unique native lane record"
+            ) from exc
+        if located is None:
             raise AuditClaimReadError("the issue has no unique native lane record")
-        located = matching[0]
         marker = located.body.partition("\n")[0]
         encoded = marker[len(prefix) + 2 : -1]
         lane_key = unquote(encoded, errors="strict")
