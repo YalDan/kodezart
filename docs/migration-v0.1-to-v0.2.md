@@ -152,27 +152,27 @@ otherwise.
 
 ### New in v0.2, required when a tracker is configured
 
-The tracker is wired only when both `KODEZART_TRACKER_TOKEN` and
+The tracker is wired only when both `KODEZART_TRACKER__TOKEN` and
 `KODEZART_OPERATION_CONFIG` are set (`src/kodezart/composition/tracker.py`,
 `boot_tracker`); with either absent the boot log says
 `tracker_not_configured` and everything in this group is inert.
 
 | Setting | v0.1 | v0.2 default | What to do |
 | --- | --- | --- | --- |
-| `KODEZART_TRACKER_TOKEN` | not present | unset (`SecretStr`, never serialised) | Required. Must be the vendor's long-lived key: `lin_api_` followed by at least 40 characters, checked at boot before any request. |
+| `KODEZART_TRACKER__TOKEN` | not present | unset (`SecretStr`, never serialised) | Required. Must be the vendor's long-lived key: `lin_api_` followed by at least 40 characters, checked at boot before any request. |
 | `KODEZART_OPERATION_CONFIG` | not present | unset | Required. Path to the TOML file (section 3). |
 | `KODEZART_GITHUB_TOKEN` | see above | unset | Required for the dispatch pass: the delivery probe is built from it, and without it no `dispatch:<repo_url>` pass is scheduled. |
-| `KODEZART_TRACKER` | not present | `linear` (the only member) | Nothing. |
-| `KODEZART_TRACKER_MCP_SERVER_NAME` | not present | `linear` | Nothing. |
-| `KODEZART_TRACKER_MCP_SERVER_URL` | not present | `https://mcp.linear.app/mcp` | Nothing. |
-| `KODEZART_TRACKER_MCP_AUTH_HEADER` | not present | `Authorization` | Nothing. |
-| `KODEZART_TRACKER_MCP_AUTH_SCHEME` | not present | `Bearer` | Nothing. |
-| `KODEZART_TRACKER_TIMEOUT_SECONDS` | not present | `30.0` (5 to 120) | Nothing. |
-| `KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS` | not present | `60.0` (1 to 120) | Nothing. |
-| `KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS` | not present | `300.0` (30 to 3600) | Nothing. |
-| `KODEZART_TRACKER_MCP_ERROR_DETAIL_LIMIT` | not present | `500` (80 to 8000) | Nothing. |
-| `KODEZART_TRACKER_MAX_RETRIES` | not present | `3` (0 to 10) | Nothing. |
-| `KODEZART_TRACKER_RETRY_BACKOFF_FACTOR` | not present | `1.0` (0.1 to 30) | Nothing. |
+| `KODEZART_TRACKER__BACKEND` | not present | `linear` (the only member) | Nothing. |
+| `KODEZART_TRACKER__SERVER_NAME` | not present | `linear` | Nothing. |
+| `KODEZART_TRACKER__SERVER_URL` | not present | `https://mcp.linear.app/mcp` | Nothing. |
+| `KODEZART_TRACKER__AUTH_HEADER` | not present | `Authorization` | Nothing. |
+| `KODEZART_TRACKER__AUTH_SCHEME` | not present | `Bearer` | Nothing. |
+| `KODEZART_TRACKER__TIMEOUT_SECONDS` | not present | `30.0` (5 to 120) | Nothing. |
+| `KODEZART_TRACKER__CALL_TIMEOUT_SECONDS` | not present | `60.0` (1 to 120) | Nothing. |
+| `KODEZART_TRACKER__SSE_READ_TIMEOUT_SECONDS` | not present | `300.0` (30 to 3600) | Nothing. |
+| `KODEZART_TRACKER__ERROR_DETAIL_LIMIT` | not present | `500` (80 to 8000) | Nothing. |
+| `KODEZART_TRACKER__MAX_RETRIES` | not present | `3` (0 to 10) | Nothing. |
+| `KODEZART_TRACKER__RETRY_BACKOFF_FACTOR` | not present | `1.0` (0.1 to 30) | Nothing. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | not present | `50` (1 to 250) | Nothing. |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | not present | `900.0` (60 to 86400) | Nothing. |
 | `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | not present | `0.25` (above 0, at most 0.5) | Nothing. |
@@ -239,7 +239,7 @@ token, for example) fails the load
 in the environment.
 
 It is required only when you want the tracker service: the tracker is wired
-when both `KODEZART_OPERATION_CONFIG` and `KODEZART_TRACKER_TOKEN` are set.
+when both `KODEZART_OPERATION_CONFIG` and `KODEZART_TRACKER__TOKEN` are set.
 Enabling `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED=true` also requires it,
 with a non-blank `private_surface`. A v0.1 operator who wants the
 request-driven service alone does not need this file.
@@ -332,7 +332,7 @@ interval.
 
 ### Bare mode: keeping v0.1's request-driven behaviour
 
-Leave `KODEZART_TRACKER_TOKEN` and `KODEZART_OPERATION_CONFIG` unset. The
+Leave `KODEZART_TRACKER__TOKEN` and `KODEZART_OPERATION_CONFIG` unset. The
 service starts, serves every endpoint v0.1 served plus the job endpoints,
 and registers no pass. The boot log then carries, in this order:
 
@@ -382,8 +382,8 @@ message shapes:
   a validation error naming the variable and the legal values.
 - `KODEZART_OPERATION_CONFIG` pointing at a missing, malformed or invalid
   file: `OperationConfigError` in one of the three shapes in section 3.
-- A `KODEZART_TRACKER_TOKEN` that is not the long-lived key shape:
-  `TrackerCredentialShapeError: the tracker credential is not the vendor's long-lived key shape and nothing here refreshes a credential that expires (KODEZART_TRACKER_TOKEN must hold lin_api_ followed by at least 40 characters)`;
+- A `KODEZART_TRACKER__TOKEN` that is not the long-lived key shape:
+  `TrackerCredentialShapeError: the tracker credential is not the vendor's long-lived key shape and nothing here refreshes a credential that expires (KODEZART_TRACKER__TOKEN must hold lin_api_ followed by at least 40 characters)`;
   a key of the right shape the server rejects: `McpCredentialRefusedError`
   before any session log line.
 - An operation config entry the workspace does not resolve:

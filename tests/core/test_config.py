@@ -216,7 +216,7 @@ def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
     assert AppConfig().agent.output_style == "Concise"
 
 
-SSE_READ_FIELDS = ("tracker_mcp_sse_read_timeout_seconds",)
+SSE_READ_FIELDS = ("sse_read_timeout_seconds",)
 #: The bounds the sibling timeouts are declared with, and the default the
 #: session ran on while the value came from a private vendor constant
 #: (KOD-299).
@@ -231,7 +231,7 @@ def test_the_stream_read_bound_defaults_to_what_the_session_ran_on(
     field: str,
 ) -> None:
     """Adopting the knob changes who owns the number, not the number."""
-    assert getattr(AppConfig(), field) == SSE_READ_DEFAULT
+    assert getattr(AppConfig().tracker, field) == SSE_READ_DEFAULT
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -240,9 +240,9 @@ def test_the_stream_read_bound_is_read_from_the_prefixed_environment(
     monkeypatch: pytest.MonkeyPatch,
     field: str,
 ) -> None:
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", "450")
 
-    assert getattr(AppConfig(), field) == 450.0
+    assert getattr(AppConfig().tracker, field) == 450.0
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -254,7 +254,7 @@ def test_a_stream_read_bound_outside_its_range_refuses_at_construction(
     value: float,
 ) -> None:
     """Out of range fails at boot, naming the field — never a silent clamp."""
-    monkeypatch.setenv(f"KODEZART_{field.upper()}", str(value))
+    monkeypatch.setenv(f"KODEZART_TRACKER__{field.upper()}", str(value))
 
     with pytest.raises(ValidationError) as excinfo:
         AppConfig()

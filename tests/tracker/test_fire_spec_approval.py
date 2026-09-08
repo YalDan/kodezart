@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import FireSpecEntryError
 from kodezart.types.domain.operation import (
@@ -151,8 +152,13 @@ async def test_actual_composition_uses_remapped_criteria_row(server):
         "authorized under this operation",
     ]
     server.issues[CRITERION].labels = ["check"]
+    config = AppConfig(_env_file=None)
     port, _ = build_tracker(
-        config=AppConfig(_env_file=None),
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
         operation=OperationConfig.model_validate(fields),
         caller=server,
     )
@@ -207,8 +213,13 @@ async def test_absent_configured_mandates_refuse_only_at_fire_read(server):
     fields["organize_mandates"] = []
     server.issues[SUBJECT].labels = ["approved scope"]
     server.issues[CRITERION].labels = ["check"]
+    config = AppConfig(_env_file=None)
     port, _ = build_tracker(
-        config=AppConfig(_env_file=None),
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
         operation=OperationConfig.model_validate(fields),
         caller=server,
     )

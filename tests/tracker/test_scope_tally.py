@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import TrackerPort
@@ -86,8 +87,15 @@ async def tally(request):
         "record": ScopeMcpIssue(id="record", labels=["recorded-history"]),
         "decision": ScopeMcpIssue(id="decision", labels=["open-question"]),
     }
+    config = AppConfig(_env_file=None)
     native, _ = build_tracker(
-        config=AppConfig(_env_file=None), operation=operation, caller=server
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
     )
     fake = FakeTrackerPort(
         issues=[await native.read_issue(issue_key=key) for key in server.issues],
@@ -268,8 +276,15 @@ async def test_unmapped_native_classification_or_phase_refuses_before_read(
             "organize_mandates": (),
         }
     )
+    config = AppConfig(_env_file=None)
     native, _ = build_tracker(
-        config=AppConfig(_env_file=None), operation=operation, caller=tally.server
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=tally.server,
     )
     tally.tracker = native
     tally.server.calls.clear()

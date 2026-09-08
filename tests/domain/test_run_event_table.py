@@ -102,7 +102,7 @@ async def test_tracker_boot_refuses_absent_table_before_dialing(monkeypatch):
     monkeypatch.setattr("kodezart.composition.tracker.make_mcp_tool_caller", dial)
     with pytest.raises(RunEventTableError) as raised:
         await boot_tracker(
-            config=AppConfig(tracker_token="lin_api_" + "0" * 40),
+            settings=AppConfig(tracker={"token": "lin_api_" + "0" * 40}).tracker,
             operation=operation(run_event_states={}),
             log=AsyncMock(),
         )
@@ -114,7 +114,7 @@ async def test_tracker_boot_refuses_absent_table_before_dialing(monkeypatch):
 async def test_an_unconfigured_tracker_does_not_invent_an_event_table():
     assert (
         await boot_tracker(
-            config=AppConfig(tracker_token=None),
+            settings=AppConfig(tracker={"token": None}).tracker,
             operation=operation(run_event_states={}),
             log=AsyncMock(),
         )

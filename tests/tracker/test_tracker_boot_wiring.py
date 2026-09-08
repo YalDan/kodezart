@@ -18,13 +18,13 @@ import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.composition.prompts import boot_prompts
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     PassKnowledgeCapabilityError,
     TrackerBootValidationError,
     TrackerEnsureConflictError,
 )
 from kodezart.core.protocols import ManagedMcpToolCaller
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.main import create_app, lifespan
 from kodezart.services.pass_scheduler import PassScheduler
 from tests.fakes import FakeMcpDocument, ManagedFakeLinearMcpServer
@@ -199,7 +199,7 @@ def wired(
 ) -> Iterator[ManagedFakeLinearMcpServer]:
     """Substitute ONLY the transport factory; everything else is production."""
 
-    def factory(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+    def factory(*, settings: TrackerSettings, token: str) -> ManagedMcpToolCaller:
         assert token == TOKEN
         return server
 
@@ -218,7 +218,7 @@ def _configure(
     path.write_text(body, encoding="utf-8")
     monkeypatch.setenv("KODEZART_OPERATION_CONFIG", str(path))
     if token is not None:
-        monkeypatch.setenv("KODEZART_TRACKER_TOKEN", token)
+        monkeypatch.setenv("KODEZART_TRACKER__TOKEN", token)
 
 
 def _events(captured: str) -> list[dict[str, object]]:
@@ -630,7 +630,7 @@ async def test_without_a_credential_no_tracker_is_wired_and_boot_says_so(
     wired: ManagedFakeLinearMcpServer,
 ) -> None:
     """Three states, none silent: the absent half is named, never inferred."""
-    monkeypatch.delenv("KODEZART_TRACKER_TOKEN", raising=False)
+    monkeypatch.delenv("KODEZART_TRACKER__TOKEN", raising=False)
     _configure(monkeypatch, tmp_path, _operation_toml(), token=None)
     app = create_app()
     async with lifespan(app):

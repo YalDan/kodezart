@@ -113,6 +113,38 @@ Prompt-key typos are refused by name against the current vocabulary. Explicit
 skills still require a nonempty allowlist provisioned under the configured home;
 other modes require an empty allowlist. JSON allowlists remain arrays.
 
+## Tracker settings migration
+
+The native HTTP tracker connection is grouped under `AppConfig.tracker`.
+The former scalar selector becomes `tracker.backend`; it still selects the
+same adapter. Replace the old flat fields with the corresponding paths:
+
+| Former field | Current field |
+| --- | --- |
+| `tracker` | `tracker.backend` |
+| `tracker_mcp_server_name` | `tracker.server_name` |
+| `tracker_mcp_server_url` | `tracker.server_url` |
+| `tracker_mcp_auth_header` | `tracker.auth_header` |
+| `tracker_mcp_auth_scheme` | `tracker.auth_scheme` |
+| `tracker_token` | `tracker.token` |
+| `tracker_timeout_seconds` | `tracker.timeout_seconds` |
+| `tracker_mcp_call_timeout_seconds` | `tracker.call_timeout_seconds` |
+| `tracker_mcp_sse_read_timeout_seconds` | `tracker.sse_read_timeout_seconds` |
+| `tracker_mcp_error_detail_limit` | `tracker.error_detail_limit` |
+| `tracker_max_retries` | `tracker.max_retries` |
+| `tracker_retry_backoff_factor` | `tracker.retry_backoff_factor` |
+
+Environment and dotenv names use the uppercase current path, prefixed with
+`KODEZART_` and separated by two underscores. A `KODEZART_TRACKER` file-secret
+contains the whole JSON object. The same variable accepts JSON in environment
+and dotenv sources. Its former scalar value `linear` now refuses; use the
+backend field above or a JSON object such as `{"backend":"linear"}`.
+The other exact former names refuse from all four configuration sources,
+without exposing their values. Credential serialization remains excluded;
+boot still refuses expiry-bearing credentials before opening the transport.
+HTTP exchange, tool-answer and quiet-stream timeouts remain distinct. Retry
+counts still exclude the initial attempt and use the shared retry policy.
+
 ## Settings Reference
 
 Escalation ageing uses recorded run progress. The implementation defaults
@@ -209,22 +241,22 @@ and leased alarm writer remain separate work.
 | `KODEZART_AGENT__SETTING_SOURCES` | `list[SettingSource]` | `["user", "project", "local"]` |  | Settings sources passed explicitly to agent sessions so enabling the skills knob never silently narrows loaded settings. |
 | `KODEZART_AGENT__SKILLS__ALLOWLIST` | `list[str]` | `[]` |  | Skill names loaded under EXPLICIT mode. Must be empty in every other mode. Names are host-provisioned at user scope. |
 | `KODEZART_AGENT__SKILLS__MODE` | `SkillsMode` | `none` |  | Three-state skill selection: NONE suppresses every skill, ALL loads every discovered skill, EXPLICIT loads the allowlist. |
-| `KODEZART_TRACKER` | `TrackerBackend` | `linear` |  | Which tracker adapter implements TrackerPort. Adding a backend is a new adapter plus a member here — never a consumer change. |
-| `KODEZART_TRACKER_MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for a transient tracker MCP failure. |
-| `KODEZART_TRACKER_RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for tracker MCP retries. |
-| `KODEZART_TRACKER_TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | Timeout the tracker MCP transport gives one HTTP exchange with the server, on every phase but the session stream's read: a streamable-HTTP response stays open across quiet minutes, and that phase is bounded by KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead. |
-| `KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
-| `KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | >= 30.0, <= 3600.0 | Seconds the tracker MCP session's event stream may go quiet before its read is abandoned. The third bound on this transport and the only one about the STREAM: KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_SECONDS bounds the wait for one answer, and this bounds how long the long-lived streamable-HTTP response may say nothing at all. The default is the value the session ran on while the bound came from a private vendor constant. |
+| `KODEZART_TRACKER__BACKEND` | `TrackerBackend` | `linear` |  | Which tracker adapter implements TrackerPort. Adding a backend is a new adapter plus a member here — never a consumer change. |
+| `KODEZART_TRACKER__MAX_RETRIES` | `int` | `3` | >= 0, <= 10 | Maximum retry attempts for a transient tracker MCP failure. |
+| `KODEZART_TRACKER__RETRY_BACKOFF_FACTOR` | `float` | `1.0` | >= 0.1, <= 30.0 | Base backoff multiplier in seconds for tracker MCP retries. |
+| `KODEZART_TRACKER__TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | Timeout the tracker MCP transport gives one HTTP exchange with the server, on every phase but the session stream's read: a streamable-HTTP response stays open across quiet minutes, and that phase is bounded by KODEZART_TRACKER__SSE_READ_TIMEOUT_SECONDS instead. |
+| `KODEZART_TRACKER__CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER__TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
+| `KODEZART_TRACKER__SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | >= 30.0, <= 3600.0 | Seconds the tracker MCP session's event stream may go quiet before its read is abandoned. The third bound on this transport and the only one about the STREAM: KODEZART_TRACKER__TIMEOUT_SECONDS bounds one HTTP exchange's connect and write phases, KODEZART_TRACKER__CALL_TIMEOUT_SECONDS bounds the wait for one answer, and this bounds how long the long-lived streamable-HTTP response may say nothing at all. The default is the value the session ran on while the bound came from a private vendor constant. |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Requested claim duration for a capable backend. Linear MCP currently refuses acquisition and renewal because it cannot fence ownership; changing this value cannot enable them. |
 | `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Bound for write-surface leases held by a writing run's job id. Renewal is explicit; no background task extends these leases. |
 | `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | `float` | `0.25` | > 0.0, <= 0.5 | Fraction of the claim lease at which a job in flight renews its claim. Expressed against the lease so renewal outpaces expiry by construction, whatever the lease is set to: at 0.25 three consecutive renewal failures are survivable before the claim lapses, and the 0.5 bound leaves at least one. |
-| `KODEZART_TRACKER_MCP_AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
-| `KODEZART_TRACKER_MCP_ERROR_DETAIL_LIMIT` | `int` | `500` | >= 80, <= 8000 | Characters of the server's OWN error text carried into a tracker MCP transport failure. A refusal that drops the vendor's diagnosis costs a whole boot cycle to recover it. |
-| `KODEZART_TRACKER_MCP_AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the tracker credential in its auth header. |
-| `KODEZART_TRACKER_MCP_SERVER_NAME` | `str` | `linear` |  | MCP server identity used by the tracker transport and, through startup value injection, the tracker-side record sink. |
-| `KODEZART_TRACKER_MCP_SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
+| `KODEZART_TRACKER__AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
+| `KODEZART_TRACKER__ERROR_DETAIL_LIMIT` | `int` | `500` | >= 80, <= 8000 | Characters of the server's OWN error text carried into a tracker MCP transport failure. A refusal that drops the vendor's diagnosis costs a whole boot cycle to recover it. |
+| `KODEZART_TRACKER__AUTH_SCHEME` | `str` | `Bearer` | min length 1 | Scheme prefixing the tracker credential in its auth header. |
+| `KODEZART_TRACKER__SERVER_NAME` | `str` | `linear` |  | MCP server identity used by the tracker transport and, through startup value injection, the tracker-side record sink. |
+| `KODEZART_TRACKER__SERVER_URL` | `str` | `https://mcp.linear.app/mcp` |  | Endpoint of the vendor MCP server the tracker adapter dials. |
 | `KODEZART_TRACKER_QUERY_PAGE_SIZE` | `int` | `50` | >= 1, <= 250 | Issues requested per tracker scan page. |
-| `KODEZART_TRACKER_TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
+| `KODEZART_TRACKER__TOKEN` | `SecretStr \| None` | `None` |  | Tracker credential for the MCP server. Environment only, excluded from serialization, and masked in repr: a dumped config is copied into logs, fixtures and error payloads. |
 | `KODEZART_KNOWLEDGE` | `KnowledgeSettings` | unconfigured | typed HTTP/stdio connection | Knowledge grants and server configuration; nested overrides below. |
 
 ## Adapter retry timing

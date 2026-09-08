@@ -574,7 +574,7 @@ key can be narrowed two ways and you want **both**:
    access your own user holds;
 2. limit it to the **one team** the operation names under `[teams]`.
 
-Put the value in `KODEZART_TRACKER_TOKEN` in the service's environment and
+Put the value in `KODEZART_TRACKER__TOKEN` in the service's environment and
 nowhere else: the operation config is `extra="forbid"`, so a token key in that
 file fails the load rather than sitting in a repository.
 
@@ -801,14 +801,14 @@ it could not resolve. Nothing runs until you fix it.
 | What you see | State | What to change |
 | --- | --- | --- |
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
-| `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER_TOKEN` (step 1). |
+| `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
 | `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. |
 | `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`. Supply whichever reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
-| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER_TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
+| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER__TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
 | `McpCredentialRefusedError` before any session log line | C | The key is the right shape and the server would not take it: revoked, mistyped, or minted in another workspace. Mint a fresh one per step 1. |
 
 *Observable result:* one of the three states, identified by name, with no line

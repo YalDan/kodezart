@@ -544,7 +544,7 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
 
     def _config(self) -> AppConfig:
         return AppConfig(
-            tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
+            tracker={"sse_read_timeout_seconds": self.TRACKER_BOUND},
             knowledge={
                 "connection": {
                     "transport": "http",
@@ -556,7 +556,9 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
         )
 
     def test_the_tracker_composition_passes_its_field(self) -> None:
-        caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
+        caller = make_mcp_tool_caller(
+            settings=self._config().tracker, token=self.FIXTURE_TOKEN
+        )
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._server._sse_read_timeout_seconds == self.TRACKER_BOUND

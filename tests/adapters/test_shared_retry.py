@@ -380,8 +380,15 @@ async def test_composed_forge_preserves_operator_retry_units(monkeypatch, waits)
 async def test_composed_tracker_preserves_operator_retry_units(waits):
     server = fixture_server()
     server._transient_failures["get_issue"] = 10
+    config = AppConfig(
+        tracker={"max_retries": 2, "retry_backoff_factor": 0.5},
+    )
     tracker, _ = build_tracker(
-        config=AppConfig(tracker_max_retries=2, tracker_retry_backoff_factor=0.5),
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
         operation=operation_config(),
         caller=server,
     )

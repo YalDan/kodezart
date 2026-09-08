@@ -704,3 +704,52 @@ async def test_actual_lifespan_agent_settings_reach_native_session(
             )
             (native,) = [event for event in events if isinstance(event, SystemEvent)]
             assert native.data["model"] == "actual-native-model"
+
+
+@pytest.mark.parametrize("custom", [False, True])
+async def test_actual_lifespan_tracker_section_reaches_native_boot_and_recorder(
+    resources, monkeypatch, tmp_path, custom
+):
+    from kodezart.composition.tracker import boot_tracker
+    from tests.core.test_tracker_settings import TOKEN, VALUES, NativeEndpoint
+    from tests.tracker.conftest import CLAIMED_ISSUE
+    from tests.tracker.test_tracker_boot import operation_config
+
+    endpoint = NativeEndpoint(monkeypatch)
+    values = VALUES if custom else {"token": TOKEN}
+    config = AppConfig(
+        _env_file=None,
+        operation_config=str(tmp_path / "operation.toml"),
+        tracker=values,
+    )
+    resources.app.state.config = config
+    monkeypatch.setattr(main, "boot_tracker", boot_tracker)
+    monkeypatch.setattr(main, "load_operation_config", lambda _path: operation_config())
+    recorders = []
+    old_recorder = main.build_run_recorder
+
+    async def recorder(**kwargs):
+        recorders.append(kwargs)
+        return await old_recorder(**kwargs)
+
+    monkeypatch.setattr(main, "build_run_recorder", recorder)
+    async with resources.app.router.lifespan_context(resources.app):
+        tracker = resources.app.state.tracker
+        assert tracker is not None
+        assert (
+            await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+        ).issue_key == CLAIMED_ISSUE
+        assert recorders[0]["tracker_server_name"] == (
+            "fixture-server" if custom else "linear"
+        )
+        for request in endpoint.wire:
+            assert str(request.url) == (
+                "https://tracker.invalid/custom"
+                if custom
+                else "https://mcp.linear.app/mcp"
+            )
+            assert (
+                request.headers["X-Credential" if custom else "Authorization"]
+                == ("Token " if custom else "Bearer ") + TOKEN
+            )
+    assert all(client.is_closed for client in endpoint.clients)

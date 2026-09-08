@@ -8,6 +8,7 @@ import pytest
 
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import build_tracker, make_mcp_tool_caller
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 
 
@@ -22,15 +23,23 @@ def live_model_snapshot():
 @pytest.fixture
 async def live_model_tracker(live_model_snapshot):
     config = AppConfig()
-    if config.operation_config is None or config.tracker_token is None:
+    if config.operation_config is None or config.tracker.token is None:
         pytest.fail("live model comparison requires operation config and tracker token")
     operation = load_operation_config(Path(config.operation_config))
     caller = make_mcp_tool_caller(
-        config=config, token=config.tracker_token.get_secret_value()
+        settings=config.tracker, token=config.tracker.token.get_secret_value()
     )
     await caller.open()
     try:
-        tracker, _ = build_tracker(config=config, operation=operation, caller=caller)
+        tracker, _ = build_tracker(
+            backend=config.tracker.backend,
+            retry=RetryPolicy(
+                attempts=config.tracker.max_retries + 1,
+                initial_delay=config.tracker.retry_backoff_factor,
+            ),
+            operation=operation,
+            caller=caller,
+        )
         yield tracker
     finally:
         await caller.close()
