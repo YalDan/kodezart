@@ -6,9 +6,9 @@ from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.criterion_ref import CriterionRef as CriterionRef
 
 IssueRef = NewType("IssueRef", str)
-CriterionRef = NewType("CriterionRef", str)
 CriterionRefItem = Annotated[CriterionRef, Field(min_length=1)]
 
 

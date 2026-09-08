@@ -31,6 +31,7 @@ from kodezart.types.domain.criteria import (
     Contradiction,
     CriterionId,
 )
+from kodezart.types.domain.fire_spec import CriterionRef
 from kodezart.types.domain.grading import IterationGrade
 
 _IDENTITY_FIELD_SUFFIXES = ("criterion_id", "criterion_ids")
@@ -54,8 +55,8 @@ def _domain_models() -> list[type[BaseModel]]:
 
 
 def _mentions_identity(annotation: object) -> bool:
-    """Whether ``CriterionId`` appears anywhere in *annotation*."""
-    if annotation is CriterionId:
+    """Whether an authored or tracker-native identity types the field."""
+    if annotation is CriterionId or annotation is CriterionRef:
         return True
     origin = get_origin(annotation)
     if origin is None:
@@ -191,3 +192,11 @@ def test_a_minted_identity_matches_the_scheme() -> None:
 def test_positions_are_one_based() -> None:
     with pytest.raises(ValueError, match="1-based"):
         mint_criterion_id(0)
+
+
+def test_tracker_identity_is_distinct_and_loose_strings_remain_rejected():
+    assert CriterionRef is not CriterionId
+    assert _mentions_identity(CriterionRef)
+    assert _mentions_identity(list[CriterionRef])
+    assert not _mentions_identity(str)
+    assert not _mentions_identity(list[str])

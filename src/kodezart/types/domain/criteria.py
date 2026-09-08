@@ -18,6 +18,7 @@ from typing import Annotated, NewType, Self
 from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.criterion_ref import CriterionRef
 
 #: The prefix every minted criterion identity carries — one owner.
 #:
@@ -413,7 +414,7 @@ class CriteriaValidationOutput(CamelCaseModel):
 class TrackerCriterionFinding(FindingEvidence):
     """A feasibility finding addressed by the criterion sub-issue's own key."""
 
-    criterion_id: str = Field(
+    criterion_id: CriterionRef = Field(
         min_length=1,
         pattern=r"\S",
         description="The dispatched criterion sub-issue key, echoed exactly.",
@@ -425,9 +426,11 @@ class TrackerContradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    criterion_ids: list[Annotated[str, Field(min_length=1, pattern=r"\S")]] = Field(
-        min_length=2,
-        description="The smallest subset of native criterion keys that conflicts.",
+    criterion_ids: list[Annotated[CriterionRef, Field(min_length=1, pattern=r"\S")]] = (
+        Field(
+            min_length=2,
+            description="The smallest subset of native criterion keys that conflicts.",
+        )
     )
     explanation: str = Field(
         min_length=1,
