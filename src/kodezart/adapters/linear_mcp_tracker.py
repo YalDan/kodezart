@@ -49,6 +49,16 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.run_alarm_record import (
+    parse_run_alarm,
+    render_run_alarm,
+    run_alarm_marker,
+)
+from kodezart.domain.run_event_stream import (
+    lane_run_events,
+    render_run_event,
+    run_event_marker,
+)
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import (
     live_conflict,
@@ -104,6 +114,8 @@ from kodezart.types.domain.operation import (
     QueueState,
     ScopeLabel,
 )
+from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
+from kodezart.types.domain.run_event_record import RunEventRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import (
     CommentValues,
@@ -2728,6 +2740,80 @@ class LinearMcpTracker:
                     detail=str(exc),
                 ) from exc
         return latest
+
+    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
+        """Upsert the record the whole subject and the signal address.
+
+        The marker carries the complete subject, so the record a second
+        surface in the same lane under the same signal writes is a second
+        record and never an overwrite of the first.
+        """
+        await self.upsert_comment(
+            target=issue_key,
+            marker=run_alarm_marker(
+                subject=alarm.subject,
+                signal=alarm.signal,
+                marker_prefixes=self._marker_prefixes,
+            ),
+            body=render_run_alarm(alarm=alarm),
+        )
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Resolve exactly this address across the whole comment log."""
+        marker = run_alarm_marker(
+            subject=subject, signal=signal, marker_prefixes=self._marker_prefixes
+        )
+        stored = comment_under_marker(
+            target=issue_key,
+            marker=marker,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+        if stored is None:
+            return None
+        try:
+            return parse_run_alarm(
+                body=stored.body,
+                subject=subject,
+                signal=signal,
+                marker_prefixes=self._marker_prefixes,
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-alarm record does not match its declared shape",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=stored.comment_key,
+            ) from exc
+
+    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
+        """Post one entry onto the lane's stream; the read is ``run_events``."""
+        await self.post_comment(
+            issue_key=issue_key,
+            body=marked_comment_body(
+                marker=run_event_marker(
+                    lane_key=event.lane_key, marker_prefixes=self._marker_prefixes
+                ),
+                body=render_run_event(event=event),
+            ),
+        )
+
+    async def run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[RunEventRecord]:
+        """Read the createdAt-ordered posts the lane's marker addresses."""
+        try:
+            return lane_run_events(
+                lane_key=lane_key,
+                marker_prefixes=self._marker_prefixes,
+                comments=await self.list_comments(issue_key=issue_key),
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-event post does not match its declared shape",
+                tool=_TOOL_LIST_COMMENTS,
+                detail=issue_key,
+            ) from exc
 
     async def recorded_repository(self, *, issue_key: str) -> str | None:
         """The latest recorded target repository, or ``None`` when none is.

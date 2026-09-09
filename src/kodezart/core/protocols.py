@@ -37,6 +37,8 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
+from kodezart.types.domain.run_event_record import RunEventRecord
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
@@ -1152,6 +1154,57 @@ class TrackerPort(
         ``None`` means no dispatch ever recorded one — a first dispatch,
         not a stale base.  The two are different states and no caller may
         conflate them.
+        """
+        ...
+
+    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
+        """Record *alarm* on *issue_key*; ``read_run_alarm`` is the read.
+
+        The record is addressed by the complete ``(subject, signal)`` pair,
+        so two alarms whose subjects differ anywhere are two records: two
+        writable surfaces on one issue in one lane under one signal, and a
+        scope subject that carries no lane key at all.  Recording the
+        identical alarm again writes nothing and leaves the stored record
+        exactly as it stands.
+
+        The issue carrying the record is the caller's to state.  No lane
+        key is inferred from the subject, and no most-recent record ever
+        stands in for an address that does not resolve.
+        """
+        ...
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """The alarm recorded on *issue_key* under exactly this address.
+
+        The value returned is the value written, field for field, with its
+        readings in the order they were recorded.  ``None`` means no record
+        carries that address — never another subject's or another signal's
+        alarm.  A record that cannot be read back as the value written
+        raises; it never becomes a ``None`` or a repaired alarm.
+        """
+        ...
+
+    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
+        """Post *event* onto its lane's stream, carried on *issue_key*.
+
+        A post and never an edit: an event is a thing that happened and
+        takes its place in an order, so posting the same event twice
+        records that it happened twice.
+        """
+        ...
+
+    async def run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[RunEventRecord]:
+        """Exactly the events posted for *lane_key*, in write order.
+
+        A record the run edits in place is not an event and never appears
+        here, and neither does a threaded reply — a decision recorded
+        under a thread answers a comment, it does not happen to the lane.
+        A successful read with nothing posted returns an empty sequence;
+        an unreadable one raises rather than becoming an empty stream.
         """
         ...
 

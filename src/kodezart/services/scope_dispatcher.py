@@ -14,6 +14,7 @@ board has already moved under.
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.scope_reach import unreachable_criteria
 from kodezart.services.fire_dispatcher import FireDispatcher
 from kodezart.types.domain.dispatch import (
     DispatchOutcome,
@@ -56,6 +57,13 @@ class ScopeDispatcher:
         the same procedure the unscoped pass launches through.  A pass in
         which every ready lane is held back, or in which none was ready at
         all, reports an empty eligible set and leaves the board untouched.
+
+        Every open criterion a ready lane owes that this scope's own
+        container filter does not carry rides on the report beside the
+        selection.  The filter decides what the walk can address; it never
+        decides what a lane owes, so an unreachable descendant is named
+        rather than dropped and a pass that reports nothing is
+        distinguishable from a scope with nothing left in it.
         """
         ready = await read_scope_ready(ref=self._ref, tracker=self._tracker)
         members = {issue.issue_key: issue for issue in ready.scope.issues}
@@ -70,6 +78,9 @@ class ScopeDispatcher:
                 *(lane.issue for lane in ready.ready),
                 *(members[blocked.issue_key] for blocked in ready.blocked),
             )
+        )
+        unreachable = unreachable_criteria(
+            ref=self._ref, members=members, lanes=ready.ready
         )
         exclusions = [
             IssueExclusion(
@@ -86,24 +97,27 @@ class ScopeDispatcher:
             scope_key=self._ref.key,
             ready=list(eligible_keys),
             blocked=[blocked.issue_key for blocked in ready.blocked],
+            unreachable=[item.issue_key for item in unreachable],
         )
         for lane in ready.ready:
             exclusion = await self._dispatcher.standing_exclusion(lane.issue)
             if exclusion is not None:
                 exclusions.append(exclusion)
                 continue
-            return await self._dispatcher.launch(
+            report = await self._dispatcher.launch(
                 lane.issue,
                 rows=rows,
                 exclusions=tuple(exclusions),
                 eligible_keys=eligible_keys,
                 criterion_keys=tuple(criterion.issue_key for criterion in lane.gap),
             )
+            return report.model_copy(update={"unreachable": unreachable})
         return DispatchReport(
             outcome=DispatchOutcome.empty_eligible_set,
             snapshot=rows,
             exclusions=tuple(exclusions),
             eligible=eligible_keys,
+            unreachable=unreachable,
         )
 
     async def record_run_outcome(

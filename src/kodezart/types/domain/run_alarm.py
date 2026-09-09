@@ -112,6 +112,21 @@ class AlarmSubject(CamelCaseModel):
         return self
 
 
+_ALARM_SUBJECT = TypeAdapter(AlarmSubject)
+
+
+def alarm_subject_key(subject: AlarmSubject) -> str:
+    """Encode a whole alarm subject as one canonical, backend-neutral key.
+
+    An alarm is addressed by its complete subject, so two subjects that
+    differ anywhere address two records: two writable surfaces on one
+    issue in one lane, and a scope subject carrying no lane key at all.
+    One spelling per subject, the discipline ``surface_alarm_member_id``
+    already applies to the surface component.
+    """
+    return _ALARM_SUBJECT.dump_json(subject).decode("utf-8")
+
+
 class LaneFieldValue(CamelCaseModel):
     """An explicit field projection supplied by a record or event reader.
 

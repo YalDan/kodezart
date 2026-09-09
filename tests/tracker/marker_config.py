@@ -8,4 +8,6 @@ MARKER_PREFIXES: dict[str, str] = {
     "base_spec": "kodezart-basespec",
     "repository": "kodezart-repo",
     "issue_identity": "kodezart-issue",
+    "run_alarm": "fixture-run-alarm",
+    "run_event": "fixture-run-event",
 }
