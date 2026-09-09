@@ -1,8 +1,8 @@
 """The graduated accept verdict — truth table, schema, and routing.
 
-The verdict is computed from the classification the criteria carry, never
-judged: every assertion here fixes an arithmetic result or the route that
-result takes, and no test asks a model anything.
+The verdict is counted from the graded results, never judged: every
+assertion here fixes an arithmetic result or the route that result takes,
+and no test asks a model anything.
 """
 
 import uuid
@@ -35,7 +35,6 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
-    CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
     ValidatedCriterion,
@@ -71,19 +70,10 @@ from tests.fakes import (
 )
 from tests.workflow_factory import make_authored_workflow
 
-HARD = CriterionClass.hard_gate
-SOFT = CriterionClass.soft_signal
-
 
 def _pair() -> list:
-    """One hard gate and one soft signal, in that order."""
-    return [
-        *make_criteria("The endpoint returns 204", criterion_class=HARD),
-        *[
-            criterion.model_copy(update={"id": "AC-2", "criterionClass": SOFT})
-            for criterion in make_criteria("No new lint warnings", criterion_class=SOFT)
-        ],
-    ]
+    """Two criteria, AC-1 and AC-2, graded alike."""
+    return make_criteria("The endpoint returns 204", "No new lint warnings")
 
 
 def _ungraded(
@@ -91,16 +81,10 @@ def _ungraded(
     *,
     resource: str | None = "a PostgreSQL server reachable from the runner",
 ) -> ValidatedCriterion:
-    """A hard gate the sweep left ``unverifiable``.
-
-    Hard on purpose: the classification is untouched by the verdict, so an
-    implementation that reached for ``soft_signal`` to express *this does
-    not gate* would be caught here rather than pass by coincidence.
-    """
+    """A criterion the sweep left ``unverifiable``."""
     return ValidatedCriterion(
         id=identifier,
         text="The checkpointer survives a process restart",
-        criterion_class=HARD,
         feasibility=CriterionFeasibility(
             criterion_id=identifier,
             verdict=CriterionVerdict.unverifiable,
@@ -130,20 +114,8 @@ def test_all_pass_is_accepted() -> None:
     assert accept_verdict(_pair(), _results(True, True)) is AcceptVerdict.accepted
 
 
-def test_hard_pass_with_a_soft_failure_ships_with_flags() -> None:
-    """The soft signal cannot gate — but it must not vanish either."""
-    assert (
-        accept_verdict(_pair(), _results(True, False)) is AcceptVerdict.ship_with_flags
-    )
-
-
-def test_any_hard_failure_rejects_however_many_soft_signals_pass() -> None:
+def test_any_failure_rejects() -> None:
     assert accept_verdict(_pair(), _results(False, True)) is AcceptVerdict.rejected
-
-
-def test_a_hard_failure_beside_a_soft_failure_is_still_rejected() -> None:
-    """The hard arm wins; ``ship_with_flags`` is never a softened rejection."""
-    assert accept_verdict(_pair(), _results(False, False)) is AcceptVerdict.rejected
 
 
 def test_the_arithmetic_cannot_read_a_flag_because_it_is_not_given_one() -> None:
@@ -159,10 +131,10 @@ def test_the_arithmetic_cannot_read_a_flag_because_it_is_not_given_one() -> None
     assert list(signature(gate_cleared).parameters) == ["verdict"]
 
 
-def test_a_dispatched_hard_gate_with_no_result_rejects() -> None:
+def test_a_dispatched_criterion_with_no_result_rejects() -> None:
     """The denominator is the dispatched set — an unanswered id did not pass."""
-    answered_soft_only = [_results(True, True)[1]]
-    assert accept_verdict(_pair(), answered_soft_only) is AcceptVerdict.rejected
+    second_only = [_results(True, True)[1]]
+    assert accept_verdict(_pair(), second_only) is AcceptVerdict.rejected
 
 
 def test_an_ungraded_criterion_clamps_a_clean_run_to_ship_with_flags() -> None:
@@ -180,10 +152,10 @@ def test_an_ungraded_criterion_clamps_a_clean_run_to_ship_with_flags() -> None:
     )
 
 
-def test_an_ungraded_hard_gate_that_nobody_answered_does_not_reject() -> None:
+def test_an_ungraded_criterion_that_nobody_answered_does_not_reject() -> None:
     """Row 6: the fault lies outside the criterion, so it blocks nothing.
 
-    An unanswered GRADED hard gate rejects — that is the row above.  This
+    An unanswered GRADED criterion rejects — that is the row above.  This
     one takes no seat at all: rejecting would punish correct work because
     the runner lacked a resource.
     """
@@ -198,7 +170,7 @@ def test_an_ungraded_criterion_is_flagged_with_the_resource_it_named() -> None:
     criteria = [*_pair(), _ungraded("AC-3")]
     rendered = append_flagged_section(
         "Original PR body.",
-        flagged_items(criteria, _results(True, True, True), []),
+        flagged_items(criteria, []),
     )
     assert "AC-3:" in rendered
     assert "a PostgreSQL server reachable from the runner" in rendered
@@ -208,7 +180,7 @@ def test_an_ungraded_criterion_naming_no_resource_is_refused() -> None:
     """A refuter that established nothing produced no verdict at all."""
     criteria = [*_pair(), _ungraded("AC-3", resource=None)]
     with pytest.raises(UngroundedVerdictError):
-        flagged_items(criteria, _results(True, True, True), [])
+        flagged_items(criteria, [])
 
 
 def test_the_verdict_partition_has_exactly_three_members() -> None:
@@ -309,14 +281,13 @@ def test_the_flagged_section_is_composed_by_the_harness() -> None:
     assert append_flagged_section(body, []) == body
 
     items = flagged_items(
-        _pair(),
-        _results(True, False),
+        [*_pair(), _ungraded("AC-3")],
         [SherlockFlag(concern="the passing test never calls the handler")],
     )
     rendered = append_flagged_section(body, items)
     assert rendered.startswith(body)
     assert FLAGGED_HEADING in rendered
-    assert "AC-2: No new lint warnings — scripted" in rendered
+    assert "AC-3: The checkpointer survives a process restart — ungraded" in rendered
     assert "- the passing test never calls the handler" in rendered
 
 
@@ -394,30 +365,7 @@ async def _run(engine: AuthoredDeliveryCoordinator) -> list[object]:
     ]
 
 
-_SOFT_ONLY_FAILURE = AcceptanceCriteriaOutput(
-    criteria_results=[
-        CriterionResult(
-            criterion_id="AC-1",
-            criterion="Tests pass",
-            passed=True,
-            reasoning="the suite is green",
-        ),
-        CriterionResult(
-            criterion_id="AC-2",
-            criterion="No lint errors",
-            passed=False,
-            reasoning="two new warnings in the touched module",
-        ),
-    ],
-    sherlock_flags=[
-        SherlockFlag(
-            criterion_id="AC-1",
-            concern="Watson 3 verified the suite without running the new case",
-        ),
-    ],
-)
-
-_HARD_FAILURE = AcceptanceCriteriaOutput(
+_A_FAILURE = AcceptanceCriteriaOutput(
     criteria_results=[
         CriterionResult(
             criterion_id="AC-1",
@@ -435,28 +383,7 @@ _HARD_FAILURE = AcceptanceCriteriaOutput(
 )
 
 
-async def test_a_soft_signal_only_failure_reaches_open_pr_with_its_flags() -> None:
-    """KOD-53/AC-17 — the run ships, and what failed is legible in the PR body."""
-    pr_creator = FakePRCreator()
-    events = await _run(_engine(evaluation=_SOFT_ONLY_FAILURE, pr_creator=pr_creator))
-
-    iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
-    assert iteration.verdict is AcceptVerdict.ship_with_flags
-
-    pr_events = [e for e in events if isinstance(e, WorkflowPREvent)]
-    assert len(pr_events) == 1
-
-    create = next(c for c in pr_creator.calls if c["method"] == "create_pr")
-    body = str(create["body"])
-    assert FLAGGED_HEADING in body
-    assert "AC-2: No lint errors — two new warnings in the touched module" in body
-    assert "Watson 3 verified the suite without running the new case" in body
-
-    complete = next(e for e in events if isinstance(e, WorkflowCompleteEvent))
-    assert complete.outcome is WorkflowOutcome.pr_opened
-
-
-async def test_a_hard_failure_never_reaches_the_merge() -> None:
+async def test_a_failure_never_reaches_the_merge() -> None:
     """The rejected arm keeps its failure route: no merge, no review.
 
     "The forge was never called" used to stand in for "this did not
@@ -464,7 +391,7 @@ async def test_a_hard_failure_never_reaches_the_merge() -> None:
     route, so the distinguishing facts are named directly instead.
     """
     pr_creator = FakePRCreator()
-    events = await _run(_engine(evaluation=_HARD_FAILURE, pr_creator=pr_creator))
+    events = await _run(_engine(evaluation=_A_FAILURE, pr_creator=pr_creator))
 
     iteration = next(e for e in events if isinstance(e, WorkflowIterationEvent))
     assert iteration.verdict is AcceptVerdict.rejected
@@ -544,8 +471,8 @@ _SHERLOCK_CONCERN = "Watson 2 read a mocked persister as a real write"
 _REVIEW_CONCERN = "the merged branch reuses a helper the loop never exercised"
 
 _RUN_CRITERIA = [
-    {"text": "The endpoint returns 204", "criterionClass": "hard_gate"},
-    {"text": "No new lint warnings", "criterionClass": "soft_signal"},
+    {"text": "The endpoint returns 204"},
+    {"text": "No new lint warnings"},
 ]
 
 

@@ -25,7 +25,6 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
-    CriterionClass,
     DraftedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
@@ -128,8 +127,8 @@ class MutatingEchoExecutor:
             yield _result(
                 {
                     "criteria": [
-                        {"text": CRITERION_ONE, "criterionClass": "hard_gate"},
-                        {"text": CRITERION_TWO, "criterionClass": "soft_signal"},
+                        {"text": CRITERION_ONE},
+                        {"text": CRITERION_TWO},
                     ],
                     "reasoning": "Generated from codebase analysis.",
                 }
@@ -397,11 +396,9 @@ async def test_both_iterations_dispatch_the_full_id_set() -> None:
                     [
                         DraftedCriterion(
                             text=CRITERION_ONE,
-                            criterion_class=CriterionClass.hard_gate,
                         ),
                         DraftedCriterion(
                             text=CRITERION_TWO,
-                            criterion_class=CriterionClass.soft_signal,
                         ),
                     ]
                 )
