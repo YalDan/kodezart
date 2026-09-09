@@ -42,6 +42,7 @@ from kodezart.core.protocols import (
     CIMonitor,
     CIObservationReader,
     DeliveryProbe,
+    ForgeQuery,
     PRCreator,
     PRStateReader,
     RepoVisibilityResolver,
@@ -117,6 +118,7 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     DeliveryProbe: "delivery",
     CIObservationReader: "ci_observations",
     PRStateReader: "pr_state",
+    ForgeQuery: "forge_query",
 }
 
 

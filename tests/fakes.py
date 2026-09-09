@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI
 
@@ -52,6 +53,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.run_event_stream import (
     LaneRunEvent,
     lane_run_events,
@@ -1685,6 +1687,42 @@ class FakeRemediator:
             ),
             base_ref=request.work_base_ref,
         )
+
+
+class FakeForgeQuery:
+    """The forge's read side, beside the creator fake it is consulted with.
+
+    Seeded with the open pull requests the forge holds, keyed by origin and
+    head.  A head the fixture does not name has nothing open on it, which
+    is the same answer the forge gives — an answer, never a failure, so a
+    read that must fail is stated as ``fail_lookup`` instead.
+    """
+
+    def __init__(
+        self,
+        *,
+        open_prs: Mapping[tuple[str, str], tuple[str, int]] | None = None,
+        fail_lookup: Exception | None = None,
+    ) -> None:
+        self._open_prs = dict(open_prs or {})
+        self._fail_lookup = fail_lookup
+        self.lookups: list[tuple[str, str]] = []
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        self.lookups.append((repo_url, head))
+        if self._fail_lookup is not None:
+            raise self._fail_lookup
+        return self._open_prs.get((repo_url, head))
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
 
 
 class FakePRCreator:
