@@ -1,6 +1,6 @@
 """The all-or-nothing arithmetic every ownership implementation shares."""
 
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Iterable, Mapping
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -73,6 +73,53 @@ def renewed_deadline(
     if not renews(published_at=published_at, since=since):
         return since
     return published_at + lease
+
+
+class OrderedGrant(Protocol):
+    """What the self-arbitration needs of a grant: where it sits, and until when.
+
+    ``order`` is the backend's own placement of the grant against every
+    other — its earliest creation, and an identity to settle an instant
+    two creations shared — so two parties reading one log reach one
+    answer.
+    """
+
+    @property
+    def order(self) -> tuple[datetime, str]: ...
+
+    @property
+    def expires_at(self) -> datetime: ...
+
+
+def one_ownership[GrantT: OrderedGrant](
+    *, mine: GrantT, siblings: Iterable[GrantT], now: datetime
+) -> GrantT:
+    """Which of one holder's several grants over one set IS its ownership.
+
+    A holder identity is exactly what the arbitration is over, so a second
+    grant to the same identity is not a conflict to break but the same
+    ownership observed twice: the grant the backend ordered FIRST stands
+    for both, and every later one withdraws into it rather than against
+    it, which is what leaves a holder contending with itself holding one
+    grant and never none.
+
+    Earliest and not latest, because the two sides do not see the same
+    log: the earlier grant's marker is already there when the later one
+    reads back, while the later one's may not yet be there when the
+    earlier reads.  The earliest is therefore the only choice both sides
+    reach from what each can see, and a rule picking the latest would let
+    the party that stood down be the one whose marker survived.
+
+    A grant of the holder's that has LAPSED is not ownership and never
+    stands here, so a restart cleans its predecessor's marker up instead
+    of inheriting it, and no restart can hand an expired grant a life it
+    had already run out of.
+    """
+    standing = mine
+    for sibling in siblings:
+        if sibling.expires_at > now and sibling.order < standing.order:
+            standing = sibling
+    return standing
 
 
 def live_conflict[AddressT: Hashable](

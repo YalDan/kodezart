@@ -420,6 +420,52 @@ class TestAtomicClaim:
         assert held is not None
         assert held.holder == granted.holder
 
+    async def test_one_holder_claiming_twice_at_once_ends_holding_the_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """One identity cannot lose the issue to itself.
+
+        The realistic restart: a redeployed process claims what its
+        predecessor already holds, and both calls are in flight at once.
+        A holder identity is what the arbitration is over, so a second
+        grant to it is the same ownership observed twice rather than a
+        conflict to break: both are granted, the issue reads as that
+        holder's, and the holder can still renew — what may never happen
+        is that a holder meeting itself ends up owning nothing.
+        """
+        outcomes = await asyncio.gather(
+            tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            ),
+            tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            ),
+        )
+
+        assert [one.status for one in outcomes] == [ClaimStatus.GRANTED] * 2
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-a"
+        rival = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert rival.status is ClaimStatus.LOST
+        assert rival.current_holder == "pass-a"
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert renewed is not None
+        assert renewed.status is ClaimStatus.GRANTED
+
     async def test_the_loser_observes_a_distinct_typed_result_not_an_exception(
         self,
         tracker: TrackerPort,
@@ -861,6 +907,48 @@ class TestSurfaceLease:
         )
         assert sum(isinstance(one, SurfaceLease) for one in outcomes) == 1
         assert sum(isinstance(one, SurfaceLeaseError) for one in outcomes) == 1
+
+    async def test_one_holder_acquiring_a_set_twice_at_once_ends_holding_it(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The same identity rule over the lease vocabulary, all-or-nothing.
+
+        Two overlapping acquisitions for ONE holder over one set are one
+        ownership observed twice.  Both are leases, no other holder can
+        take any part of the set afterwards, and the holder can renew the
+        whole of it — the acquisition never leaves it holding nothing.
+        """
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+
+        outcomes = await asyncio.gather(
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            ),
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            ),
+        )
+
+        assert [one.surfaces for one in outcomes] == [requested] * 2
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+        renewed = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert renewed is not None
+        assert renewed.surfaces == requested
 
     async def test_one_marker_is_refused_while_the_rest_of_the_issue_stays_acquirable(
         self,
