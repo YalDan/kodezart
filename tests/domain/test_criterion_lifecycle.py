@@ -1,20 +1,39 @@
-"""Code backend: shared identities, the run-event table and vendor freedom.
+"""Code backend: shared identities, the cross-off model, events, vendor freedom.
 
 The static vendor check reads both invariant modules, every packaged module
 whose values they assert over, and the committed workspace the spec backend
 reads.  The roster of selectable adapters is the one place a vendor may be
 named, so it is the only exemption.
+
+The cross-off model is checked here against the packaged value it names:
+its two enums verbatim, the paths a path-bound class must carry, the class a
+verdict falls back to, the stickiness of that class per criterion identity,
+and the absence of a boolean verdict anywhere in the graded-sha partition.
 """
 
 import ast
+import importlib
+import pkgutil
 import re
 import tomllib
 from enum import StrEnum
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from pydantic import BaseModel, ValidationError, create_model
 
 from kodezart.core.protocols import TrackerPort
+from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.criterion_evidence import CriterionEvidence
+from kodezart.types.domain.criterion_lifecycle import (
+    PATH_BOUND_CLASSES,
+    CriterionCrossOff,
+    CrossOffState,
+    RederivationClass,
+    StickyClassError,
+    held_rederivation_classes,
+)
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
@@ -606,3 +625,238 @@ def test_the_deployed_event_table_names_no_vendor_state(deployed_event_table):
         for event, effect in sorted(deployed_event_table.run_event_states.items())
     )
     assert vendor_violations({"run_event_states": table}) == {}
+
+
+DOMAIN_PACKAGE = "kodezart.types.domain"
+GRADED_SHA_FIELD = "graded_sha"
+GRADED_SHA = "4f2c7a1b9e0d3c5a8f6b2d4e7c9a1b3d5f7e9c0a"
+
+
+def _annotation_leaves(annotation) -> list[object]:
+    """The annotation and every type argument nested inside it."""
+    leaves: list[object] = [annotation]
+    for argument in get_args(annotation):
+        leaves.extend(_annotation_leaves(argument))
+    return leaves
+
+
+def _nested_records(annotation) -> list[type[BaseModel]]:
+    return [
+        leaf
+        for leaf in _annotation_leaves(annotation)
+        if isinstance(leaf, type) and issubclass(leaf, BaseModel)
+    ]
+
+
+def carries_graded_sha(
+    record: type[BaseModel], seen: frozenset[type[BaseModel]] = frozenset()
+) -> bool:
+    """Whether a record reaches a graded sha through its own fields."""
+    for name, field in record.model_fields.items():
+        if name == GRADED_SHA_FIELD:
+            return True
+        if any(
+            nested not in seen and carries_graded_sha(nested, seen | {record})
+            for nested in _nested_records(field.annotation)
+        ):
+            return True
+    return False
+
+
+def boolean_verdicts(records: dict[str, type[BaseModel]]) -> tuple[str, ...]:
+    """Every boolean-annotated field on a record that carries a graded sha."""
+    return tuple(
+        f"{name}.{field}"
+        for name, record in sorted(records.items())
+        if carries_graded_sha(record)
+        for field, info in record.model_fields.items()
+        if any(leaf is bool for leaf in _annotation_leaves(info.annotation))
+    )
+
+
+def domain_records() -> dict[str, type[BaseModel]]:
+    """Every record the domain value package defines, read from the tree."""
+    package = importlib.import_module(DOMAIN_PACKAGE)
+    records = {}
+    for module_info in pkgutil.iter_modules(package.__path__):
+        module = importlib.import_module(f"{DOMAIN_PACKAGE}.{module_info.name}")
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, BaseModel)
+                and value.__module__ == module.__name__
+            ):
+                records[f"{module_info.name}.{value.__name__}"] = value
+    return records
+
+
+class _RingHead(CamelCaseModel):
+    """A record whose graded sha is reachable only through a cycle."""
+
+    peer: "_RingTail | None" = None
+
+
+class _RingTail(CamelCaseModel):
+    peer: _RingHead | None = None
+    graded_sha: str = GRADED_SHA
+
+
+_RingHead.model_rebuild()
+
+
+def cross_off(**overrides) -> CriterionCrossOff:
+    fields = {
+        "criterion": "criterion/alpha",
+        "state": CrossOffState.passed,
+        "evidence": CriterionEvidence(
+            graded_sha=GRADED_SHA,
+            test="tests/domain/test_criterion_lifecycle.py::test_a_cross_off",
+        ),
+    }
+    return CriterionCrossOff(**(fields | overrides))
+
+
+def test_the_re_derivation_class_and_cross_off_state_members_are_exactly_these():
+    assert [(member.name, member.value) for member in RederivationClass] == [
+        ("cheap", "cheap"),
+        ("expensive", "expensive"),
+        ("observed", "observed"),
+    ]
+    assert [(member.name, member.value) for member in CrossOffState] == [
+        ("passed", "passed"),
+        ("failed", "failed"),
+        ("lapsed", "lapsed"),
+    ]
+    assert PATH_BOUND_CLASSES == {
+        RederivationClass.expensive,
+        RederivationClass.observed,
+    }
+
+
+@pytest.mark.parametrize(
+    "declared", [RederivationClass.expensive, RederivationClass.observed]
+)
+def test_a_path_bound_cross_off_refuses_empty_exercised_paths(declared):
+    with pytest.raises(ValidationError, match="path prefixes its grading exercised"):
+        cross_off(rederivation_class=declared)
+    named = cross_off(
+        rederivation_class=declared,
+        exercised_paths=("src/kodezart/domain/", "src/kodezart/adapters/"),
+    )
+    assert named.exercised_paths == (
+        "src/kodezart/domain/",
+        "src/kodezart/adapters/",
+    )
+
+
+@pytest.mark.parametrize("blank", [(""), (" ",), ("\t",)])
+def test_an_exercised_path_that_names_nothing_refuses(blank):
+    with pytest.raises(ValidationError):
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=(blank,)
+        )
+
+
+def test_a_cheap_cross_off_carries_no_exercised_paths_and_still_validates():
+    assert cross_off(rederivation_class=RederivationClass.cheap).exercised_paths == ()
+
+
+def test_a_verdict_carrying_no_class_resolves_to_the_cheap_class():
+    assert cross_off().rederivation_class is RederivationClass.cheap
+    validated = CriterionCrossOff.model_validate(
+        {
+            "criterion": "criterion/alpha",
+            "state": "passed",
+            "evidence": {"gradedSha": GRADED_SHA, "test": "tests/x.py::test_y"},
+        }
+    )
+    assert validated.rederivation_class is RederivationClass.cheap
+    assert validated.state is CrossOffState.passed
+    assert validated.evidence.graded_sha == GRADED_SHA
+
+
+def test_a_second_iteration_declaring_a_different_class_raises_the_sticky_error():
+    iterations = [
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+        cross_off(
+            rederivation_class=RederivationClass.expensive, exercised_paths=("src/",)
+        ),
+        cross_off(rederivation_class=RederivationClass.cheap),
+    ]
+    with pytest.raises(StickyClassError) as raised:
+        held_rederivation_classes(iterations)
+    assert raised.value.criterion == "criterion/alpha"
+    assert raised.value.held is RederivationClass.expensive
+    assert raised.value.declared is RederivationClass.cheap
+    assert "criterion/alpha" in str(raised.value)
+
+
+def test_each_identity_holds_its_own_class_across_interleaved_iterations():
+    held = held_rederivation_classes(
+        [
+            cross_off(criterion="criterion/alpha"),
+            cross_off(
+                criterion="criterion/beta",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=("src/kodezart/adapters/",),
+            ),
+            cross_off(
+                criterion="criterion/gamma",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=("docs/",),
+            ),
+            cross_off(criterion="criterion/alpha"),
+            cross_off(
+                criterion="criterion/gamma",
+                rederivation_class=RederivationClass.observed,
+                exercised_paths=("docs/", "src/"),
+            ),
+            cross_off(
+                criterion="criterion/beta",
+                rederivation_class=RederivationClass.expensive,
+                exercised_paths=("tests/",),
+            ),
+        ]
+    )
+    assert held == {
+        "criterion/alpha": RederivationClass.cheap,
+        "criterion/beta": RederivationClass.expensive,
+        "criterion/gamma": RederivationClass.observed,
+    }
+
+
+def test_the_graded_sha_partition_carries_no_boolean_verdict():
+    records = domain_records()
+    partition = {name for name in records if carries_graded_sha(records[name])}
+    assert "criterion_lifecycle.CriterionCrossOff" in partition
+    assert "criterion_evidence.CriterionEvidence" in partition
+    assert "audit_evidence.AuditEvidenceObservation" in partition
+    assert "check_observation.ObservedChecks" not in partition
+    assert boolean_verdicts(records) == ()
+
+
+@pytest.mark.parametrize("annotation", [bool, bool | None, tuple[bool, ...]])
+def test_a_boolean_verdict_beside_a_graded_sha_is_reported(annotation):
+    probe = create_model(
+        "Probe",
+        __base__=CamelCaseModel,
+        evidence=(CriterionEvidence, ...),
+        verdict=(annotation, ...),
+    )
+    assert boolean_verdicts({"probe.Probe": probe}) == ("probe.Probe.verdict",)
+
+
+def test_a_boolean_on_a_record_that_carries_no_graded_sha_is_not_reported():
+    probe = create_model("Probe", __base__=CamelCaseModel, verdict=(bool, ...))
+    assert boolean_verdicts({"probe.Probe": probe}) == ()
+
+
+def test_a_graded_sha_reached_through_a_record_cycle_is_still_found():
+    assert carries_graded_sha(_RingHead)
+    assert carries_graded_sha(_RingTail)
+    probe = create_model(
+        "Probe", __base__=CamelCaseModel, ring=(_RingHead, ...), verdict=(bool, ...)
+    )
+    assert boolean_verdicts({"probe.Probe": probe}) == ("probe.Probe.verdict",)
