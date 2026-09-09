@@ -266,3 +266,54 @@ async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
         )
         == ()
     )
+
+
+async def test_the_lane_is_not_at_rest_while_the_hidden_descendant_is_open(
+    implementation: str,
+) -> None:
+    """The lane's state follows the subtree, not the filtered member set.
+
+    Its own criterion family is entirely Done, so a reading taken over the
+    filtered members would report an empty gap and the scope would go to
+    rest with this criterion open forever.
+    """
+    reading = board(implementation, child_done=False, out_of_filter=True)
+
+    own = await reading.tracker.read_criteria(issue_key=LANE)
+    assert [criterion.issue_key for criterion in own] == [LANE_CHECK]
+    assert all(criterion.state_kind is WorkflowStateKind.COMPLETED for criterion in own)
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
+
+    # Not at rest: the scope still reports the lane as work, and the named
+    # reason is exactly the descendant its own filter cannot reach.
+    assert ready.ready != ()
+    assert [lane.issue.issue_key for lane in ready.ready] == [LANE]
+    assert [criterion.issue_key for criterion in ready.ready[0].gap] == [CHILD_CHECK]
+    unreachable = unreachable_criteria(
+        ref=PROJECT,
+        members={issue.issue_key: issue for issue in ready.scope.issues},
+        lanes=ready.ready,
+    )
+    assert [named.issue_key for named in unreachable] == [CHILD_CHECK]
+
+
+async def test_the_same_lane_reads_at_rest_once_that_descendant_is_done(
+    implementation: str,
+) -> None:
+    """Nothing else changed: the one open criterion moved to Done."""
+    reading = board(implementation, child_done=True, out_of_filter=True)
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=reading.tracker)
+
+    assert {issue.issue_key for issue in ready.scope.issues} == {LANE, LANE_CHECK}
+    assert ready.ready == ()
+    assert ready.blocked == ()
+    assert (
+        unreachable_criteria(
+            ref=PROJECT,
+            members={issue.issue_key: issue for issue in ready.scope.issues},
+            lanes=ready.ready,
+        )
+        == ()
+    )

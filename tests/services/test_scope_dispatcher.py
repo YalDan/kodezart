@@ -855,3 +855,17 @@ async def test_the_same_shape_inside_the_filter_names_none_and_dispatches_the_ch
     assert report.unreachable == ()
     assert set(report.eligible) == {"lane", "child"}
     assert enqueued(queue) == ["lane"]
+
+
+async def test_a_scope_whose_hidden_descendant_closed_reports_nothing_unreachable():
+    """At rest is the same read, once the one open criterion is Done."""
+    tracker = reach_board(out_of_filter=True, child_done=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.outcome is DispatchOutcome.empty_eligible_set
+    assert report.eligible == ()
+    assert report.exclusions == ()
+    assert report.unreachable == ()
+    assert enqueued(queue) == []
