@@ -12,7 +12,6 @@ from kodezart.types.domain.criteria import (
     CRITERION_ID_PREFIX,
     CriteriaArtifact,
     CriteriaValidation,
-    CriterionClass,
     CriterionFeasibility,
     CriterionId,
     DraftedCriterion,
@@ -42,36 +41,9 @@ def mint_criteria(
         GeneratedCriterion(
             id=mint_criterion_id(index),
             text=criterion.text,
-            criterion_class=criterion.criterion_class,
         )
         for index, criterion in enumerate(drafted, start=1)
     )
-
-
-def effective_criterion_class(
-    criterion: GeneratedCriterion,
-    feasibility: CriterionFeasibility,
-) -> CriterionClass:
-    """The ``criterion_class`` a criterion carries AFTER the sweep.
-
-    A flagged criterion is forced to ``soft_signal``: a criterion the base
-    already satisfies, or one pinned to literals, cannot gate anything, so
-    it must not sit in the hard-gate partition the accept gate's
-    arithmetic reads.  An unflagged criterion keeps the class the
-    generator assigned, byte for byte.
-
-    LANE SYNTHESIS, not a mandated mechanism: no written specification
-    asks for this downgrade, and it is defended by no measured failure.
-    It has a run-level consequence worth naming — the flags it reads come
-    from values the refuter supplies, and ``accept_verdict`` tests
-    hard-gate membership first, so a set in which every criterion is
-    flagged can never be rejected.  Recorded rather than changed: what
-    moves a criterion between the partitions is a behaviour question for
-    whoever owns the gate.
-    """
-    if feasibility.flags:
-        return CriterionClass.soft_signal
-    return criterion.criterion_class
 
 
 def build_artifact(
@@ -87,10 +59,6 @@ def build_artifact(
             ValidatedCriterion(
                 id=criterion.id,
                 text=criterion.text,
-                criterion_class=effective_criterion_class(
-                    criterion,
-                    verdicts[criterion.id],
-                ),
                 feasibility=verdicts[criterion.id],
             )
             for criterion in criteria

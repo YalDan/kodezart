@@ -35,7 +35,7 @@ from kodezart.types.domain.branch import (
 from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
     CriteriaArtifact,
-    CriterionClass,
+    CriterionFlag,
     CriterionVerdict,
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -61,7 +61,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_passing_evaluation_over,
     make_prompt_provider,
     no_delay_floor,
@@ -149,14 +149,12 @@ class ValidatorScriptExecutor:
                 "criteria": [
                     {
                         "text": "`Foo` is importable from `app.api`.",
-                        "criterionClass": "hard_gate",
                     },
                     {
                         "text": (
                             "A record round-trips through the store "
                             'preserving its  "id" verbatim.'
                         ),
-                        "criterionClass": "hard_gate",
                     },
                 ],
                 "reasoning": "Generated from codebase analysis.",
@@ -216,7 +214,7 @@ def _engine(
         quality_gate=quality_gate
         or FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
         ticket_generator=ticket_generator or FakeTicketGenerator(),
@@ -307,7 +305,7 @@ async def test_permanently_infeasible_criteria_halt_before_the_loop() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -366,7 +364,7 @@ async def test_a_corrected_second_draft_reaches_the_loop() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -408,7 +406,7 @@ async def test_unverifiable_only_set_neither_regenerates_nor_halts() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -438,7 +436,7 @@ async def test_the_unverifiable_criterion_reaches_the_loop_byte_identical() -> N
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -463,7 +461,7 @@ async def test_the_loop_receives_the_verdict_and_the_named_resource() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -510,7 +508,7 @@ async def test_an_unsatisfiable_conjunction_regenerates_then_halts() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -578,7 +576,6 @@ async def test_the_persisted_artifact_carries_ids_verdicts_and_evidence() -> Non
         criteria_writes[0]["criteria.json"],
     )
     assert [c.id for c in artifact.criteria] == ["AC-1", "AC-2"]
-    assert artifact.criteria[0].criterion_class is CriterionClass.hard_gate
     assert artifact.criteria[1].feasibility.verdict is CriterionVerdict.unverifiable
     assert (
         artifact.criteria[1].feasibility.missing_resource
@@ -629,10 +626,9 @@ BASED_CRITERION = (
 def _criteria_round(scope_text: str) -> dict[str, object]:
     return {
         "criteria": [
-            {"text": scope_text, "criterionClass": "hard_gate"},
+            {"text": scope_text},
             {
                 "text": "`Foo` is importable from `app.api`.",
-                "criterionClass": "hard_gate",
             },
         ],
         "reasoning": "Generated from codebase analysis.",
@@ -670,7 +666,7 @@ async def test_a_scope_criterion_with_no_stated_base_is_regenerated() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     await _run(
@@ -782,7 +778,7 @@ async def test_an_ungradeable_class_survives_the_bound_as_a_halt() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -813,7 +809,7 @@ async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> Non
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -823,7 +819,7 @@ async def test_a_literal_count_class_is_flagged_rather_than_regenerated() -> Non
     assert isinstance(dispatched, list)
     flagged = dispatched[0]
     assert flagged.text == "Exactly 3 files under `src/` change."
-    assert flagged.criterion_class is CriterionClass.soft_signal
+    assert flagged.feasibility.flags == [CriterionFlag.literal_pinning]
 
 
 async def test_an_ungraded_criterion_clamps_the_run_and_names_its_resource() -> None:
@@ -915,7 +911,7 @@ async def test_an_inconsistent_verdict_and_repair_is_corrected_in_flight() -> No
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -944,7 +940,7 @@ async def test_an_ungrounded_feasible_verdict_is_corrected_in_flight() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -982,7 +978,7 @@ async def test_a_response_off_the_id_pattern_is_corrected_and_named() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))
@@ -1075,7 +1071,7 @@ async def test_the_permutation_guard_re_dispatches_without_restating_itself() ->
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         last_commit_sha="a" * 40,
     )
     events = await _run(_engine(executor, max_rounds=1, quality_gate=gate))

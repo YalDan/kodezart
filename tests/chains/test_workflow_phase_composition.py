@@ -296,7 +296,7 @@ async def test_loop_then_ci_share_one_budget_and_cumulative_iteration_total(boun
         FakeQualityGate,
         FakeRemediator,
         make_failing_evaluation,
-        make_passing_evaluation,
+        make_passing_evaluation_of_fake_criteria,
     )
 
     class FirstLoopFails:
@@ -308,7 +308,7 @@ async def test_loop_then_ci_share_one_budget_and_cumulative_iteration_total(boun
                 events=[],
                 evaluation=make_failing_evaluation()
                 if self.rounds == 0
-                else make_passing_evaluation(),
+                else make_passing_evaluation_of_fake_criteria(),
                 total_iterations=2 if self.rounds == 0 else 3,
                 last_commit_sha="a" * 40,
             )

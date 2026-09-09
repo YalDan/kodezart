@@ -67,7 +67,7 @@ from tests.fakes import (
     PassThroughGate,
     ScriptedFakeExecutor,
     attached_job_queue,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -1168,7 +1168,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
         ),
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -1302,7 +1302,7 @@ async def test_stream_failed_carries_structured_payload_on_consolidate_failure()
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )

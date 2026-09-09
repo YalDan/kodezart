@@ -884,8 +884,8 @@ class WorkflowIterationEvent(AgentEvent):
     it on this existing channel rather than on a second event type.
 
     ``verdict`` is three-state.  It replaced a boolean ``accepted``:
-    a run whose only failures are soft signals ships AND has something to
-    say, and no boolean could carry both.
+    a run carrying a criterion nothing could grade ships AND has something
+    to say, and no boolean could carry both.
     """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"

@@ -23,7 +23,7 @@ from tests.fakes import (
     FakeAgentExecutor,
     FakeQualityGate,
     FakeWorkspaceProvider,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
 )
 from tests.services.test_run_recorder import _record
@@ -35,7 +35,9 @@ async def test_real_queue_router_workflow_and_ticket_sessions_share_submission_i
 ):
     executor = FakeAgentExecutor(events=[])
     quality = FakeQualityGate(
-        events=[], evaluation=make_passing_evaluation(), last_commit_sha="a" * 40
+        events=[],
+        evaluation=make_passing_evaluation_of_fake_criteria(),
+        last_commit_sha="a" * 40,
     )
     engine = _make_engine(
         executor=executor,

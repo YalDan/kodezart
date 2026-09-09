@@ -28,7 +28,7 @@ from tests.fakes import (
     FakeQualityGate,
     RecordingPromptProvider,
     make_criteria,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
 )
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
@@ -48,7 +48,10 @@ async def capture_prompts(family, ticket, monkeypatch):
         permission_mode=PermissionMode.ACCEPT_EDITS,
         allowed_tools=["Read"],
     )
-    quality_gate = FakeQualityGate(events=[], evaluation=make_passing_evaluation())
+    quality_gate = FakeQualityGate(
+        events=[],
+        evaluation=make_passing_evaluation_of_fake_criteria(),
+    )
     engine = _make_engine(
         quality_gate=quality_gate, pr_creator=FakePRCreator(), prompts=provider
     )

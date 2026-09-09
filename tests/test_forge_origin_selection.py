@@ -77,7 +77,7 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -184,7 +184,7 @@ def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
         ),
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),

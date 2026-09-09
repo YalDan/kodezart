@@ -31,8 +31,8 @@ refused.  Its defect is discriminating power, not feasibility, and that
 is what :class:`CriterionFlag` records — from evidence only its own class
 supplies, never from ``smallest_repair``, so an observation cannot be
 produced by re-labelling a repair.  Flagged criteria consume no
-regeneration round and reach no halt; their consequence is the forced
-``soft_signal`` downgrade in :mod:`kodezart.domain.criteria`.
+regeneration round and reach no halt; the flag is recorded on the
+criterion's persisted feasibility and read there by a human.
 """
 
 from collections.abc import Sequence

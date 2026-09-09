@@ -62,10 +62,6 @@ ISSUE_KEY = "K-1"
 REPO_URL = "https://github.com/example/repository"
 DECOY_PROMPT = "Tracker issue: DECOY-999\n\nImplement the described change."
 GENERATED_DESCRIPTION = "Test PR description."
-PUBLISHED_DESCRIPTION = (
-    f"{GENERATED_DESCRIPTION}\n\n## Shipped with flags\n\n"
-    "- AC-2: No lint errors — no verdict returned"
-)
 SETTLE_SECONDS = 10.0
 
 
@@ -213,7 +209,7 @@ async def test_dispatched_identity_reaches_the_complete_gated_pr_body(
         assert gate.bodies == [body]
         assert any(isinstance(event, WorkflowPREvent) for event in events)
         if not stalled:
-            assert body == f"{PUBLISHED_DESCRIPTION}\n\nTracker issue: {ISSUE_KEY}"
+            assert body == f"{GENERATED_DESCRIPTION}\n\nTracker issue: {ISSUE_KEY}"
 
 
 @pytest.mark.parametrize("stalled", [False, True])
@@ -252,9 +248,9 @@ async def test_http_request_identity_is_explicit_and_never_parsed_from_prompt(
         assert not [event for event in events if isinstance(event, ErrorEvent)]
         (created,) = harness.creator.calls
         expected = (
-            PUBLISHED_DESCRIPTION
+            GENERATED_DESCRIPTION
             if issue_key is None
-            else f"{PUBLISHED_DESCRIPTION}\n\nTracker issue: {issue_key}"
+            else f"{GENERATED_DESCRIPTION}\n\nTracker issue: {issue_key}"
         )
         assert created["body"] == expected
         assert gate.bodies == [expected]

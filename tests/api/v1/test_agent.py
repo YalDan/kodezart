@@ -36,7 +36,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     attached_job_queue,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -220,7 +220,7 @@ async def _workflow_client(
         events=[
             AssistantTextEvent(text="done", model="test-model"),
         ],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -510,7 +510,7 @@ async def _workflow_client_with(
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),

@@ -16,16 +16,18 @@ from kodezart.types.domain.criteria import (
     [
         (
             CriterionFinding,
-            "5afe903e14f6c46793fb5b5a5e2ce796f1c69ba4df859ed4d580316dd75069d4",
+            "2ef057be09f5787863cb9274da5a811fa114401b526c007c1ba2d7073ad3fff0",
         ),
         (
             CriteriaValidationOutput,
-            "0da41e65788f8ed11a5a101bc32938299a0ce7c5322394300381ea54883fd8b6",
+            "1e49292eb7a9c7b364fb7f30db016c2c2ab9505cf51bfaa6b9b1e0f532f327bc",
         ),
     ],
 )
 def test_authored_wire_schemas_equal_the_captured_dispatch_base(model, digest):
-    # Captured before extracting shared evidence at fbc4daa; never re-baselined.
+    # Captured before extracting shared evidence at fbc4daa; moved once, when
+    # the criterion class was deleted and ForbiddenCriterionClass stopped
+    # describing the downgrade in the description these schemas ship.
     value = json.dumps(
         model.model_json_schema(),
         sort_keys=True,

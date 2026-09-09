@@ -34,7 +34,6 @@ from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,
-    CriterionClass,
     CriterionFailure,
     CriterionFeasibility,
     CriterionVerdict,
@@ -79,11 +78,9 @@ MINTED_CRITERIA = list(
         [
             DraftedCriterion(
                 text="First criterion",
-                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="Second criterion",
-                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -100,7 +97,6 @@ def make_criteria(*texts: str) -> list:
             [
                 DraftedCriterion(
                     text=text,
-                    criterion_class=CriterionClass.hard_gate,
                 )
                 for text in texts
             ]

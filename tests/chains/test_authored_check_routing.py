@@ -341,13 +341,15 @@ def built_workflow(monkeypatch, ci, *, config, repositories=()):
         FakeTicketGenerator,
         FakeWorkspaceProvider,
         PassThroughGate,
-        make_passing_evaluation,
+        make_passing_evaluation_of_fake_criteria,
         make_prompt_provider,
     )
 
     fixes = FakeRemediator()
     quality = FakeQualityGate(
-        events=[], evaluation=make_passing_evaluation(), last_commit_sha=SHA
+        events=[],
+        evaluation=make_passing_evaluation_of_fake_criteria(),
+        last_commit_sha=SHA,
     )
     monkeypatch.setattr(composition, "RalphLoop", lambda **_kwargs: quality)
     monkeypatch.setattr(

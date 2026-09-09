@@ -88,7 +88,6 @@ from kodezart.types.domain.consolidation import (
     ConsolidationStatus,
 )
 from kodezart.types.domain.criteria import (
-    CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
     DraftedCriterion,
@@ -796,8 +795,8 @@ class FakeAgentExecutor:
                 session_id="fake",
                 structured_output={
                     "criteria": [
-                        {"text": "Tests pass", "criterionClass": "hard_gate"},
-                        {"text": "No lint errors", "criterionClass": "soft_signal"},
+                        {"text": "Tests pass"},
+                        {"text": "No lint errors"},
                     ],
                     "reasoning": "Fake criteria.",
                 },
@@ -1341,18 +1340,9 @@ class ScriptedFakeExecutor:
                         session_id="scripted",
                         structured_output={
                             "criteria": [
-                                {
-                                    "text": "The fix compiles without errors",
-                                    "criterionClass": "hard_gate",
-                                },
-                                {
-                                    "text": "All existing tests pass",
-                                    "criterionClass": "hard_gate",
-                                },
-                                {
-                                    "text": ("Linting passes with no new warnings"),
-                                    "criterionClass": "soft_signal",
-                                },
+                                {"text": "The fix compiles without errors"},
+                                {"text": "All existing tests pass"},
+                                {"text": "Linting passes with no new warnings"},
                             ],
                             "reasoning": "Generated from codebase analysis.",
                         },
@@ -1416,7 +1406,6 @@ def as_validated(
         ValidatedCriterion(
             id=criterion.id,
             text=criterion.text,
-            criterion_class=criterion.criterion_class,
             feasibility=CriterionFeasibility(
                 criterion_id=criterion.id,
                 verdict=verdict,
@@ -1427,27 +1416,18 @@ def as_validated(
     ]
 
 
-def make_minted_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[GeneratedCriterion]:
+def make_minted_criteria(*texts: str) -> list[GeneratedCriterion]:
     """Mint AC-n identities for *texts* the way the generation node does."""
     return list(
         mint_criteria(
-            [
-                DraftedCriterion(text=text, criterion_class=criterion_class)
-                for text in (texts or ("Tests pass",))
-            ]
+            [DraftedCriterion(text=text) for text in (texts or ("Tests pass",))]
         )
     )
 
 
-def make_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[ValidatedCriterion]:
+def make_criteria(*texts: str) -> list[ValidatedCriterion]:
     """The dispatch shape: minted, then carrying a sweep verdict."""
-    return as_validated(make_minted_criteria(*texts, criterion_class=criterion_class))
+    return as_validated(make_minted_criteria(*texts))
 
 
 def make_dispatched_criteria() -> list[ValidatedCriterion]:
@@ -1460,14 +1440,8 @@ def make_generated_criteria() -> list[GeneratedCriterion]:
     return list(
         mint_criteria(
             [
-                DraftedCriterion(
-                    text="Tests pass",
-                    criterion_class=CriterionClass.hard_gate,
-                ),
-                DraftedCriterion(
-                    text="No lint errors",
-                    criterion_class=CriterionClass.soft_signal,
-                ),
+                DraftedCriterion(text="Tests pass"),
+                DraftedCriterion(text="No lint errors"),
             ]
         )
     )
@@ -1489,6 +1463,19 @@ def make_passing_evaluation(
             ),
         ],
     )
+
+
+#: Every id the fake criteria generator mints, in emission order.
+#:
+#: A fixture that means "the loop passed" answers all of them: grading
+#: counts the DISPATCHED set, so an evaluation that leaves an id
+#: unanswered is a failing run wearing a passing name.
+FAKE_CRITERION_IDS = ("AC-1", "AC-2")
+
+
+def make_passing_evaluation_of_fake_criteria() -> AcceptanceCriteriaOutput:
+    """A pass for every criterion the fake generator emits."""
+    return make_passing_evaluation_over(*FAKE_CRITERION_IDS)
 
 
 def make_passing_evaluation_over(*criterion_ids: str) -> AcceptanceCriteriaOutput:
