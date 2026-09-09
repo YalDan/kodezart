@@ -1,5 +1,8 @@
 """Live scope readiness; execution ownership and the walking loop follow it."""
 
+from collections.abc import Container, Sequence
+from dataclasses import dataclass
+
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.domain.errors import ScopeReadError
@@ -102,3 +105,65 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
         ),
         blocked=topology.blocked,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class UnreachableCriterion:
+    """One criterion a lane owes whose own issue the scope's filter misses.
+
+    Unreachability is not ownership: the criterion sits inside the lane's
+    subtree, so it is the lane's work and the lane is fired for it.  What
+    the filter decides is only whether the scope can ADDRESS that issue in
+    its own right, which is what ``reason`` records.
+    """
+
+    issue_key: str
+    lane_key: str
+    reason: str
+
+
+def _filter_reason(issue: TrackerIssue, *, kind: ScopeKind) -> str:
+    """Why *issue* is out of reach, in the terms the filter is itself stated in."""
+    match kind:
+        case ScopeKind.PROJECT | ScopeKind.INITIATIVE:
+            return (
+                issue.project_id
+                if issue.project_id is not None
+                else "the issue belongs to no project"
+            )
+        case ScopeKind.MILESTONE:
+            return (
+                issue.milestone_key
+                if issue.milestone_key is not None
+                else "the issue belongs to no milestone"
+            )
+        case ScopeKind.ISSUE:
+            return "the issue is outside the addressed subtree"
+
+
+def unreachable_criteria(
+    *,
+    ref: ScopeRef,
+    members: Container[str],
+    lanes: Sequence[ScopeReadyLane],
+) -> tuple[UnreachableCriterion, ...]:
+    """The lanes' open criteria whose own issues the scope family never carried.
+
+    A scope family carries every criterion child of every member its filter
+    resolved, so a criterion reached only through a member's SUBTREE is one
+    the scope cannot address on its own.  Declared here rather than left to
+    be inferred from a silence: a reader that sees neither the criterion nor
+    a statement about it cannot tell an unreachable obligation from none.
+    Each is named once, under the first lane that owes it.
+    """
+    named: dict[str, UnreachableCriterion] = {}
+    for lane in lanes:
+        for criterion in lane.gap:
+            if criterion.issue_key in members or criterion.issue_key in named:
+                continue
+            named[criterion.issue_key] = UnreachableCriterion(
+                issue_key=criterion.issue_key,
+                lane_key=lane.issue.issue_key,
+                reason=_filter_reason(criterion, kind=ref.kind),
+            )
+    return tuple(named.values())

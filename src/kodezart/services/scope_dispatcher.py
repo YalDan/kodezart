@@ -11,7 +11,7 @@ re-reads on the next tick rather than fanning out a schedule that the
 board has already moved under.
 """
 
-from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.chains.scope_walker import read_scope_ready, unreachable_criteria
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.fire_dispatcher import FireDispatcher
@@ -49,7 +49,12 @@ class ScopeDispatcher:
         subtree closing and by nothing else — no schedule survives between
         ticks to be walked stale.
 
-        Nothing here writes.  The blocked lanes are reported as exclusions
+        Nothing here writes.  A criterion a ready lane owes whose own issue
+        the scope's filter never carried is reported first, under the
+        out-of-scope clause carrying the reason it is out of reach: the
+        lane is still fired for it, and a reader is told what this scope
+        cannot address in its own right rather than left to infer it from
+        a silence.  The blocked lanes are then reported as exclusions
         under the live-blocker clause carrying their blockers' keys, the
         ready lanes are offered to the dispatcher's standing clauses in
         order, and the first lane that survives them is launched through
@@ -71,14 +76,25 @@ class ScopeDispatcher:
                 *(members[blocked.issue_key] for blocked in ready.blocked),
             )
         )
+        unreachable = unreachable_criteria(
+            ref=self._ref, members=members, lanes=ready.ready
+        )
         exclusions = [
+            IssueExclusion(
+                issue_key=named.issue_key,
+                clause=ExclusionClause.OUT_OF_SCOPE,
+                detail=named.reason,
+            )
+            for named in unreachable
+        ]
+        exclusions.extend(
             IssueExclusion(
                 issue_key=blocked.issue_key,
                 clause=ExclusionClause.LIVE_BLOCKER,
                 detail=",".join(blocked.blocker_keys),
             )
             for blocked in ready.blocked
-        ]
+        )
         eligible_keys = tuple(lane.issue.issue_key for lane in ready.ready)
         await self._log.ainfo(
             "scope_walk_ready",
@@ -86,6 +102,7 @@ class ScopeDispatcher:
             scope_key=self._ref.key,
             ready=list(eligible_keys),
             blocked=[blocked.issue_key for blocked in ready.blocked],
+            unreachable=[named.issue_key for named in unreachable],
         )
         for lane in ready.ready:
             exclusion = await self._dispatcher.standing_exclusion(lane.issue)

@@ -12,8 +12,11 @@ import importlib
 import inspect
 from datetime import datetime, timedelta
 
+import pytest
+
 from kodezart.chains import scope_walker
 from kodezart.domain import issue_tree, topology
+from kodezart.domain.errors import ScopeSupersessionReadError
 from kodezart.services import scope_dispatcher
 from kodezart.services.base_resolver import BaseResolver
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
@@ -71,7 +74,16 @@ from tests.services.test_dispatch_pass import (
 )
 
 PROJECT = ScopeRef(kind=ScopeKind.PROJECT, key="fixture-project")
+#: A container the walk was not pointed at; its issues are outside the
+#: filter and reachable only through an in-filter ancestor's subtree.
+OUTSIDE_PROJECT = "outside-project"
 CRITERION = frozenset({"criterion"})
+#: The workflow name each criterion state is spelled with on this board.
+STATE_NAMES = {
+    WorkflowStateKind.UNSTARTED: "Todo",
+    WorkflowStateKind.COMPLETED: "Done",
+    WorkflowStateKind.CANCELED: "Canceled",
+}
 #: The pushed head of every lane branch the fake remote carries.
 DELIVERED_SHA = "a" * 40
 
@@ -85,8 +97,9 @@ def lane_issue(
     state_name: str = "Todo",
     parent_key: str | None = None,
     created_at: datetime = FIXTURE_EPOCH,
+    project_id: str = PROJECT.key,
 ):
-    """A deliverable the walk may select: approved, in the project."""
+    """A deliverable the walk may select: approved, in *project_id*."""
     return make_tracker_issue(
         key,
         priority=priority,
@@ -95,22 +108,32 @@ def lane_issue(
         state_name=state_name,
         parent_key=parent_key,
         created_at=created_at,
-        project_id=PROJECT.key,
+        project_id=project_id,
     )
 
 
-def criterion(key: str, *, parent: str, met: bool = False):
+def criterion(
+    key: str,
+    *,
+    parent: str,
+    met: bool = False,
+    state_kind: WorkflowStateKind | None = None,
+    project_id: str = PROJECT.key,
+):
     """A criterion sub-issue — never a scan candidate, always a gap member."""
+    kind = (
+        (WorkflowStateKind.COMPLETED if met else WorkflowStateKind.UNSTARTED)
+        if state_kind is None
+        else state_kind
+    )
     return make_tracker_issue(
         key,
         parent_key=parent,
         issue_labels=CRITERION,
         queue_states=(),
-        state_kind=(
-            WorkflowStateKind.COMPLETED if met else WorkflowStateKind.UNSTARTED
-        ),
-        state_name="Done" if met else "Todo",
-        project_id=PROJECT.key,
+        state_kind=kind,
+        state_name=STATE_NAMES[kind],
+        project_id=project_id,
     )
 
 
@@ -131,10 +154,37 @@ def board(*issues, approved=(PROJECT,), **kwargs):
                 issue.issue_key
                 for issue in issues
                 if "criterion" not in issue.issue_labels
+                and issue.project_id == PROJECT.key
             ],
         },
         scope_label_members={ref: frozenset({ScopeLabel.APPROVED}) for ref in approved},
         **kwargs,
+    )
+
+
+def reach_board(*, child_state: WorkflowStateKind, out_of_filter: bool):
+    """A lane whose own criteria are graded, parenting one child deliverable.
+
+    The lane owes whatever its subtree owes.  With *out_of_filter* the child
+    sits in another project, so the scope's own filter never carries it and
+    the walk can reach it only through the lane it hangs under.
+    """
+    child_project = OUTSIDE_PROJECT if out_of_filter else PROJECT.key
+    return board(
+        lane_issue("lane"),
+        criterion("lane-check", parent="lane", met=True),
+        lane_issue(
+            "child",
+            parent_key="lane",
+            priority=IssuePriority.HIGH,
+            project_id=child_project,
+        ),
+        criterion(
+            "child-check",
+            parent="child",
+            state_kind=child_state,
+            project_id=child_project,
+        ),
     )
 
 
@@ -774,3 +824,204 @@ def test_walker_modules_resolve_no_lane_marker_and_parse_no_prose():
                     "title",
                     "list_comments",
                 }
+
+
+async def test_a_lane_is_dispatched_for_the_criterion_its_filter_cannot_reach():
+    """The lane's own criteria are all graded; the walk still fires it.
+
+    The one open criterion under it belongs to a deliverable in another
+    project, so the scope's filter never carries it.  It is the lane's work
+    all the same, and the report names it as what the fire is FOR.
+    """
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.claimed_issue_key == "lane"
+    assert report.criterion_keys == ("child-check",)
+    assert enqueued(queue) == ["lane"]
+    assert [item.issue_key for item in report.snapshot] == ["lane"]
+
+
+async def test_the_same_lane_reads_at_rest_once_that_criterion_is_graded():
+    """Nothing else changed: the one open criterion moved to Done."""
+    tracker = reach_board(child_state=WorkflowStateKind.COMPLETED, out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.outcome is DispatchOutcome.empty_eligible_set
+    assert report.eligible == ()
+    assert report.exclusions == ()
+    assert queue.submissions == []
+    assert tracker.claims == {}
+
+
+async def test_a_cancelled_unreachable_criterion_refuses_rather_than_resting():
+    """A cancellation with no supersession on record is not a closure.
+
+    Neither arithmetic finds anything OPEN in this shape, so at-rest alone
+    cannot tell a subtree reading from a filtered-member one.  This is the
+    reading that can: a walk that never left its own filter reports the
+    same restful nothing it reports for a graded criterion.
+    """
+    tracker = reach_board(child_state=WorkflowStateKind.CANCELED, out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    with pytest.raises(ScopeSupersessionReadError) as caught:
+        await walker.run_pass()
+
+    assert caught.value.criterion_keys == ("child-check",)
+    assert queue.submissions == []
+    assert tracker.claims == {}
+
+
+async def test_the_identical_shape_inside_the_filter_dispatches_the_child_itself():
+    """The control arm: a child the filter carries walks in its own right."""
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=False)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.eligible == ("child", "lane")
+    assert report.claimed_issue_key == "child"
+    assert enqueued(queue) == ["child"]
+    assert report.criterion_keys == ("child-check",)
+
+
+MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="fixture-milestone")
+
+
+def milestone_reach_board(child_milestone):
+    """The same lane shape under a milestone reference, the child out of it.
+
+    *child_milestone* is the child subtree's own milestone — another one,
+    or none at all, which are the two ways out of a milestone filter.
+    """
+
+    def on(issue, key):
+        return issue.model_copy(update={"milestone_key": key})
+
+    issues = (
+        on(lane_issue("lane"), MILESTONE.key),
+        on(criterion("lane-check", parent="lane", met=True), MILESTONE.key),
+        on(lane_issue("child", parent_key="lane"), child_milestone),
+        on(criterion("child-check", parent="child"), child_milestone),
+    )
+    return FakeTrackerPort(
+        issues=issues,
+        scope_containers=[
+            ScopeContainer(
+                ref=MILESTONE,
+                name="fixture milestone",
+                description="",
+                url="https://tracker.invalid/m",
+            ),
+        ],
+        scope_memberships={MILESTONE: ["lane"]},
+        scope_label_members={
+            ScopeRef(kind=ScopeKind.ISSUE, key="lane"): frozenset(
+                {ScopeLabel.APPROVED}
+            ),
+        },
+    )
+
+
+async def test_the_report_names_the_open_criterion_the_filter_cannot_reach():
+    """The out-of-filter arm: key and reason, in the filter's own terms."""
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=OUTSIDE_PROJECT,
+        )
+        in report.exclusions
+    )
+    assert report.claimed_issue_key == "lane"
+    assert enqueued(queue) == ["lane"]
+
+
+@pytest.mark.parametrize(
+    ("child_milestone", "detail"),
+    [
+        ("other-milestone", "other-milestone"),
+        (None, "the issue belongs to no milestone"),
+    ],
+)
+async def test_an_out_of_milestone_criterion_is_named_in_the_milestones_own_terms(
+    child_milestone, detail
+):
+    """A milestone reference states the reason as a milestone, never a project.
+
+    Both lanes and both their criteria sit in the same project throughout,
+    so a reason read off the project field cannot tell the two rows apart
+    and cannot answer either of them.
+    """
+    tracker = milestone_reach_board(child_milestone)
+    walker, queue, _ = walk(tracker, ref=MILESTONE)
+
+    report = await walker.run_pass()
+
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=detail,
+        )
+        in report.exclusions
+    )
+    assert report.claimed_issue_key == "lane"
+    assert enqueued(queue) == ["lane"]
+
+
+async def test_the_same_shape_inside_the_filter_names_no_unreachable_criterion():
+    """The in-filter arm: the child is a member and walks in its own right."""
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=False)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert [
+        exclusion
+        for exclusion in report.exclusions
+        if exclusion.clause is ExclusionClause.OUT_OF_SCOPE
+    ] == []
+    assert report.claimed_issue_key == "child"
+    assert enqueued(queue) == ["child"]
+
+
+async def test_a_pass_with_no_eligible_lane_still_names_the_unreachable_criterion():
+    """The arm every held lane lands on: an empty set is not an empty report.
+
+    The one ready lane is held by its own open delivery, so this pass fires
+    nothing.  The criterion its filter cannot reach is open all the same,
+    and a report that fell silent here would say exactly what a scope with
+    no work left says.
+    """
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=True)
+    walker, queue, probe = walk(tracker, delivered=("lane",))
+
+    report = await walker.run_pass()
+
+    assert report.outcome is DispatchOutcome.empty_eligible_set
+    assert queue.submissions == []
+    assert tracker.claims == {}
+    assert "lane" in probe.calls
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=OUTSIDE_PROJECT,
+        )
+        in report.exclusions
+    )
+    assert (
+        IssueExclusion(issue_key="lane", clause=ExclusionClause.OPEN_DELIVERY)
+        in report.exclusions
+    )
