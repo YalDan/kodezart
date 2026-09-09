@@ -34,7 +34,7 @@ from tests.fakes import (
     FakeVisibilityResolver,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
@@ -67,7 +67,7 @@ def make_engine(
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
         ticket_generator=ticket_generator or FakeTicketGenerator(),

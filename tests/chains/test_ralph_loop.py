@@ -1013,7 +1013,7 @@ async def test_the_evaluation_prompt_states_each_criterion_verdict() -> None:
     _ = [e async for e in loop.run(**_run_kwargs(acceptance_criteria=criteria))]
 
     rendered = str(executor.calls[-1]["prompt"])
-    assert "AC-1 [hard_gate] [unverifiable]" in rendered
+    assert "AC-1 [unverifiable]" in rendered
     assert "[blocked on: a PostgreSQL server reachable from the runner]" in rendered
 
 

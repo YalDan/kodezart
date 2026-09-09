@@ -153,7 +153,6 @@ class FireImplementation:
             "accept_verdict": last_iteration_event.verdict,
             "flagged_items": flagged_items(
                 validated_criteria(state),
-                last_iteration_event.evaluation.criteria_results,
                 last_iteration_event.evaluation.sherlock_flags,
             ),
             # A SUM, not a replacement: a remediation round runs its own
