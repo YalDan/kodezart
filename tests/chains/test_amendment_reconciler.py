@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
 from kodezart.chains.amendment_reconciler import AmendmentReconciler
+from kodezart.domain.errors import GitSourceReadError
 from kodezart.types.domain.amendment import (
     AmendmentDecision,
     AmendmentGround,
@@ -37,6 +38,8 @@ HOUSE = "src/house.py"
 CONTESTED = "src/contested.py"
 RULES = "docs/house_rules.md"
 LATER = "src/added_later.py"
+SYMLINK = "src/linked.py"
+DIRECTORY = "src"
 
 BASE_LINE = "the base carries this line"
 LATER_LINE = 'return "a later addition"'
@@ -98,6 +101,7 @@ def repo(tmp_path):
     write(repo, HOUSE, f'CARRIED = "{BASE_LINE}"\n')
     write(repo, CONTESTED, f"{ANCHOR}\n")
     write(repo, RULES, f"{RULE}\n")
+    (repo / SYMLINK).symlink_to("house.py")
     git(repo, "add", "--all")
     git(repo, "commit", "-qm", "base")
     git(repo, "branch", BASE)
@@ -542,3 +546,216 @@ async def test_the_fixture_repository_actually_separates_its_two_commits(repo):
     assert LATER_RULE.encode() not in rules.content
     contested = await reader.read_source(cwd=str(repo), commit_sha=head, path=CONTESTED)
     assert ANCHOR.encode() not in contested.content
+
+
+# --------------------------------------------------------------------------
+# The default arm: what happens when the reconciler cannot substantiate the
+# claim at all — a subject it does not hold, an address it cannot read, a
+# ground the base does not bear out.
+# --------------------------------------------------------------------------
+
+
+def test_the_decision_domain_is_exactly_two_arms():
+    """No third "unclear, proceed anyway" arm exists to fall into."""
+    assert [decision.value for decision in AmendmentDecision] == ["upheld", "amended"]
+    with pytest.raises(ValidationError):
+        AmendmentVerdict.model_validate(
+            {
+                "subject": "AC-1",
+                "decision": "unclear",
+                "reason": "ground_not_reproduced",
+            }
+        )
+
+
+def test_an_upheld_verdict_cannot_carry_a_ground_and_an_amendment_needs_one():
+    with pytest.raises(ValidationError, match="refusal carries the reason"):
+        AmendmentVerdict(
+            subject="AC-1",
+            decision=AmendmentDecision.UPHELD,
+            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
+        )
+    with pytest.raises(ValidationError, match="refusal carries the reason"):
+        AmendmentVerdict(subject="AC-1", decision=AmendmentDecision.UPHELD)
+    with pytest.raises(ValidationError, match="amendment carries the ground"):
+        AmendmentVerdict(subject="AC-1", decision=AmendmentDecision.AMENDED)
+    with pytest.raises(ValidationError, match="amendment carries the ground"):
+        AmendmentVerdict(
+            subject="AC-1",
+            decision=AmendmentDecision.AMENDED,
+            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
+            reason=UpheldReason.GROUND_NOT_REPRODUCED,
+        )
+
+
+def test_a_claim_carries_no_reasoning_of_its_own():
+    """The reconciler judges the repository, never the argument about it."""
+    assert {
+        claim_type.__name__: sorted(claim_type.model_fields)
+        for claim_type in (
+            UnsatisfiableAtBase,
+            PremiseFalseAtBase,
+            MutuallyUnsatisfiable,
+            RequiresBreakingHouseRule,
+        )
+    } == {
+        "UnsatisfiableAtBase": ["amendment", "ground", "subject", "target_path"],
+        "PremiseFalseAtBase": ["amendment", "ground", "path", "premise", "subject"],
+        "MutuallyUnsatisfiable": [
+            "amendment",
+            "anchor",
+            "counter_demand",
+            "counter_subject",
+            "ground",
+            "path",
+            "subject",
+            "subject_demand",
+        ],
+        "RequiresBreakingHouseRule": [
+            "amendment",
+            "forbidden_construct",
+            "ground",
+            "rule",
+            "subject",
+        ],
+    }
+
+
+@pytest.mark.parametrize("address", [DIRECTORY, SYMLINK])
+async def test_an_address_the_base_cannot_read_is_upheld_and_never_an_error(
+    repo, reconciler, address
+):
+    """The reader refuses these addresses; the reconciler still answers.
+
+    Both are ordinary claimant mistakes — a directory and a symlink, each a
+    real object at the base that is not one regular file. The reader raises
+    on them, which is asserted here so the arm below is the reconciler's
+    doing and not a lenient read.
+    """
+    with pytest.raises(GitSourceReadError):
+        await SubprocessGitSourceReader().find_source(
+            cwd=str(repo),
+            commit_sha=await SubprocessGitSourceReader().resolve_commit(
+                cwd=str(repo), ref=BASE
+            ),
+            path=address,
+        )
+    verdict = await reconciler.reconcile(
+        claim=PremiseFalseAtBase(
+            subject="AC-11", amendment=AMEND, path=address, premise=UNWRITTEN
+        ),
+        issue_key=PARENT,
+        cwd=str(repo),
+        base_ref=BASE,
+    )
+    assert verdict == upheld("AC-11", UpheldReason.EVIDENCE_UNREADABLE)
+
+
+async def test_an_unreadable_house_rules_document_is_upheld(repo, tracker):
+    reconciler = AmendmentReconciler(
+        source=SubprocessGitSourceReader(),
+        tracker=tracker,
+        house_rules_path=DIRECTORY,
+    )
+    verdict = await reconciler.reconcile(
+        claim=RequiresBreakingHouseRule(
+            subject="AC-9",
+            amendment=AMEND,
+            rule=RULE,
+            forbidden_construct="add a fallback",
+        ),
+        issue_key=PARENT,
+        cwd=str(repo),
+        base_ref=BASE,
+    )
+    assert verdict == upheld("AC-9", UpheldReason.EVIDENCE_UNREADABLE)
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["docs/../src/house.py", "/etc/passwd", "src//house.py", "./src/house.py"],
+)
+def test_an_address_outside_the_repository_cannot_be_constructed(address):
+    with pytest.raises(ValidationError, match="canonical relative path"):
+        PremiseFalseAtBase(
+            subject="AC-1", amendment=AMEND, path=address, premise=UNWRITTEN
+        )
+
+
+async def test_a_subject_outside_the_issues_criteria_is_refused_by_identity(
+    repo, reconciler
+):
+    verdict = await reconciler.reconcile(
+        claim=UnsatisfiableAtBase(subject=PARENT, amendment=AMEND, target_path=LATER),
+        issue_key=PARENT,
+        cwd=str(repo),
+        base_ref=BASE,
+    )
+    assert verdict == upheld(PARENT, UpheldReason.SUBJECT_NOT_A_CRITERION)
+
+
+async def test_the_refusal_names_the_criterion_it_refused_and_no_other(
+    repo, reconciler
+):
+    verdicts = [
+        await reconciler.reconcile(
+            claim=claim, issue_key=PARENT, cwd=str(repo), base_ref=BASE
+        )
+        for _, claim, expected in CASES
+        if expected.decision is AmendmentDecision.UPHELD
+    ]
+    assert [verdict.subject for verdict in verdicts] == [
+        "AC-2",
+        "AC-4",
+        "AC-7",
+        "AC-10",
+    ]
+
+
+async def test_a_refusal_leaves_every_criterion_body_byte_identical(
+    repo, reconciler, tracker
+):
+    """And the same reconciler DOES rewrite one, so the assertion has teeth."""
+    before = {
+        criterion.issue_key: criterion.body
+        for criterion in await tracker.read_criteria(issue_key=PARENT)
+    }
+    for _, claim, expected in CASES:
+        if expected.decision is AmendmentDecision.UPHELD:
+            await reconciler.reconcile(
+                claim=claim, issue_key=PARENT, cwd=str(repo), base_ref=BASE
+            )
+    refused = {
+        criterion.issue_key: criterion.body
+        for criterion in await tracker.read_criteria(issue_key=PARENT)
+    }
+    assert refused == before
+    assert tracker.issue_writes == []
+
+    await reconciler.reconcile(
+        claim=UnsatisfiableAtBase(subject="AC-1", amendment=AMEND, target_path=LATER),
+        issue_key=PARENT,
+        cwd=str(repo),
+        base_ref=BASE,
+    )
+    after = {
+        criterion.issue_key: criterion.body
+        for criterion in await tracker.read_criteria(issue_key=PARENT)
+    }
+    assert after == {**before, "AC-1": AMEND}
+    assert [key for key, _, _ in tracker.issue_writes] == ["AC-1"]
+
+
+async def test_an_unresolvable_base_is_an_error_about_the_run_not_a_verdict(
+    repo, reconciler
+):
+    """The base ref is the run's; only claimant addresses become refusals."""
+    with pytest.raises(GitSourceReadError):
+        await reconciler.reconcile(
+            claim=UnsatisfiableAtBase(
+                subject="AC-1", amendment=AMEND, target_path=LATER
+            ),
+            issue_key=PARENT,
+            cwd=str(repo),
+            base_ref="no-such-ref",
+        )
