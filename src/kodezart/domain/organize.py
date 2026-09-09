@@ -86,6 +86,15 @@ def organize_gap(
     puts its parent in the work set without changing the parent admission.
     Criterion execution state only answers whether a non-Canceled child
     exists; a code-only regression cannot put a specification in the gap.
+
+    A vendor change timestamp enters no clause of this computation. A
+    mention bumps it without touching a body, so it reports movement that
+    is not change and a work set keyed on it re-processes items nothing
+    happened to. The prohibition is absolute here rather than a tuned
+    window size, and it is scoped to this computation alone: it does not
+    reach the reply/mention scan, whose own window is correct precisely
+    because there a mention IS the signal being scanned for. Neither half
+    is evidence for the other.
     """
     if not body_marker_key.strip():
         raise ValueError("organize gap requires a body phase marker key")

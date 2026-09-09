@@ -676,6 +676,7 @@ def test_the_organize_dispatch_census_names_its_type_and_read_only_policy():
 
 
 BODY_MARKER = "body_ready"
+MENTIONED = "other/17"
 
 
 def gap_revision(key, **changes):
@@ -1011,6 +1012,50 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
         )
         assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
         assert judged[0].model_dump_json() == baseline[0]
+
+
+def ripple_vendor_stamp(source, issue_key, instant):
+    """Move an issue's vendor change timestamp the way a mention ripple does.
+
+    The backend bumps every issue an edit merely names, leaving its body
+    byte-identical.  The port models issues, not the backend's bookkeeping,
+    so the ripple is applied to the double's own record here — the point of
+    the fixture is that a stamp which moved for no content reason is visible
+    and still reaches no admission clause.
+    """
+    issue = source.issues[issue_key]
+    source.issues[issue_key] = issue.model_copy(update={"updated_at": instant})
+
+
+async def test_mention_ripple_bumps_the_stamp_without_entering_the_gap():
+    revisions = (*organized_family(), *organized_family(MENTIONED))
+    keys = tuple(revision.issue.issue_key for revision in revisions)
+    ripple = datetime(2026, 6, 1, tzinfo=UTC)
+    source = FakeTrackerPort(
+        issues=[revision.issue for revision in revisions], clock=lambda: ripple
+    )
+    admissions = tuple(
+        gap_admission(revision) for revision in await read_gap_revisions(source, keys)
+    )
+    assert gap_of(await read_gap_revisions(source, keys), admissions=admissions) == ()
+
+    before = {key: await source.read_issue(issue_key=key) for key in keys}
+    await source.update_issue(
+        issue_key=SUBJECT,
+        body=f"Revised body for {SUBJECT}, which mentions {MENTIONED} and edits "
+        f"nothing there.",
+    )
+    ripple_vendor_stamp(source, MENTIONED, ripple)
+    after = {key: await source.read_issue(issue_key=key) for key in keys}
+
+    assert MENTIONED in after[SUBJECT].body
+    assert after[SUBJECT].body != before[SUBJECT].body
+    assert after[MENTIONED].body == before[MENTIONED].body
+    assert after[SUBJECT].updated_at > before[SUBJECT].updated_at
+    assert after[MENTIONED].updated_at > before[MENTIONED].updated_at
+
+    gap = gap_of(await read_gap_revisions(source, keys), admissions=admissions)
+    assert tuple(item.issue_key for item in gap) == (SUBJECT,)
 
 
 def test_gap_has_no_amendment_input_or_body_judgment_branch():
