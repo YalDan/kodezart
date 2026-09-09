@@ -888,3 +888,140 @@ async def test_the_identical_shape_inside_the_filter_dispatches_the_child_itself
     assert report.claimed_issue_key == "child"
     assert enqueued(queue) == ["child"]
     assert report.criterion_keys == ("child-check",)
+
+
+MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="fixture-milestone")
+
+
+def milestone_reach_board(child_milestone):
+    """The same lane shape under a milestone reference, the child out of it.
+
+    *child_milestone* is the child subtree's own milestone — another one,
+    or none at all, which are the two ways out of a milestone filter.
+    """
+
+    def on(issue, key):
+        return issue.model_copy(update={"milestone_key": key})
+
+    issues = (
+        on(lane_issue("lane"), MILESTONE.key),
+        on(criterion("lane-check", parent="lane", met=True), MILESTONE.key),
+        on(lane_issue("child", parent_key="lane"), child_milestone),
+        on(criterion("child-check", parent="child"), child_milestone),
+    )
+    return FakeTrackerPort(
+        issues=issues,
+        scope_containers=[
+            ScopeContainer(
+                ref=MILESTONE,
+                name="fixture milestone",
+                description="",
+                url="https://tracker.invalid/m",
+            ),
+        ],
+        scope_memberships={MILESTONE: ["lane"]},
+        scope_label_members={
+            ScopeRef(kind=ScopeKind.ISSUE, key="lane"): frozenset(
+                {ScopeLabel.APPROVED}
+            ),
+        },
+    )
+
+
+async def test_the_report_names_the_open_criterion_the_filter_cannot_reach():
+    """The out-of-filter arm: key and reason, in the filter's own terms."""
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=OUTSIDE_PROJECT,
+        )
+        in report.exclusions
+    )
+    assert report.claimed_issue_key == "lane"
+    assert enqueued(queue) == ["lane"]
+
+
+@pytest.mark.parametrize(
+    ("child_milestone", "detail"),
+    [
+        ("other-milestone", "other-milestone"),
+        (None, "the issue belongs to no milestone"),
+    ],
+)
+async def test_an_out_of_milestone_criterion_is_named_in_the_milestones_own_terms(
+    child_milestone, detail
+):
+    """A milestone reference states the reason as a milestone, never a project.
+
+    Both lanes and both their criteria sit in the same project throughout,
+    so a reason read off the project field cannot tell the two rows apart
+    and cannot answer either of them.
+    """
+    tracker = milestone_reach_board(child_milestone)
+    walker, queue, _ = walk(tracker, ref=MILESTONE)
+
+    report = await walker.run_pass()
+
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=detail,
+        )
+        in report.exclusions
+    )
+    assert report.claimed_issue_key == "lane"
+    assert enqueued(queue) == ["lane"]
+
+
+async def test_the_same_shape_inside_the_filter_names_no_unreachable_criterion():
+    """The in-filter arm: the child is a member and walks in its own right."""
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=False)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert [
+        exclusion
+        for exclusion in report.exclusions
+        if exclusion.clause is ExclusionClause.OUT_OF_SCOPE
+    ] == []
+    assert report.claimed_issue_key == "child"
+    assert enqueued(queue) == ["child"]
+
+
+async def test_a_pass_with_no_eligible_lane_still_names_the_unreachable_criterion():
+    """The arm every held lane lands on: an empty set is not an empty report.
+
+    The one ready lane is held by its own open delivery, so this pass fires
+    nothing.  The criterion its filter cannot reach is open all the same,
+    and a report that fell silent here would say exactly what a scope with
+    no work left says.
+    """
+    tracker = reach_board(child_state=WorkflowStateKind.UNSTARTED, out_of_filter=True)
+    walker, queue, probe = walk(tracker, delivered=("lane",))
+
+    report = await walker.run_pass()
+
+    assert report.outcome is DispatchOutcome.empty_eligible_set
+    assert queue.submissions == []
+    assert tracker.claims == {}
+    assert "lane" in probe.calls
+    assert (
+        IssueExclusion(
+            issue_key="child-check",
+            clause=ExclusionClause.OUT_OF_SCOPE,
+            detail=OUTSIDE_PROJECT,
+        )
+        in report.exclusions
+    )
+    assert (
+        IssueExclusion(issue_key="lane", clause=ExclusionClause.OPEN_DELIVERY)
+        in report.exclusions
+    )

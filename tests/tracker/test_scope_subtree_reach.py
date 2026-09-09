@@ -18,7 +18,11 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.chains.scope_walker import read_scope_ready
+from kodezart.chains.scope_walker import (
+    UnreachableCriterion,
+    read_scope_ready,
+    unreachable_criteria,
+)
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import ScopeSupersessionReadError
@@ -286,3 +290,38 @@ async def test_the_identical_shape_inside_the_filter_carries_the_child_as_a_memb
     }
     assert {lane.issue.issue_key for lane in ready.ready} == {LANE, CHILD}
     assert ready.blocked == ()
+
+
+def _named(ready) -> tuple[UnreachableCriterion, ...]:
+    """What the read declares out of its own filter's reach, over its members."""
+    return unreachable_criteria(
+        ref=PROJECT,
+        members={issue.issue_key for issue in ready.scope.issues},
+        lanes=ready.ready,
+    )
+
+
+async def test_the_lane_owes_the_criterion_its_scope_cannot_reach(
+    implementation: str,
+) -> None:
+    """The out-of-filter arm: the criterion is named with its key and reason."""
+    tracker = board(implementation, child_state="open", out_of_filter=True)
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
+
+    assert _named(ready) == (
+        UnreachableCriterion(
+            issue_key=CHILD_CHECK, lane_key=LANE, reason=OTHER_PROJECT
+        ),
+    )
+
+
+async def test_the_same_shape_inside_the_filter_names_no_unreachable_descendant(
+    implementation: str,
+) -> None:
+    """The in-filter arm: the family carries the criterion, so nothing is named."""
+    tracker = board(implementation, child_state="open", out_of_filter=False)
+
+    ready = await read_scope_ready(ref=PROJECT, tracker=tracker)
+
+    assert _named(ready) == ()
