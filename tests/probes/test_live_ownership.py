@@ -17,8 +17,10 @@ Live only (``pytest -m live``): it dials the operator's tracker.
 """
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,6 +36,7 @@ from kodezart.composition.tracker import (
 )
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
+from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     McpToolCaller,
@@ -54,6 +57,11 @@ from tests.probes.recording import record
 pytestmark = [pytest.mark.live, pytest.mark.asyncio(loop_scope="module")]
 
 PROBE = "live-ownership"
+
+#: How the probe addresses its own plain scratch comments, so a run that
+#: died before deleting one can be swept by the run after it. Every one
+#: the probe writes names the probe and the run that wrote it.
+PROBE_COMMENT = re.compile(r"^probe [0-9a-f]{8} ")
 
 #: The one issue this module is allowed to write to. Found by this exact
 #: title, created once if the board does not carry it yet.
@@ -85,7 +93,15 @@ SHORT_LEASE_SECONDS = 60.0
 #: refuted arithmetic read the first as a clock offset and handed the
 #: holder immunity worth exactly that much, so a renewal inside this
 #: window is the interleaving that broke it.
-LANDING_DELAY_SECONDS = 7.0
+#:
+#: The window has to be wider than the two calls it takes to land that
+#: renewal — the successor's claim and the lapsed holder's renewal — or
+#: the renewal lands OUTSIDE the immunity the refuted arithmetic would
+#: have granted and the case stops testing the fence at all. Measured
+#: 2026-09-09 on the real board: those two calls put the renewal between
+#: 5.5s and 12.5s past the deadline across three runs, so a seven-second
+#: window failed to contain it twice.
+LANDING_DELAY_SECONDS = 45.0
 
 ORDER_MARKERS = 8
 ORDER_READS = 3
@@ -252,6 +268,26 @@ async def _probe_comments(
     ]
 
 
+async def _probe_litter(tracker: TrackerPort, *, issue_key: str) -> Sequence[str]:
+    """Every marker the PROBE has ever minted here, whichever run minted it.
+
+    A sweep that matched only its own run could not take off what a run
+    that died mid-race left, and the litter then answers the next run's
+    reads: measured on this board, abandoned markers from two earlier
+    runs stood for hours because nothing but their own dead run was ever
+    going to look for them.  Every ownership marker the probe writes
+    carries the probe's own marker identity, which no deployment
+    declares, and every plain comment it writes names the probe and the
+    run that wrote it, so matching those takes the probe's litter and
+    nothing else.
+    """
+    return [
+        comment.comment_key
+        for comment in await tracker.list_comments(issue_key=issue_key)
+        if PROBE_MARKER_PREFIX in comment.body or PROBE_COMMENT.match(comment.body)
+    ]
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def ownership() -> AsyncIterator[Ownership]:
     """Two adapter instances over two sessions, and a swept probe issue."""
@@ -279,13 +315,29 @@ async def ownership() -> AsyncIterator[Ownership]:
         yield held
     finally:
         for holder in held.holders:
-            await first.release_claim(issue_key=issue_key, holder=holder)
-        left = await _probe_comments(first, issue_key=issue_key, run_id=run_id)
+            with suppress(McpTransportError):
+                await first.release_claim(issue_key=issue_key, holder=holder)
+        left = sorted(
+            {
+                *await _probe_comments(first, issue_key=issue_key, run_id=run_id),
+                *await _probe_litter(first, issue_key=issue_key),
+            }
+        )
+        # Every deletion is attempted: one the backend turns down — a
+        # comment a stale listing still answers with — would otherwise
+        # abandon every marker after it, which is how this issue came to
+        # carry litter from runs that died hours earlier.
         for comment_key in left:
-            await first_caller.call_tool(
-                name="delete_comment", arguments={"id": comment_key}
-            )
-        remaining = await _probe_comments(first, issue_key=issue_key, run_id=run_id)
+            with suppress(McpTransportError):
+                await first_caller.call_tool(
+                    name="delete_comment", arguments={"id": comment_key}
+                )
+        remaining = sorted(
+            {
+                *await _probe_comments(first, issue_key=issue_key, run_id=run_id),
+                *await _probe_litter(first, issue_key=issue_key),
+            }
+        )
         record(
             probe=PROBE,
             question="does the run leave the probe issue as it found it?",
@@ -387,6 +439,13 @@ async def test_two_claimants_race_to_exactly_one_grant(ownership: Ownership) -> 
         verdict="one owner" if len(granted) == 1 else "NOT EXACTLY ONE",
     )
 
+    # Released before the assertions: a case that fails still hands the
+    # issue on, or every case after it measures this one's leftovers.
+    for outcome in outcomes:
+        await ownership.first.release_claim(
+            issue_key=ownership.issue_key, holder=outcome.holder
+        )
+
     assert len(granted) == 1
     assert len(refused) == 1
     if refused[0].status is ClaimStatus.LOST:
@@ -395,10 +454,6 @@ async def test_two_claimants_race_to_exactly_one_grant(ownership: Ownership) -> 
         assert held.holder == granted[0].holder
     else:
         assert refused[0].status is ClaimStatus.CONTENDED
-    for outcome in outcomes:
-        await ownership.first.release_claim(
-            issue_key=ownership.issue_key, holder=outcome.holder
-        )
 
 
 async def test_a_delayed_renewal_after_expiry_reports_lost(
@@ -442,6 +497,8 @@ async def test_a_delayed_renewal_after_expiry_reports_lost(
         verdict="no restore" if stale is None else "RESTORED",
     )
 
+    await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
+
     assert replacement.status is ClaimStatus.GRANTED
     assert stale is None
     assert held is not None
@@ -449,7 +506,6 @@ async def test_a_delayed_renewal_after_expiry_reports_lost(
     # The lapsed holder took its own marker down on the way out, so the
     # board advertises exactly the one holder that owns the issue.
     assert len(standing) == 1
-    await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
 
 
 async def test_an_edit_keeps_its_place_and_moves_the_stamp_that_dates_it(
@@ -588,6 +644,8 @@ async def test_a_grant_that_lands_late_gains_no_immunity_from_the_fence(
         verdict="no immunity" if stale is None else "IMMUNE",
     )
 
+    await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
+
     assert landed >= LANDING_DELAY_SECONDS
     assert 0.0 < late < LANDING_DELAY_SECONDS
     assert replacement.status is ClaimStatus.GRANTED
@@ -595,7 +653,6 @@ async def test_a_grant_that_lands_late_gains_no_immunity_from_the_fence(
     assert held is not None
     assert held.holder == holder_b
     assert len(standing) == 1
-    await ownership.second.release_claim(issue_key=ownership.issue_key, holder=holder_b)
 
 
 async def test_intersecting_lease_refused_disjoint_granted(
@@ -758,6 +815,9 @@ async def test_a_redeployed_process_claims_what_its_predecessor_holds(
         ),
     )
 
+    await ownership.first.release_claim(issue_key=ownership.issue_key, holder=holder_a)
+    freed = await ownership.first.active_claim(issue_key=ownership.issue_key)
+
     assert [one.status for one in outcomes] == [ClaimStatus.GRANTED] * 2
     assert standing
     assert all(holder_a in body and holder_b not in body for body in bodies)
@@ -767,5 +827,6 @@ async def test_a_redeployed_process_claims_what_its_predecessor_holds(
     assert rival.current_holder == holder_a
     assert renewed is not None
     assert renewed.status is ClaimStatus.GRANTED
-    await ownership.first.release_claim(issue_key=ownership.issue_key, holder=holder_a)
-    assert await ownership.first.active_claim(issue_key=ownership.issue_key) is None
+    # One release ends it: the duplicate a hidden confirmation can leave
+    # is this holder's too, and a release takes every marker of its own.
+    assert freed is None
