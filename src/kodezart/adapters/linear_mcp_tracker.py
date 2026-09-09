@@ -49,6 +49,11 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.run_event_stream import (
+    LaneRunEvent,
+    lane_run_events,
+    render_run_event,
+)
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import (
     live_conflict,
@@ -1648,6 +1653,37 @@ class LinearMcpTracker:
         return tuple(
             self._to_comment(wire, issue_key=issue_key)
             for wire in await self._comment_wires(issue_key)
+        )
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        """Append the event under this stream's configured lane marker."""
+        await self.post_comment(
+            issue_key=issue_key,
+            body=render_run_event(event=event, marker_prefixes=self._marker_prefixes),
+        )
+        return event
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        """Read the whole log with its reply links, then order by creation.
+
+        The reply links are REQUIRED rather than taken where offered: a
+        listing that omitted them could not distinguish a threaded decision
+        record from a posted event, and an omission would silently widen
+        the stream instead of failing.
+        """
+        return lane_run_events(
+            comments=tuple(
+                self._to_comment(wire, issue_key=issue_key)
+                for wire in await self._comment_wires(
+                    issue_key, require_reply_links=True
+                )
+            ),
+            lane_key=lane_key,
+            marker_prefixes=self._marker_prefixes,
         )
 
     async def read_escalation_resolution(

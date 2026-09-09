@@ -52,6 +52,11 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
+from kodezart.domain.run_event_stream import (
+    LaneRunEvent,
+    lane_run_events,
+    render_run_event,
+)
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
@@ -3849,6 +3854,24 @@ class FakeTrackerPort:
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        await self.post_comment(
+            issue_key=issue_key,
+            body=render_run_event(event=event, marker_prefixes=self.marker_prefixes),
+        )
+        return event
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        return lane_run_events(
+            comments=await self.list_comments(issue_key=issue_key),
+            lane_key=lane_key,
+            marker_prefixes=self.marker_prefixes,
+        )
 
     async def read_escalation_resolution(
         self, *, issue_key: str, lane_key: str, escalation_key: str

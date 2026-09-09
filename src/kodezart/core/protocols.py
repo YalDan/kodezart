@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
@@ -989,6 +990,37 @@ class TrackerPort(
         writes nothing. Several comments under the marker raise
         ``DuplicateCommentMarkerError`` before any write. Callers compose
         the marker and serialize concurrent writers to the same target.
+        """
+        ...
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        """Append *event* to its lane's stream on *issue_key*, as posted.
+
+        Appending is the stream's only write.  An event already in it is
+        never rewritten and never removed, which is what lets the stream
+        be read as a history rather than as a set of current answers.
+
+        Two equal events are two events.  A repeat is a fact about the
+        run — the same thing happened twice — and collapsing it would
+        report a lane that stalled and retried as one that never did.
+        """
+        ...
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        """*lane_key*'s events on *issue_key*, in write order.
+
+        Exactly the events posted for that lane on that issue, ordered by
+        when the backend recorded each write.  A record edited in place
+        under its own marker is not one of them, and neither is a threaded
+        reply — a decision record among them — whatever it carries.
+
+        A successful read with nothing posted returns an empty sequence.
+        An unreadable or damaged entry raises: a stream answering with a
+        hole would report a history that never happened.
         """
         ...
 
