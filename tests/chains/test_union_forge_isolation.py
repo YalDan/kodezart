@@ -10,7 +10,6 @@ below assert the union step never reaches it either.
 import ast
 import importlib
 import inspect
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +18,6 @@ from kodezart.core import protocols
 from kodezart.domain.errors import CheckChainExecutionError
 from tests.chains.test_delivery_coordinator import RaisingRunner
 from tests.chains.test_delivery_coordinator import delivery as delivery
-from tests.chains.test_delivery_coordinator import repository as repository
 from tests.fakes import FakeDeliveryProbe, FakePRCreator, FakePRStateReader
 from tests.services import test_union_composition as pinned
 
@@ -151,10 +149,6 @@ def held_by(subject: object) -> list[object]:
     return found
 
 
-async def show_ref(repository: Path) -> str:
-    return await pinned.git(repository, "show-ref")
-
-
 def test_the_forge_predicate_recognises_every_forge_double() -> None:
     """Guards the case below: a predicate that never fires proves nothing."""
     assert is_forge_shaped(FakePRCreator())
@@ -228,19 +222,18 @@ def test_the_query_ports_and_their_doubles_expose_no_merge_capability(
 
 
 async def test_verifying_publishes_nothing_and_leaves_every_ref_identical(
-    delivery, tmp_path
+    delivery,
 ) -> None:
     """Both the returning and the raising path leave the world where it was."""
     delivery.git = ForbiddenPublisher()
-    author, remote = tmp_path / "repo", tmp_path / "remote.git"
-    before = (await show_ref(author), await show_ref(remote))
+    before = await delivery.refs()
 
     result = await delivery.coordinator().verify()
 
     assert result.checks is not None
-    assert (await show_ref(author), await show_ref(remote)) == before
+    assert await delivery.refs() == before
 
     with pytest.raises(CheckChainExecutionError):
         await delivery.coordinator(RaisingRunner()).verify()
 
-    assert (await show_ref(author), await show_ref(remote)) == before
+    assert await delivery.refs() == before
