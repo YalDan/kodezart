@@ -54,6 +54,18 @@ CONSUME = "Consume"
 _VALUE_VERB = re.compile(
     rf"^(?P<verb>{DEFINE}|{CONSUME})\s+(?P<name>\S.*)$", re.IGNORECASE
 )
+#: Where a declaration stops naming its value and starts citing another
+#: member: the end of the sentence, or the dash that introduces the
+#: attribution on the same line.
+_CLAUSE_END = re.compile(r"\.(?:\s|$)|\s[\u2014\u2013-]\s")
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """One deliverable a body declares, and the text that names its value."""
+
+    number: str
+    remainder: str
 
 
 @dataclass(frozen=True)
@@ -123,19 +135,25 @@ def _heading_number(text: str) -> str | None:
     return None
 
 
-def numbered_deliverables(body: str) -> Counter[str]:
-    """Only explicit D headings or a declared deliverables numbered list."""
-    numbers: Counter[str] = Counter()
+def declared_lines(body: str) -> list[tuple[str, Declaration | None]]:
+    """Every visible line, with the deliverable it declares, if it declares one.
+
+    A body declares a deliverable either as an explicit ``D`` heading or as a
+    numbered item under a declared deliverables list.  Both forms are read
+    here, once, so a declaration a pointer may target is also a declaration a
+    model value may be named in.
+    """
+    read: list[tuple[str, Declaration | None]] = []
     numbered_list = False
     for line in _visible_lines(body):
-        # An indented example or a condensed Fix bullet is not a target.
-        if line.startswith(("    ", "\t")):
-            continue
         text = line.strip()
         heading = _HEADING.match(text)
         number = _heading_number(text)
-        if number is not None:
-            numbers[number] += 1
+        declaration = (
+            None
+            if number is None
+            else Declaration(number, text[heading.end("number") :])
+        )
         normalized = text.strip("#* :").casefold()
         if normalized.startswith(("deliverables", "deliverable sketch")):
             numbered_list = True
@@ -143,8 +161,20 @@ def numbered_deliverables(body: str) -> Counter[str]:
             numbered_list = False
         ordinal = _ORDINAL.match(text) if numbered_list else None
         if ordinal:
-            numbers[ordinal["number"]] += 1
-    return numbers
+            declaration = Declaration(
+                ordinal["number"], text[ordinal.end("number") + 1 :]
+            )
+        read.append((line, declaration))
+    return read
+
+
+def numbered_deliverables(body: str) -> Counter[str]:
+    """Only explicit D headings or a declared deliverables numbered list."""
+    return Counter(
+        declaration.number
+        for _, declaration in declared_lines(body)
+        if declaration is not None
+    )
 
 
 def _line_pointers(issue_key: str, line: str) -> list[Pointer]:
@@ -250,43 +280,45 @@ def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
     )
 
 
-def _value_heading(text: str) -> tuple[str, str, str] | None:
-    """A declared heading that names a model value, with its verb."""
-    heading = _HEADING.match(text)
-    number = _heading_number(text)
-    if heading is None or number is None:
-        return None
-    remainder = text[heading.end("number") :].lstrip(" \u2014\u2013:-").rstrip()
-    remainder = remainder.removesuffix("**").rstrip().rstrip(".").rstrip()
-    named = _VALUE_VERB.match(remainder)
+def declared_value(remainder: str) -> tuple[str, str] | None:
+    """The verb and value name a declaration carries, in either form.
+
+    The name runs to the end of the declaration's own clause, so an
+    attribution written on the declaration line names another member rather
+    than becoming part of the value's name.
+    """
+    text = remainder.lstrip(" \u2014\u2013:-").rstrip().removesuffix("**").rstrip()
+    clause = _CLAUSE_END.search(text)
+    named = _VALUE_VERB.match((text[: clause.start()] if clause else text).strip())
     if named is None:
         return None
-    return number, named["verb"].capitalize(), named["name"]
+    return named["verb"].capitalize(), named["name"].strip()
 
 
 def value_sites(issue: TrackerIssue) -> tuple[ValueSite, ...]:
     """Read the named value each deliverable of a body defines or consumes.
 
     A consuming deliverable attributes the definition to the one numbered
-    pointer inside it; none and several are both unresolved attributions.
+    pointer inside it, on its own line or below it; none and several are both
+    unresolved attributions.
     """
     sections: list[tuple[str, str, str, list[Pointer]]] = []
     section: list[Pointer] | None = None
-    for line in _visible_lines(issue.body):
-        text = line.strip()
-        named = _value_heading(text)
-        if named is not None:
-            number, verb, name = named
-            section = []
-            sections.append((number, verb, name, section))
-        elif _heading_number(text) is not None:
+    for line, declaration in declared_lines(issue.body):
+        numbered = [
+            pointer
+            for pointer in _line_pointers(issue.issue_key, line)
+            if pointer.number is not None
+        ]
+        if declaration is not None:
+            named = declared_value(declaration.remainder)
             section = None
+            if named is not None:
+                verb, name = named
+                section = list(numbered)
+                sections.append((declaration.number, verb, name, section))
         elif section is not None:
-            section.extend(
-                pointer
-                for pointer in _line_pointers(issue.issue_key, line)
-                if pointer.number is not None
-            )
+            section.extend(numbered)
     return tuple(
         ValueSite(
             issue.issue_key,
@@ -576,10 +608,16 @@ async def workspace(request):
     return fixture
 
 
-async def test_committed_fixture_runs_actual_query_and_pointer_resolution(workspace):
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+@pytest.fixture
+def tracker(workspace) -> TrackerPort:
+    """The one handle this suite reads the model through."""
+    return workspace.tracker
+
+
+async def test_committed_fixture_runs_actual_query_and_pointer_resolution(
+    tracker, workspace
+):
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     assert snapshot["members"] == ["member/alpha", "member/beta"]
     assert "criterion/alpha" in snapshot["documents"]
@@ -588,9 +626,10 @@ async def test_committed_fixture_runs_actual_query_and_pointer_resolution(worksp
 
 
 async def test_new_member_without_body_edit_is_checked_by_real_pointer_invariant(
+    tracker,
     workspace,
 ):
-    before = (await workspace.tracker.read_issue(issue_key="member/alpha")).body
+    before = (await tracker.read_issue(issue_key="member/alpha")).body
     await workspace.seed(
         [
             {
@@ -600,13 +639,11 @@ async def test_new_member_without_body_edit_is_checked_by_real_pointer_invariant
             }
         ]
     )
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert "member/new" in failures[0] and "member/beta D9" in failures[0]
     assert "member/new" in snapshot["members"]
-    assert (await workspace.tracker.read_issue(issue_key="member/alpha")).body == before
+    assert (await tracker.read_issue(issue_key="member/alpha")).body == before
     workspace.read_only()
 
 
@@ -623,26 +660,22 @@ async def test_new_member_without_body_edit_is_checked_by_real_pointer_invariant
     ],
 )
 async def test_absent_unnumbered_quoted_and_ambiguous_targets_fail(
-    workspace, replacement
+    tracker, workspace, replacement
 ):
     await workspace.seed(
         [{"key": "member/beta", "body": replacement, "labels": [CLASSIFICATION]}]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 2
     assert all("member/beta D2" in failure for failure in failures)
     await workspace.seed(
         [{"key": "member/beta", "body": "## D2 — restored", "labels": [CLASSIFICATION]}]
     )
-    assert (await model_agreement(workspace.tracker, classification=CLASSIFICATION))[
-        0
-    ] == ()
+    assert (await model_agreement(tracker, classification=CLASSIFICATION))[0] == ()
 
 
-async def test_comment_pointer_fails_naming_its_source_and_target(workspace):
-    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
+async def test_comment_pointer_fails_naming_its_source_and_target(tracker, workspace):
+    url = (await tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
@@ -652,17 +685,15 @@ async def test_comment_pointer_fails_naming_its_source_and_target(workspace):
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert all(
         value in failures[0] for value in ("member/new", "member/beta", "comment")
     )
 
 
-async def test_native_mention_cannot_hide_a_comment_target(workspace):
-    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
+async def test_native_mention_cannot_hide_a_comment_target(tracker, workspace):
+    url = (await tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
@@ -676,13 +707,11 @@ async def test_native_mention_cannot_hide_a_comment_target(workspace):
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1 and "comment or unnumbered fragment" in failures[0]
 
 
-async def test_native_criterion_pointer_reads_its_actual_family(workspace):
+async def test_native_criterion_pointer_reads_its_actual_family(tracker, workspace):
     await workspace.seed(
         [
             {
@@ -692,9 +721,7 @@ async def test_native_criterion_pointer_reads_its_actual_family(workspace):
             }
         ]
     )
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     assert snapshot["criteria"]["member/alpha"] == ["criterion/alpha"]
 
@@ -710,14 +737,10 @@ async def test_native_criterion_pointer_reads_its_actual_family(workspace):
     ],
 )
 async def test_current_port_snapshot_fails_drift_instead_of_passing_old_fixture(
-    workspace, mutation
+    tracker, workspace, mutation
 ):
-    _, baseline = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
-    _, unchanged = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    _, baseline = await model_agreement(tracker, classification=CLASSIFICATION)
+    _, unchanged = await model_agreement(tracker, classification=CLASSIFICATION)
     compare_snapshot(baseline, unchanged)
     changes = {
         "member_body": {
@@ -749,7 +772,7 @@ async def test_current_port_snapshot_fails_drift_instead_of_passing_old_fixture(
         },
     }
     await workspace.seed([changes[mutation]])
-    _, changed = await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    _, changed = await model_agreement(tracker, classification=CLASSIFICATION)
     with pytest.raises(AssertionError, match="model snapshot drift"):
         compare_snapshot(baseline, changed)
     workspace.read_only()
@@ -761,7 +784,7 @@ def test_explicit_deliverable_numbering_and_parenthesized_multiple_references():
     ) == Counter({"1": 1, "2": 1})
 
 
-async def test_parenthesized_targets_each_reach_the_actual_checker(workspace):
+async def test_parenthesized_targets_each_reach_the_actual_checker(tracker, workspace):
     await workspace.seed(
         [
             {
@@ -773,13 +796,13 @@ async def test_parenthesized_targets_each_reach_the_actual_checker(workspace):
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1 and "member/beta D1" in failures[0]
 
 
-async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace):
+async def test_external_native_criterion_is_resolved_by_its_own_parent(
+    tracker, workspace
+):
     await workspace.seed(
         [
             {"key": "outside/parent", "body": "An unmarked owner", "labels": []},
@@ -791,7 +814,7 @@ async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace
             },
         ]
     )
-    url = (await workspace.tracker.read_issue(issue_key="outside/criterion")).url
+    url = (await tracker.read_issue(issue_key="outside/criterion")).url
     await workspace.seed(
         [
             {
@@ -801,9 +824,7 @@ async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace
             }
         ]
     )
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     assert snapshot["criteria"]["outside/parent"] == ["outside/criterion"]
     assert "outside/parent" not in snapshot["members"]
@@ -818,18 +839,16 @@ async def test_external_native_criterion_is_resolved_by_its_own_parent(workspace
         '<issue id="member/beta">member/beta</issue> D2',
     ],
 )
-async def test_reference_forms_retain_exact_source_span(workspace, reference):
+async def test_reference_forms_retain_exact_source_span(tracker, workspace, reference):
     reference = reference.format(
-        url=(await workspace.tracker.read_issue(issue_key="member/beta")).url
+        url=(await tracker.read_issue(issue_key="member/beta")).url
     )
     await workspace.seed(
         [{"key": "member/new", "body": reference, "labels": [CLASSIFICATION]}]
     )
-    source = await workspace.tracker.read_issue(issue_key="member/new")
+    source = await tracker.read_issue(issue_key="member/new")
     assert explicit_pointers(source)[0].spelling == reference
-    assert (await model_agreement(workspace.tracker, classification=CLASSIFICATION))[
-        0
-    ] == ()
+    assert (await model_agreement(tracker, classification=CLASSIFICATION))[0] == ()
 
 
 @pytest.mark.parametrize(
@@ -839,15 +858,17 @@ async def test_reference_forms_retain_exact_source_span(workspace, reference):
         '<issue id="member/beta">member/beta</issue> (D1-D3)',
     ],
 )
-async def test_ranges_refuse_instead_of_checking_only_endpoints(workspace, body):
+async def test_ranges_refuse_instead_of_checking_only_endpoints(
+    tracker, workspace, body
+):
     await workspace.seed(
         [{"key": "member/new", "body": body, "labels": [CLASSIFICATION]}]
     )
     with pytest.raises(AssertionError, match="numbered reference range"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
 
 
-async def test_literal_inline_markup_is_not_a_reference(workspace):
+async def test_literal_inline_markup_is_not_a_reference(tracker, workspace):
     await workspace.seed(
         [
             {
@@ -857,12 +878,12 @@ async def test_literal_inline_markup_is_not_a_reference(workspace):
             }
         ]
     )
-    assert (await model_agreement(workspace.tracker, classification=CLASSIFICATION))[
-        0
-    ] == ()
+    assert (await model_agreement(tracker, classification=CLASSIFICATION))[0] == ()
 
 
-async def test_opaque_criterion_key_is_not_parsed_as_a_deliverable_number(workspace):
+async def test_opaque_criterion_key_is_not_parsed_as_a_deliverable_number(
+    tracker, workspace
+):
     await workspace.seed(
         [
             {
@@ -878,18 +899,16 @@ async def test_opaque_criterion_key_is_not_parsed_as_a_deliverable_number(worksp
             },
         ]
     )
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     assert "D2" in snapshot["criteria"]["member/alpha"]
 
 
 @pytest.mark.parametrize("anchor,valid", [("unnumbered-section", False), ("D2", True)])
 async def test_link_anchor_cannot_redirect_a_numbered_reference(
-    workspace, anchor, valid
+    tracker, workspace, anchor, valid
 ):
-    url = (await workspace.tracker.read_issue(issue_key="member/beta")).url
+    url = (await tracker.read_issue(issue_key="member/beta")).url
     await workspace.seed(
         [
             {
@@ -899,13 +918,13 @@ async def test_link_anchor_cannot_redirect_a_numbered_reference(
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert bool(failures) is not valid
 
 
-async def test_unreadable_target_names_the_pointer_and_preserves_cause(workspace):
+async def test_unreadable_target_names_the_pointer_and_preserves_cause(
+    tracker, workspace
+):
     await workspace.seed(
         [
             {
@@ -918,12 +937,12 @@ async def test_unreadable_target_names_the_pointer_and_preserves_cause(workspace
     with pytest.raises(
         AssertionError, match=r"member/new.*missing/target.*could not be read"
     ) as raised:
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
     assert raised.value.__cause__ is not None
 
 
 async def test_changes_during_reference_reads_refuse_a_mixed_snapshot(
-    workspace, monkeypatch
+    tracker, workspace, monkeypatch
 ):
     await workspace.seed(
         [
@@ -935,7 +954,7 @@ async def test_changes_during_reference_reads_refuse_a_mixed_snapshot(
             },
         ]
     )
-    original = workspace.tracker.read_planning_issue
+    original = tracker.read_planning_issue
     changed = False
 
     async def editing(*, issue_key):
@@ -954,9 +973,9 @@ async def test_changes_during_reference_reads_refuse_a_mixed_snapshot(
             )
         return result
 
-    monkeypatch.setattr(workspace.tracker, "read_planning_issue", editing)
+    monkeypatch.setattr(tracker, "read_planning_issue", editing)
     with pytest.raises(AssertionError, match="model snapshot drift"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
 
 
 def test_fenced_comment_opener_does_not_consume_later_real_definitions():
@@ -975,7 +994,7 @@ def test_fenced_comment_opener_does_not_consume_later_real_definitions():
     ],
 )
 async def test_unnumbered_criterion_comment_redirect_refuses(
-    workspace, external, reference
+    tracker, workspace, external, reference
 ):
     key = "outside/criterion" if external else "criterion/alpha"
     if external:
@@ -995,22 +1014,22 @@ async def test_unnumbered_criterion_comment_redirect_refuses(
             {
                 "key": "member/new",
                 "body": reference.format(
-                    key=key, url=(await workspace.tracker.read_issue(issue_key=key)).url
+                    key=key, url=(await tracker.read_issue(issue_key=key)).url
                 ),
                 "labels": [CLASSIFICATION],
             }
         ]
     )
-    failures, snapshot = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, snapshot = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert all(part in failures[0] for part in ("member/new", key, "comment"))
     assert key in snapshot["criteria"]["outside/parent" if external else "member/alpha"]
     workspace.read_only()
 
 
-async def test_contextual_comment_label_is_not_guessed_to_be_a_native_key(workspace):
+async def test_contextual_comment_label_is_not_guessed_to_be_a_native_key(
+    tracker, workspace
+):
     await workspace.seed(
         [
             {
@@ -1020,14 +1039,12 @@ async def test_contextual_comment_label_is_not_guessed_to_be_a_native_key(worksp
             }
         ]
     )
-    assert (await model_agreement(workspace.tracker, classification=CLASSIFICATION))[
-        0
-    ] == ()
+    assert (await model_agreement(tracker, classification=CLASSIFICATION))[0] == ()
     workspace.read_only()
 
 
 async def test_consulted_criterion_census_cannot_change_during_resolution(
-    workspace, monkeypatch
+    tracker, workspace, monkeypatch
 ):
     await workspace.seed(
         [
@@ -1039,7 +1056,7 @@ async def test_consulted_criterion_census_cannot_change_during_resolution(
             {"key": "outside/parent", "body": "Unmarked owner", "labels": []},
         ]
     )
-    original = workspace.tracker.read_labeled_issues
+    original = tracker.read_labeled_issues
     changed = False
 
     async def changing(*, classification):
@@ -1059,14 +1076,14 @@ async def test_consulted_criterion_census_cannot_change_during_resolution(
             )
         return result
 
-    monkeypatch.setattr(workspace.tracker, "read_labeled_issues", changing)
+    monkeypatch.setattr(tracker, "read_labeled_issues", changing)
     with pytest.raises(AssertionError, match="model snapshot drift"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
 
 
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_criterion_lookup_failure_is_not_contextual_prose(
-    workspace, monkeypatch, cancel
+    tracker, workspace, monkeypatch, cancel
 ):
     import asyncio
 
@@ -1079,7 +1096,7 @@ async def test_criterion_lookup_failure_is_not_contextual_prose(
             }
         ]
     )
-    original = workspace.tracker.read_labeled_issues
+    original = tracker.read_labeled_issues
 
     async def failed(*, classification):
         if classification == "criterion":
@@ -1088,12 +1105,12 @@ async def test_criterion_lookup_failure_is_not_contextual_prose(
             raise RuntimeError("native criterion census unavailable")
         return await original(classification=classification)
 
-    monkeypatch.setattr(workspace.tracker, "read_labeled_issues", failed)
+    monkeypatch.setattr(tracker, "read_labeled_issues", failed)
     with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
 
 
-async def test_native_mention_cannot_redirect_a_different_issue(workspace):
+async def test_native_mention_cannot_redirect_a_different_issue(tracker, workspace):
     await workspace.seed(
         [
             {"key": "wrong/target", "body": "No definition here", "labels": []},
@@ -1105,13 +1122,13 @@ async def test_native_mention_cannot_redirect_a_different_issue(workspace):
         ]
     )
     with pytest.raises(AssertionError, match=r"native mention identity.*member/beta"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
     workspace.read_only()
 
 
 @pytest.mark.parametrize("remap", [False, True])
 async def test_native_alias_is_resolved_to_its_canonical_key_and_rechecked(
-    workspace, monkeypatch, remap
+    tracker, workspace, monkeypatch, remap
 ):
     await workspace.seed(
         [
@@ -1123,7 +1140,7 @@ async def test_native_alias_is_resolved_to_its_canonical_key_and_rechecked(
             },
         ]
     )
-    original = workspace.tracker.read_planning_issue
+    original = tracker.read_planning_issue
     aliases = 0
 
     async def native_alias(*, issue_key):
@@ -1133,27 +1150,27 @@ async def test_native_alias_is_resolved_to_its_canonical_key_and_rechecked(
             issue_key = "wrong/target" if remap and aliases > 1 else "member/beta"
         return await original(issue_key=issue_key)
 
-    monkeypatch.setattr(workspace.tracker, "read_planning_issue", native_alias)
+    monkeypatch.setattr(tracker, "read_planning_issue", native_alias)
     if remap:
         with pytest.raises(
             AssertionError, match="model snapshot drift: native mention"
         ):
-            await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+            await model_agreement(tracker, classification=CLASSIFICATION)
     else:
-        failures, _ = await model_agreement(
-            workspace.tracker, classification=CLASSIFICATION
-        )
+        failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
         assert failures == ()
     assert aliases == 2
     workspace.read_only()
 
 
 @pytest.mark.parametrize("native", [False, True])
-async def test_hyperlink_cannot_redirect_the_displayed_target(workspace, native):
+async def test_hyperlink_cannot_redirect_the_displayed_target(
+    tracker, workspace, native
+):
     await workspace.seed(
         [{"key": "wrong/target", "body": "No definition", "labels": []}]
     )
-    url = (await workspace.tracker.read_issue(issue_key="wrong/target")).url
+    url = (await tracker.read_issue(issue_key="wrong/target")).url
     body = (
         f'<issue id="member/beta" href="{url}">member/beta</issue> D2'
         if native
@@ -1163,15 +1180,17 @@ async def test_hyperlink_cannot_redirect_the_displayed_target(workspace, native)
         [{"key": "member/new", "body": body, "labels": [CLASSIFICATION]}]
     )
     with pytest.raises(AssertionError, match=r"pointer URL differs.*member/beta"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
     workspace.read_only()
 
 
-async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeypatch):
+async def test_target_url_change_refuses_the_retained_pointer(
+    tracker, workspace, monkeypatch
+):
     await workspace.seed(
         [{"key": "external", "body": "## D2 — Original target", "labels": []}]
     )
-    url = (await workspace.tracker.read_issue(issue_key="external")).url
+    url = (await tracker.read_issue(issue_key="external")).url
     await workspace.seed(
         [
             {
@@ -1181,7 +1200,7 @@ async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeyp
             }
         ]
     )
-    original = workspace.tracker.read_planning_issue
+    original = tracker.read_planning_issue
     reads = 0
 
     async def redirecting(*, issue_key):
@@ -1195,14 +1214,14 @@ async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeyp
                 )
         return issue
 
-    monkeypatch.setattr(workspace.tracker, "read_planning_issue", redirecting)
+    monkeypatch.setattr(tracker, "read_planning_issue", redirecting)
     with pytest.raises(AssertionError, match="model snapshot drift: target external"):
-        await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+        await model_agreement(tracker, classification=CLASSIFICATION)
 
 
 @pytest.mark.parametrize("target_kind", ["context", "numbered", "criterion"])
 async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
-    workspace, target_kind
+    tracker, workspace, target_kind
 ):
     # A measured amendment cites its ordinary parent by a short native URL,
     # while the issue response reports the longer canonical slug URL.
@@ -1227,18 +1246,18 @@ async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
         ]
     )
     if target_kind == "context":
-        failures, _ = await model_agreement(
-            workspace.tracker, classification=CLASSIFICATION
-        )
+        failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
         assert failures == ()
     else:
         with pytest.raises(AssertionError, match=r"pointer URL differs.*owner/744"):
-            await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+            await model_agreement(tracker, classification=CLASSIFICATION)
     workspace.read_only()
 
 
-async def test_committed_fixture_resolves_each_name_to_its_one_definition(workspace):
-    _, documents, _ = await read_model(workspace.tracker, classification=CLASSIFICATION)
+async def test_committed_fixture_resolves_each_name_to_its_one_definition(
+    tracker, workspace
+):
+    _, documents, _ = await read_model(tracker, classification=CLASSIFICATION)
     sites = {
         site.address: site
         for document in documents.values()
@@ -1255,7 +1274,7 @@ async def test_committed_fixture_resolves_each_name_to_its_one_definition(worksp
     workspace.read_only()
 
 
-async def test_two_bodies_naming_one_value_differently_fail(workspace):
+async def test_two_bodies_naming_one_value_differently_fail(tracker, workspace):
     await workspace.seed(
         [
             {
@@ -1269,9 +1288,7 @@ async def test_two_bodies_naming_one_value_differently_fail(workspace):
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert all(
         part in failures[0]
@@ -1286,6 +1303,7 @@ async def test_two_bodies_naming_one_value_differently_fail(workspace):
 
 
 async def test_two_bodies_attributing_to_each_other_fail_as_an_unresolvable_cycle(
+    tracker,
     workspace,
 ):
     await workspace.seed(
@@ -1310,9 +1328,7 @@ async def test_two_bodies_attributing_to_each_other_fail_as_an_unresolvable_cycl
             },
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 2
     assert all(
         "definition cycle" in failure and "resolves to no definition" in failure
@@ -1322,7 +1338,9 @@ async def test_two_bodies_attributing_to_each_other_fail_as_an_unresolvable_cycl
     workspace.read_only()
 
 
-async def test_one_name_defined_by_two_members_names_both_definitions(workspace):
+async def test_one_name_defined_by_two_members_names_both_definitions(
+    tracker, workspace
+):
     await workspace.seed(
         [
             {
@@ -1332,15 +1350,13 @@ async def test_one_name_defined_by_two_members_names_both_definitions(workspace)
             }
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert "member/new D3" in failures[0] and "member/beta D2" in failures[0]
     workspace.read_only()
 
 
-async def test_a_name_resolves_through_an_intermediate_attribution(workspace):
+async def test_a_name_resolves_through_an_intermediate_attribution(tracker, workspace):
     await workspace.seed(
         [
             {
@@ -1363,9 +1379,7 @@ async def test_a_name_resolves_through_an_intermediate_attribution(workspace):
             },
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     workspace.read_only()
 
@@ -1380,14 +1394,12 @@ async def test_a_name_resolves_through_an_intermediate_attribution(workspace):
     ],
 )
 async def test_a_consumed_name_without_one_attribution_resolves_to_nothing(
-    workspace, section
+    tracker, workspace, section
 ):
     await workspace.seed(
         [{"key": "member/new", "body": section, "labels": [CLASSIFICATION]}]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert len(failures) == 1
     assert (
         "member/new D3" in failures[0] and "no single numbered pointer" in failures[0]
@@ -1402,7 +1414,9 @@ async def test_a_consumed_name_without_one_attribution_resolves_to_nothing(
         "**D3 \u2014 Define the shared address.**",
     ],
 )
-async def test_both_declared_heading_formats_name_the_same_value(workspace, heading):
+async def test_both_declared_heading_formats_name_the_same_value(
+    tracker, workspace, heading
+):
     await workspace.seed(
         [
             {"key": "member/new", "body": heading, "labels": [CLASSIFICATION]},
@@ -1417,11 +1431,161 @@ async def test_both_declared_heading_formats_name_the_same_value(workspace, head
             },
         ]
     )
-    failures, _ = await model_agreement(
-        workspace.tracker, classification=CLASSIFICATION
-    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
     assert failures == ()
     workspace.read_only()
+
+
+DELIVERABLE_LIST = "## Deliverables\n\n"
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        '<issue id="member/beta">member/beta</issue> D2',
+        "[member/beta D2]({url})",
+        "`member/beta` D2",
+    ],
+)
+async def test_a_deliverable_list_item_naming_one_value_differently_fails(
+    tracker, workspace, reference
+):
+    reference = reference.format(
+        url=(await tracker.read_issue(issue_key="member/beta")).url
+    )
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. Consume the criterion address "
+                    f"\u2014 see {reference}."
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
+    assert len(failures) == 1
+    assert all(
+        part in failures[0]
+        for part in (
+            "member/list D1",
+            "member/beta D2",
+            "the criterion address",
+            "the shared identity",
+        )
+    )
+    workspace.read_only()
+
+
+async def test_a_deliverable_list_item_consuming_the_defined_name_resolves(
+    tracker, workspace
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. An ordinary deliverable.\n"
+                    "2. Consume the shared identity \u2014 see "
+                    '<issue id="member/beta">member/beta</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
+    assert failures == ()
+    workspace.read_only()
+
+
+async def test_a_deliverable_list_item_defining_an_owned_value_names_both(
+    tracker, workspace
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": f"{DELIVERABLE_LIST}1. Define the shared identity.",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
+    assert len(failures) == 1
+    assert "member/list D1" in failures[0] and "member/beta D2" in failures[0]
+    workspace.read_only()
+
+
+async def test_deliverable_list_items_attributing_to_each_other_fail_as_a_cycle(
+    tracker,
+    workspace,
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/one",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. Consume the shared address \u2014 see "
+                    '<issue id="member/two">member/two</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+            {
+                "key": "member/two",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. An ordinary deliverable.\n"
+                    "2. Consume the shared address \u2014 see "
+                    '<issue id="member/one">member/one</issue> D1.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    failures, _ = await model_agreement(tracker, classification=CLASSIFICATION)
+    assert len(failures) == 2
+    assert all(
+        "definition cycle" in failure and "resolves to no definition" in failure
+        for failure in failures
+    )
+    assert "member/one D1" in failures[0] and "member/two D2" in failures[0]
+    workspace.read_only()
+
+
+@pytest.mark.parametrize(
+    "remainder,named",
+    [
+        (" \u2014 Define the shared identity", (DEFINE, "the shared identity")),
+        (" \u2014 Define the shared identity.**", (DEFINE, "the shared identity")),
+        (
+            " Consume the shared identity \u2014 see [member/beta D2](url).",
+            (CONSUME, "the shared identity"),
+        ),
+        (
+            " Consume the shared identity. See [member/beta D2](url).",
+            (CONSUME, "the shared identity"),
+        ),
+        (" consume THE SHARED IDENTITY", (CONSUME, "THE SHARED IDENTITY")),
+        (" An ordinary deliverable", None),
+        (" \u2014 Architecture acceptance", None),
+    ],
+)
+def test_a_declaration_names_its_value_up_to_the_attribution_it_cites(remainder, named):
+    assert declared_value(remainder) == named
+
+
+def test_one_reader_counts_both_declaration_forms():
+    heading = "## D1 \u2014 Consume the shared identity"
+    listed = f"{DELIVERABLE_LIST}1. Consume the shared identity"
+    assert numbered_deliverables(heading) == Counter({"1": 1})
+    assert numbered_deliverables(listed) == Counter({"1": 1})
+    assert [
+        (declaration.number, declared_value(declaration.remainder))
+        for body in (heading, listed)
+        for _, declaration in declared_lines(body)
+        if declaration is not None
+    ] == [("1", (CONSUME, "the shared identity"))] * 2
 
 
 @pytest.mark.live
