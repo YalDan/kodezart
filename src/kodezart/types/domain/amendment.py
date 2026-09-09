@@ -15,7 +15,9 @@ arm: a claim nobody could substantiate is a claim that did not
 substantiate, and that is already one of the two.
 """
 
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Self
 
 from pydantic import ConfigDict, Field, model_validator
@@ -44,6 +46,29 @@ class AmendmentGround(StrEnum):
     #: The criterion can be satisfied only by breaking a house rule the
     #: repository states.
     REQUIRES_BREAKING_HOUSE_RULE = "requires_breaking_house_rule"
+
+
+#: How each ground is reproduced at the resolved base: whether the
+#: repository has to CARRY the quoted text there, or whether the ground is
+#: exactly the measured absence of it at a readable address.
+#:
+#: Three grounds are claims ABOUT something the repository states, so the
+#: statement has to be found.  ``PREMISE_FALSE_AT_BASE`` is the one claim
+#: about what the repository does NOT state, and reproducing it is reading
+#: the blob the premise points at and not finding what the premise says is
+#: there.  A read that fails reproduces nothing either way — absence is a
+#: measurement, and a measurement needs a blob that was read.
+#:
+#: Total over the enum by construction, and asserted so: a fifth ground
+#: cannot be added without deciding how it is reproduced.
+QUOTE_CARRIED_AT_BASE: Mapping[AmendmentGround, bool] = MappingProxyType(
+    {
+        AmendmentGround.UNSATISFIABLE_AT_BASE: True,
+        AmendmentGround.MUTUALLY_UNSATISFIABLE: True,
+        AmendmentGround.PREMISE_FALSE_AT_BASE: False,
+        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE: True,
+    }
+)
 
 
 class AmendmentDecision(StrEnum):
@@ -79,6 +104,12 @@ class AmendmentClaim(CamelCaseModel):
     reasoning or the transcript of the session that produced it.  A claim
     offering no address at all is a legal claim — it is simply one
     nothing can reproduce.
+
+    ``counter_subject`` belongs to exactly one ground.  A mutual
+    unsatisfiability is a claim about a PAIR, so the claim has to say
+    which pair; every other ground is about the subject alone, and naming
+    a second criterion there would be a field with no meaning rather than
+    an ignored one.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -87,6 +118,18 @@ class AmendmentClaim(CamelCaseModel):
     deviation: str = Field(min_length=1)
     asserted_ground: AmendmentGround
     asserted_evidence: tuple[GroundEvidence, ...] = ()
+    counter_subject: CriterionRef | None = None
+
+    @model_validator(mode="after")
+    def _only_a_mutual_claim_names_a_pair(self) -> Self:
+        mutual = self.asserted_ground is AmendmentGround.MUTUALLY_UNSATISFIABLE
+        if mutual and self.counter_subject is None:
+            msg = "a mutually unsatisfiable claim names the other criterion"
+            raise ValueError(msg)
+        if not mutual and self.counter_subject is not None:
+            msg = "only a mutually unsatisfiable claim names a counter subject"
+            raise ValueError(msg)
+        return self
 
 
 class AmendmentVerdict(CamelCaseModel):

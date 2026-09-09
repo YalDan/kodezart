@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitSourceReader, TrackerCriteriaReader
 from kodezart.types.domain.amendment import (
+    QUOTE_CARRIED_AT_BASE,
     AmendmentClaim,
     AmendmentDecision,
     AmendmentVerdict,
@@ -54,7 +55,8 @@ class AmendmentReconciler:
         self._require_subject(claim, criteria)
         base_sha = await self._source.resolve_commit(cwd=repository, ref=base_ref)
         reproduced = await self._reproduce(
-            claim.asserted_evidence,
+            claim,
+            criteria=criteria,
             repository=repository,
             base_sha=base_sha,
         )
@@ -99,26 +101,41 @@ class AmendmentReconciler:
 
     async def _reproduce(
         self,
-        evidence: Sequence[GroundEvidence],
+        claim: AmendmentClaim,
         *,
+        criteria: Sequence[TrackerIssue],
         repository: str,
         base_sha: str,
     ) -> tuple[GroundEvidence, ...] | None:
-        """*evidence* re-read at *base_sha*, or ``None`` when any of it fails.
+        """The claim's evidence re-read for ITS ground, or ``None``.
+
+        The asserted ground selects which reading is performed and is
+        never itself the answer: the reconciler runs that ground's
+        reproduction against the repository at *base_sha* and reports
+        what it read.  It does not go looking for some other ground the
+        same evidence would have supported — a claim that named the wrong
+        one is a claim that did not reproduce.
 
         Every address has to hold.  Offering five addresses of which one
         bears out is not four fifths of a ground; and offering none is
         nothing to reproduce, which is why the empty claim lands here
         rather than in a vacuous truth.
         """
-        if not evidence:
+        if not claim.asserted_evidence:
             return None
-        for item in evidence:
+        if claim.counter_subject is not None and not any(
+            criterion.issue_key == claim.counter_subject for criterion in criteria
+        ):
+            return None
+        carried = QUOTE_CARRIED_AT_BASE[claim.asserted_ground]
+        for item in claim.asserted_evidence:
             blob = await self._source.find_source(
                 cwd=repository,
                 commit_sha=base_sha,
                 path=item.path,
             )
-            if blob is None or item.quote.encode("utf-8") not in blob.content:
+            if blob is None:
                 return None
-        return tuple(evidence)
+            if (item.quote.encode("utf-8") in blob.content) is not carried:
+                return None
+        return tuple(claim.asserted_evidence)

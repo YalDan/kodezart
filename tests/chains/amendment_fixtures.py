@@ -29,6 +29,8 @@ from tests.fakes import FakeTrackerPort
 
 HOUSE_PATH = "src/house.py"
 LATER_PATH = "src/later.py"
+RULES_PATH = "docs/house_rules.md"
+HOUSE_RULE = "Never weaken a test to reach a green gate."
 AT_BASE = "the base bears this out"
 ONLY_AFTER_BASE = "this line arrives after the base"
 BASE_REF = "fixture-base"
@@ -51,6 +53,7 @@ def repo(tmp_path: Path) -> Path:
     """Two commits, with ``fixture-base`` pinned at the first of them."""
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
+    (repo / "docs").mkdir(parents=True)
     git(repo, "init", "-q")
     git(repo, "config", "user.name", "Fixture")
     git(repo, "config", "user.email", "fixture@example.invalid")
@@ -58,6 +61,7 @@ def repo(tmp_path: Path) -> Path:
         f"# {AT_BASE}\n\n\ndef implementation() -> int:\n    return 1\n",
         encoding="utf-8",
     )
+    (repo / RULES_PATH).write_text(f"# House rules\n\n{HOUSE_RULE}\n", encoding="utf-8")
     git(repo, "add", "--all")
     git(repo, "commit", "-qm", "fixture base")
     git(repo, "branch", BASE_REF)
@@ -127,6 +131,7 @@ def claim(
     evidence: Sequence[GroundEvidence],
     subject: CriterionRef = SUBJECT,
     ground: AmendmentGround = AmendmentGround.UNSATISFIABLE_AT_BASE,
+    counter_subject: CriterionRef | None = None,
 ) -> AmendmentClaim:
     """A claim in the shape a deviating writer submits one."""
     return AmendmentClaim(
@@ -134,4 +139,5 @@ def claim(
         deviation="the criterion could not be met as written",
         asserted_ground=ground,
         asserted_evidence=tuple(evidence),
+        counter_subject=counter_subject,
     )

@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
 from kodezart.chains.amendment_reconciler import AmendmentReconciler
 from kodezart.types.domain.amendment import (
+    QUOTE_CARRIED_AT_BASE,
     AmendmentClaim,
     AmendmentDecision,
     AmendmentGround,
@@ -27,9 +28,12 @@ from tests.chains.amendment_fixtures import (
     AT_BASE,
     BASE_REF,
     HOUSE_PATH,
+    HOUSE_RULE,
     ISSUE,
     LATER_PATH,
     ONLY_AFTER_BASE,
+    RULES_PATH,
+    SIBLING,
     SUBJECT,
     claim,
     reconciler,
@@ -234,3 +238,168 @@ def test_the_fixture_repository_actually_separates_its_two_commits(repo) -> None
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True
     ).stdout.decode()
     assert base != head
+
+
+# ---------------------------------------------------------------------------
+# AC-2 — one amending case and one paired negative per ground
+# ---------------------------------------------------------------------------
+
+UNWRITTEN = "never written into this repository"
+NO_SUCH_RULE = "a house rule nobody ever wrote down"
+
+#: Eight fixtures: each ground reproduced against the base, and each
+#: ground asserted by the claimant over a fixture that does not bear it.
+#: The pairs differ ONLY in what the repository carries at the base, so a
+#: reconciler that answered from the claim would answer both alike.
+GROUND_CASES: tuple[
+    tuple[str, AmendmentGround, list[GroundEvidence], CriterionRef | None, bool], ...
+] = (
+    (
+        "unsatisfiable-reproduced",
+        AmendmentGround.UNSATISFIABLE_AT_BASE,
+        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
+        None,
+        True,
+    ),
+    (
+        "unsatisfiable-unsupported",
+        AmendmentGround.UNSATISFIABLE_AT_BASE,
+        [GroundEvidence(path=HOUSE_PATH, quote=UNWRITTEN)],
+        None,
+        False,
+    ),
+    (
+        "mutual-reproduced",
+        AmendmentGround.MUTUALLY_UNSATISFIABLE,
+        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
+        SIBLING,
+        True,
+    ),
+    (
+        "mutual-unsupported",
+        AmendmentGround.MUTUALLY_UNSATISFIABLE,
+        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
+        CriterionRef("ordinary/child"),
+        False,
+    ),
+    (
+        "premise-false-reproduced",
+        AmendmentGround.PREMISE_FALSE_AT_BASE,
+        [GroundEvidence(path=HOUSE_PATH, quote=ONLY_AFTER_BASE)],
+        None,
+        True,
+    ),
+    (
+        "premise-false-unsupported",
+        AmendmentGround.PREMISE_FALSE_AT_BASE,
+        [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)],
+        None,
+        False,
+    ),
+    (
+        "house-rule-reproduced",
+        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE,
+        [GroundEvidence(path=RULES_PATH, quote=HOUSE_RULE)],
+        None,
+        True,
+    ),
+    (
+        "house-rule-unsupported",
+        AmendmentGround.REQUIRES_BREAKING_HOUSE_RULE,
+        [GroundEvidence(path=RULES_PATH, quote=NO_SUCH_RULE)],
+        None,
+        False,
+    ),
+)
+
+
+def test_the_ground_vocabulary_is_exactly_the_four_and_no_fifth() -> None:
+    """The wire spellings, verbatim, in declaration order."""
+    assert [member.value for member in AmendmentGround] == [
+        "unsatisfiable_at_base",
+        "mutually_unsatisfiable",
+        "premise_false_at_base",
+        "requires_breaking_house_rule",
+    ]
+
+
+def test_every_ground_declares_how_it_is_reproduced() -> None:
+    """A ground with no reproduction rule could never be added silently."""
+    assert set(QUOTE_CARRIED_AT_BASE) == set(AmendmentGround)
+
+
+def test_the_eight_fixtures_pair_every_ground_both_ways() -> None:
+    """Non-vacuity: four grounds, each with one amending and one upholding case."""
+    assert len(GROUND_CASES) == 8
+    assert {(case[1], case[4]) for case in GROUND_CASES} == {
+        (ground, amends) for ground in AmendmentGround for amends in (True, False)
+    }
+
+
+@pytest.mark.parametrize(
+    ("ground", "evidence", "counter_subject", "amends"),
+    [case[1:] for case in GROUND_CASES],
+    ids=[case[0] for case in GROUND_CASES],
+)
+async def test_each_ground_amends_only_where_the_base_reproduces_it(
+    repo,
+    ground: AmendmentGround,
+    evidence: list[GroundEvidence],
+    counter_subject: CriterionRef | None,
+    amends: bool,
+) -> None:
+    """The fixture decides: the claim's own wording is identical in each pair."""
+    verdict = await reconciler().reconcile(
+        claim(evidence=evidence, ground=ground, counter_subject=counter_subject),
+        issue_key=ISSUE,
+        repository=str(repo),
+        base_ref=BASE_REF,
+    )
+    if amends:
+        assert verdict.decision is AmendmentDecision.AMENDED
+        assert verdict.ground is ground
+        assert verdict.reproduced == tuple(evidence)
+    else:
+        assert verdict.decision is AmendmentDecision.UPHELD
+        assert verdict.ground is None
+        assert verdict.reproduced == ()
+
+
+async def test_the_reconciler_does_not_shop_for_a_ground_that_would_fit(repo) -> None:
+    """One address, two grounds: it runs the asserted one and no other.
+
+    The same evidence reproduces ``UNSATISFIABLE_AT_BASE`` and refutes
+    ``PREMISE_FALSE_AT_BASE``. A reconciler that tried the four until one
+    stuck would amend both times.
+    """
+    evidence = [GroundEvidence(path=HOUSE_PATH, quote=AT_BASE)]
+    fitting = await reconciler().reconcile(
+        claim(evidence=evidence, ground=AmendmentGround.UNSATISFIABLE_AT_BASE),
+        issue_key=ISSUE,
+        repository=str(repo),
+        base_ref=BASE_REF,
+    )
+    misasserted = await reconciler().reconcile(
+        claim(evidence=evidence, ground=AmendmentGround.PREMISE_FALSE_AT_BASE),
+        issue_key=ISSUE,
+        repository=str(repo),
+        base_ref=BASE_REF,
+    )
+    assert fitting.decision is AmendmentDecision.AMENDED
+    assert misasserted.decision is AmendmentDecision.UPHELD
+
+
+def test_a_mutual_claim_has_to_name_the_other_criterion() -> None:
+    """A claim about a pair that names one of them is not about a pair."""
+    with pytest.raises(ValidationError, match="names the other criterion"):
+        claim(evidence=[], ground=AmendmentGround.MUTUALLY_UNSATISFIABLE)
+
+
+def test_no_other_ground_may_name_a_counter_subject() -> None:
+    """A second criterion means nothing to the three single-subject grounds."""
+    with pytest.raises(ValidationError, match="names a counter subject"):
+        claim(
+            evidence=[],
+            ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
+            counter_subject=SIBLING,
+        )
