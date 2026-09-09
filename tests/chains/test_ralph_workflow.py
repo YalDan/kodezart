@@ -4843,9 +4843,9 @@ async def test_post_merge_review_is_guarded_identically_to_the_evaluator() -> No
     and the holes ride the review event exactly as they ride the loop's
     iteration event.
     """
-    # The answered id is the SOFT signal, so the id that never arrives is
-    # the hard gate — otherwise the fail-closed grading would be invisible
-    # behind a verdict that ships with flags.
+    # One id is answered and one never arrives. Grading is uniform, so the
+    # unanswered id rejects on its own — which is what makes the fail-closed
+    # behaviour visible in the verdict rather than only in the holes.
     partial = _review_results(("AC-2", True))
     executor = _ScriptedReviewExecutor([partial, partial])
 
