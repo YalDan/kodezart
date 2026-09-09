@@ -25,10 +25,10 @@ from datetime import timedelta
 
 import pytest
 
-from kodezart.domain.errors import UnsupportedClaimError
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import (
     IssuePriority,
     IssueQuery,
@@ -48,7 +48,6 @@ from tests.tracker.connected_app_label_contract import (
     CONNECTED_APP_LABEL_ARGUMENTS,
     CONNECTED_APP_LABEL_REQUIRED,
 )
-from tests.tracker.marker_config import MARKER_PREFIXES
 
 
 @dataclass(frozen=True)
@@ -371,21 +370,39 @@ async def sent_arguments() -> Mapping[str, set[str]]:
         target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
     )
     await tracker.list_comments(issue_key=CLAIMED_ISSUE)
-    with pytest.raises(UnsupportedClaimError):
-        await tracker.claim_issue(
-            issue_key=CLAIMED_ISSUE,
-            holder="holder",
-            lease_seconds=60.0,
-        )
-    await tracker.post_comment(
+    await tracker.claim_issue(
         issue_key=CLAIMED_ISSUE,
-        body=(
-            f'<!-- {MARKER_PREFIXES["claim"]} holder="holder" '
-            'expires-at="2099-01-01T00:00:00+00:00" -->'
-        ),
+        holder="holder",
+        lease_seconds=60.0,
+    )
+    await tracker.renew_claim(
+        issue_key=CLAIMED_ISSUE,
+        holder="holder",
+        lease_seconds=120.0,
     )
     await tracker.active_claim(issue_key=CLAIMED_ISSUE)
     await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="holder")
+    # A lease spanning an issue and a container exercises both comment
+    # parents the vendor accepts a marker under.
+    spanning = frozenset(
+        {
+            WritableSurface(
+                kind=SurfaceKind.ISSUE_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE),
+            ),
+            WritableSurface(
+                kind=SurfaceKind.CONTAINER_DESCRIPTION,
+                ref=ScopeRef(kind=ScopeKind.PROJECT, key="fixture-scope"),
+            ),
+        },
+    )
+    await tracker.acquire_surfaces(
+        surfaces=spanning, holder="job-arguments", lease_seconds=60.0
+    )
+    await tracker.renew_surfaces(
+        surfaces=spanning, holder="job-arguments", lease_seconds=120.0
+    )
+    await tracker.release_surfaces(surfaces=spanning, holder="job-arguments")
     await tracker.list_issue_assets(issue_key=CLAIMED_ISSUE)
     await tracker.read_document(document_key=DOCUMENT_KEY)
     await tracker.record_work_ref(

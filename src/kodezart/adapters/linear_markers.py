@@ -1,7 +1,7 @@
-"""Linear's existing HTML marker wire forms, with configured identity prefixes."""
+"""Linear's marker wire forms, with configured identity prefixes."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.types.domain.branch import BaseSpec, WorkRef
@@ -20,12 +20,24 @@ class LinearMarkers:
         return re.compile(r"<!--\s*" + re.escape(self._prefix(purpose)) + suffix)
 
     @property
-    def claim_pattern(self) -> re.Pattern[str]:
-        return self._pattern(
-            "claim",
-            r'\s+holder="(?P<holder>[^"]+)"\s+'
-            r'expires-at="(?P<expires_at>[^"]+)"\s*-->',
+    def grant_pattern(self) -> re.Pattern[str]:
+        """The fenced ownership block, matched by its configured info string.
+
+        Code formatting is the one form this backend renders verbatim: a
+        bare identifier in ordinary text is rewritten into a link, and a
+        marker that cannot survive being read back cannot arbitrate
+        anything.
+        """
+        return re.compile(
+            r"^```" + re.escape(self._prefix("claim")) + r"\n(?P<payload>.*?)\n```$",
+            re.DOTALL | re.MULTILINE,
         )
+
+    def grant_body(self, *, lines: Mapping[str, str], addresses: Sequence[str]) -> str:
+        """One grant marker: its declared fields, then one address per line."""
+        stated = "\n".join(f"{name}: {value}" for name, value in lines.items())
+        held = "\n".join(f"- {address}" for address in addresses)
+        return f"```{self._prefix('claim')}\n{stated}\nsurfaces:\n{held}\n```"
 
     @property
     def work_ref_marker_pattern(self) -> re.Pattern[str]:

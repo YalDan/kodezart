@@ -301,7 +301,22 @@ class LinearCommentWire(LinearWireModel):
     parent_id: str | None = None
 
 
-class LinearThreadCommentWire(LinearCommentWire):
+class LinearCommentEntryWire(LinearCommentWire):
+    """A comment as a LISTING reports it, carrying the stamp an edit moves.
+
+    Measured: every entry a comment listing answers with carries
+    ``updatedAt`` beside ``createdAt``, and an update by comment id
+    replaces the body and moves ``updatedAt`` while leaving ``createdAt``
+    where it was.  That pair is the backend's own record of WHEN a body
+    changed, which is what decides whether a grant's extension was
+    published while the grant it extends was still live.  The write echo
+    is read for its identity alone and keeps the less demanding contract.
+    """
+
+    updated_at: datetime
+
+
+class LinearThreadCommentWire(LinearCommentEntryWire):
     """Resolution requires the measured reply link, including explicit null.
 
     The live escalation/decision proof reports parentId on both comments.
@@ -323,7 +338,7 @@ class LinearThreadCommentListWire(LinearWireModel):
 class LinearCommentListWire(LinearWireModel):
     """Comment pages, including the connected-app cursor measured 2026-09-07."""
 
-    comments: list[LinearCommentWire]
+    comments: list[LinearCommentEntryWire]
     has_next_page: bool
     cursor: str | None = None
 

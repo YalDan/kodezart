@@ -1038,12 +1038,8 @@ class TestACommentTheVendorAttributesToNobody:
         """
         server = fixture_server()
         tracker = linear_over_fake_mcp(server)
-        await tracker.post_comment(
-            issue_key=CLAIMED_ISSUE,
-            body=(
-                f'<!-- {MARKER_PREFIXES["claim"]} holder="pass-a" '
-                'expires-at="2099-01-01T00:00:00+00:00" -->'
-            ),
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="pass-a", lease_seconds=600
         )
         await tracker.record_work_ref(
             ref=WorkRef(
