@@ -4,6 +4,7 @@ from langchain_core.runnables import RunnableConfig
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
+from kodezart.domain.errors import InvalidFireCriterionError
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.scope_membership import read_scope_members
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -22,7 +23,11 @@ OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
 class TrackerCriteria:
     """A fire's criteria, read from the tracker at head, before the loop.
 
-    What the fire OWES is its subtree's own Todo criterion
+    The spec read IS the source: ``read_fire_spec`` establishes the
+    subject's admission and lists its criterion sub-issues, and nothing a
+    caller carries alongside it can stand in for that read.
+
+    What the fire OWES is then its subtree's own Todo criterion
     sub-issues.  A deliverable child's criterion sits inside the exit
     condition and outside the subject's direct family, so a barrier
     reading only the direct family would be narrower than the obligation
@@ -39,12 +44,15 @@ class TrackerCriteria:
 
         Keyed by the criterion sub-issue's own key: identity and
         provenance are the same value here, and no second identity is
-        minted for the tracker-native arm.
+        minted for the tracker-native arm.  The key is carried as the
+        tracker reports it — ``CriterionRef`` is the captured spec's
+        identity and has exactly one construction site, at the spec read.
 
         Only the Check is carried.  A criterion's recorded Evidence is
         what a previous run claimed, never part of what this one is
         graded against.
         """
+        spec = await self._tracker.read_fire_spec(issue_key=issue_key)
         subtree = await read_scope_members(
             tracker=self._tracker,
             scope=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
@@ -54,6 +62,13 @@ class TrackerCriteria:
             for key, issue in subtree.items()
             if "criterion" in issue.issue_labels
         }
+        for named in spec.criteria:
+            if named not in criteria:
+                raise InvalidFireCriterionError(
+                    issue_key=issue_key,
+                    criterion_key=named,
+                    reason="the spec names a criterion the subtree does not hold",
+                )
         owed = {
             key: criterion_check(criterion=issue, issue_key=issue_key)
             for key, issue in sorted(criteria.items())
@@ -62,6 +77,8 @@ class TrackerCriteria:
         await self._log.ainfo(
             "fire_criteria_read",
             subject=issue_key,
+            read_at_version=spec.read_at_version,
+            named=len(spec.criteria),
             owed=sorted(owed),
         )
         return owed
