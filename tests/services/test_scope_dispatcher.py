@@ -32,6 +32,7 @@ from kodezart.types.domain.dispatch import (
     IssueExclusion,
     PassRun,
     PassSignal,
+    UnreachableCriterion,
 )
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import ScopeLabel
@@ -479,6 +480,7 @@ def test_ready_set_and_walker_modules_hold_no_merge_state_call_site():
         "kodezart.chains.scope_walker",
         "kodezart.core.logging",
         "kodezart.core.protocols",
+        "kodezart.domain.scope_reach",
         "kodezart.services.fire_dispatcher",
         "kodezart.types.domain.dispatch",
         "kodezart.types.domain.run_records",
@@ -774,3 +776,82 @@ def test_walker_modules_resolve_no_lane_marker_and_parse_no_prose():
                     "title",
                     "list_comments",
                 }
+
+
+OTHER_PROJECT = "fixture-other-project"
+
+
+def reach_board(*, out_of_filter: bool, child_done: bool = False):
+    """A lane whose own criteria are Done, parenting a deliverable child.
+
+    The child sits in another project on the out-of-filter arm, which is
+    what a container filter misses on the founder's boards. Membership is
+    stated rather than derived, because that IS the filter under test.
+    """
+    child_project = OTHER_PROJECT if out_of_filter else PROJECT.key
+    issues = (
+        lane_issue("lane"),
+        criterion("lane-check", parent="lane", met=True),
+        make_tracker_issue("child", parent_key="lane", project_id=child_project),
+        make_tracker_issue(
+            "child-check",
+            parent_key="child",
+            issue_labels=CRITERION,
+            queue_states=(),
+            state_kind=(
+                WorkflowStateKind.COMPLETED
+                if child_done
+                else WorkflowStateKind.UNSTARTED
+            ),
+            state_name="Done" if child_done else "Todo",
+            project_id=child_project,
+        ),
+    )
+    return FakeTrackerPort(
+        issues=issues,
+        scope_containers=[
+            ScopeContainer(
+                ref=PROJECT,
+                name="fixture project",
+                description="",
+                url="https://tracker.invalid/p",
+            ),
+        ],
+        scope_memberships={
+            PROJECT: ["lane"] if out_of_filter else ["lane", "child"],
+        },
+        scope_label_members={PROJECT: frozenset({ScopeLabel.APPROVED})},
+    )
+
+
+async def test_the_report_names_the_open_criterion_the_filter_cannot_reach():
+    """The scope is not at rest, and the unreachable descendant says why."""
+    tracker = reach_board(out_of_filter=True)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.unreachable == (
+        UnreachableCriterion(
+            issue_key="child-check",
+            lane_key="lane",
+            filter_kind=ScopeKind.PROJECT,
+            filter_key=PROJECT.key,
+            container_key=OTHER_PROJECT,
+        ),
+    )
+    assert report.outcome is DispatchOutcome.fire_enqueued
+    assert report.eligible == ("lane",)
+    assert enqueued(queue) == ["lane"]
+
+
+async def test_the_same_shape_inside_the_filter_names_none_and_dispatches_the_child():
+    """Nothing moves but the filter: the child is a member and is eligible."""
+    tracker = reach_board(out_of_filter=False)
+    walker, queue, _ = walk(tracker)
+
+    report = await walker.run_pass()
+
+    assert report.unreachable == ()
+    assert set(report.eligible) == {"lane", "child"}
+    assert enqueued(queue) == ["lane"]

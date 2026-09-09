@@ -20,6 +20,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.scope import ScopeKind
 from kodezart.types.domain.self_writes import OwnMutation
 from kodezart.types.domain.tracker import IssuePriority
 
@@ -172,6 +173,31 @@ class IssueExclusion(DispatchModel):
     detail: str = ""
 
 
+class UnreachableCriterion(DispatchModel):
+    """One open criterion a scope member owes that the scope cannot reach.
+
+    A container filter changes what a run can REACH; it never changes what
+    a lane owes.  A criterion under a member's subtree is that member's
+    work whether or not the filter carries the issue holding it, so a
+    descendant outside the filter is NAMED here rather than dropped: a
+    scope reporting nothing while one of these is open would be reporting
+    itself finished with work left in it.
+
+    The reason is stated in the filter's own terms — the filter's kind and
+    key beside the descendant's own value on that same dimension, which is
+    the project under a project or initiative reference and the milestone
+    under a milestone one.  ``container_key`` is ``None`` when the
+    descendant sits in no container of that kind at all, which is a state
+    of the board and not a missing reading.
+    """
+
+    issue_key: str = Field(min_length=1)
+    lane_key: str = Field(min_length=1)
+    filter_kind: ScopeKind
+    filter_key: str = Field(min_length=1)
+    container_key: str | None = None
+
+
 class DispatchReport(DispatchModel):
     """The outcome of exactly one dispatch pass.
 
@@ -219,6 +245,15 @@ class DispatchReport(DispatchModel):
     child deliverable among them — so what the fire was sent to close is
     readable from the report rather than reconstructed from the board
     afterwards."""
+
+    unreachable: tuple[UnreachableCriterion, ...] = ()
+    """Open criteria the scope's members owe that its container filter does
+    not carry.
+
+    Empty for a producer that walks no container: an unscoped pass ranks an
+    approved scan and has no filter for anything to fall outside of.  A
+    scope walk carries every one it found, so "nothing ready" is
+    distinguishable from "nothing left"."""
 
     superseded_base: BaseSpec | None = None
     """The base a PREVIOUS dispatch of this issue recorded, when the graph
