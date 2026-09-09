@@ -54,6 +54,18 @@ CONSUME = "Consume"
 _VALUE_VERB = re.compile(
     rf"^(?P<verb>{DEFINE}|{CONSUME})\s+(?P<name>\S.*)$", re.IGNORECASE
 )
+#: Where a declaration stops naming its value and starts citing another
+#: member: the end of the sentence, or the dash that introduces the
+#: attribution on the same line.
+_CLAUSE_END = re.compile(r"\.(?:\s|$)|\s[\u2014\u2013-]\s")
+
+
+@dataclass(frozen=True)
+class Declaration:
+    """One deliverable a body declares, and the text that names its value."""
+
+    number: str
+    remainder: str
 
 
 @dataclass(frozen=True)
@@ -123,19 +135,25 @@ def _heading_number(text: str) -> str | None:
     return None
 
 
-def numbered_deliverables(body: str) -> Counter[str]:
-    """Only explicit D headings or a declared deliverables numbered list."""
-    numbers: Counter[str] = Counter()
+def declared_lines(body: str) -> list[tuple[str, Declaration | None]]:
+    """Every visible line, with the deliverable it declares, if it declares one.
+
+    A body declares a deliverable either as an explicit ``D`` heading or as a
+    numbered item under a declared deliverables list.  Both forms are read
+    here, once, so a declaration a pointer may target is also a declaration a
+    model value may be named in.
+    """
+    read: list[tuple[str, Declaration | None]] = []
     numbered_list = False
     for line in _visible_lines(body):
-        # An indented example or a condensed Fix bullet is not a target.
-        if line.startswith(("    ", "\t")):
-            continue
         text = line.strip()
         heading = _HEADING.match(text)
         number = _heading_number(text)
-        if number is not None:
-            numbers[number] += 1
+        declaration = (
+            None
+            if number is None
+            else Declaration(number, text[heading.end("number") :])
+        )
         normalized = text.strip("#* :").casefold()
         if normalized.startswith(("deliverables", "deliverable sketch")):
             numbered_list = True
@@ -143,8 +161,20 @@ def numbered_deliverables(body: str) -> Counter[str]:
             numbered_list = False
         ordinal = _ORDINAL.match(text) if numbered_list else None
         if ordinal:
-            numbers[ordinal["number"]] += 1
-    return numbers
+            declaration = Declaration(
+                ordinal["number"], text[ordinal.end("number") + 1 :]
+            )
+        read.append((line, declaration))
+    return read
+
+
+def numbered_deliverables(body: str) -> Counter[str]:
+    """Only explicit D headings or a declared deliverables numbered list."""
+    return Counter(
+        declaration.number
+        for _, declaration in declared_lines(body)
+        if declaration is not None
+    )
 
 
 def _line_pointers(issue_key: str, line: str) -> list[Pointer]:
@@ -250,43 +280,45 @@ def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
     )
 
 
-def _value_heading(text: str) -> tuple[str, str, str] | None:
-    """A declared heading that names a model value, with its verb."""
-    heading = _HEADING.match(text)
-    number = _heading_number(text)
-    if heading is None or number is None:
-        return None
-    remainder = text[heading.end("number") :].lstrip(" \u2014\u2013:-").rstrip()
-    remainder = remainder.removesuffix("**").rstrip().rstrip(".").rstrip()
-    named = _VALUE_VERB.match(remainder)
+def declared_value(remainder: str) -> tuple[str, str] | None:
+    """The verb and value name a declaration carries, in either form.
+
+    The name runs to the end of the declaration's own clause, so an
+    attribution written on the declaration line names another member rather
+    than becoming part of the value's name.
+    """
+    text = remainder.lstrip(" \u2014\u2013:-").rstrip().removesuffix("**").rstrip()
+    clause = _CLAUSE_END.search(text)
+    named = _VALUE_VERB.match((text[: clause.start()] if clause else text).strip())
     if named is None:
         return None
-    return number, named["verb"].capitalize(), named["name"]
+    return named["verb"].capitalize(), named["name"].strip()
 
 
 def value_sites(issue: TrackerIssue) -> tuple[ValueSite, ...]:
     """Read the named value each deliverable of a body defines or consumes.
 
     A consuming deliverable attributes the definition to the one numbered
-    pointer inside it; none and several are both unresolved attributions.
+    pointer inside it, on its own line or below it; none and several are both
+    unresolved attributions.
     """
     sections: list[tuple[str, str, str, list[Pointer]]] = []
     section: list[Pointer] | None = None
-    for line in _visible_lines(issue.body):
-        text = line.strip()
-        named = _value_heading(text)
-        if named is not None:
-            number, verb, name = named
-            section = []
-            sections.append((number, verb, name, section))
-        elif _heading_number(text) is not None:
+    for line, declaration in declared_lines(issue.body):
+        numbered = [
+            pointer
+            for pointer in _line_pointers(issue.issue_key, line)
+            if pointer.number is not None
+        ]
+        if declaration is not None:
+            named = declared_value(declaration.remainder)
             section = None
+            if named is not None:
+                verb, name = named
+                section = list(numbered)
+                sections.append((declaration.number, verb, name, section))
         elif section is not None:
-            section.extend(
-                pointer
-                for pointer in _line_pointers(issue.issue_key, line)
-                if pointer.number is not None
-            )
+            section.extend(numbered)
     return tuple(
         ValueSite(
             issue.issue_key,
@@ -1422,6 +1454,161 @@ async def test_both_declared_heading_formats_name_the_same_value(workspace, head
     )
     assert failures == ()
     workspace.read_only()
+
+
+DELIVERABLE_LIST = "## Deliverables\n\n"
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        '<issue id="member/beta">member/beta</issue> D2',
+        "[member/beta D2]({url})",
+        "`member/beta` D2",
+    ],
+)
+async def test_a_deliverable_list_item_naming_one_value_differently_fails(
+    workspace, reference
+):
+    reference = reference.format(
+        url=(await workspace.tracker.read_issue(issue_key="member/beta")).url
+    )
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. Consume the criterion address "
+                    f"\u2014 see {reference}."
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert all(
+        part in failures[0]
+        for part in (
+            "member/list D1",
+            "member/beta D2",
+            "the criterion address",
+            "the shared identity",
+        )
+    )
+    workspace.read_only()
+
+
+async def test_a_deliverable_list_item_consuming_the_defined_name_resolves(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. An ordinary deliverable.\n"
+                    "2. Consume the shared identity \u2014 see "
+                    '<issue id="member/beta">member/beta</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert failures == ()
+    workspace.read_only()
+
+
+async def test_a_deliverable_list_item_defining_an_owned_value_names_both(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/list",
+                "body": f"{DELIVERABLE_LIST}1. Define the shared identity.",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert "member/list D1" in failures[0] and "member/beta D2" in failures[0]
+    workspace.read_only()
+
+
+async def test_deliverable_list_items_attributing_to_each_other_fail_as_a_cycle(
+    workspace,
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/one",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. Consume the shared address \u2014 see "
+                    '<issue id="member/two">member/two</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+            {
+                "key": "member/two",
+                "body": (
+                    f"{DELIVERABLE_LIST}1. An ordinary deliverable.\n"
+                    "2. Consume the shared address \u2014 see "
+                    '<issue id="member/one">member/one</issue> D1.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 2
+    assert all(
+        "definition cycle" in failure and "resolves to no definition" in failure
+        for failure in failures
+    )
+    assert "member/one D1" in failures[0] and "member/two D2" in failures[0]
+    workspace.read_only()
+
+
+@pytest.mark.parametrize(
+    "remainder,named",
+    [
+        (" \u2014 Define the shared identity", (DEFINE, "the shared identity")),
+        (" \u2014 Define the shared identity.**", (DEFINE, "the shared identity")),
+        (
+            " Consume the shared identity \u2014 see [member/beta D2](url).",
+            (CONSUME, "the shared identity"),
+        ),
+        (
+            " Consume the shared identity. See [member/beta D2](url).",
+            (CONSUME, "the shared identity"),
+        ),
+        (" consume THE SHARED IDENTITY", (CONSUME, "THE SHARED IDENTITY")),
+        (" An ordinary deliverable", None),
+        (" \u2014 Architecture acceptance", None),
+    ],
+)
+def test_a_declaration_names_its_value_up_to_the_attribution_it_cites(remainder, named):
+    assert declared_value(remainder) == named
+
+
+def test_one_reader_counts_both_declaration_forms():
+    heading = "## D1 \u2014 Consume the shared identity"
+    listed = f"{DELIVERABLE_LIST}1. Consume the shared identity"
+    assert numbered_deliverables(heading) == Counter({"1": 1})
+    assert numbered_deliverables(listed) == Counter({"1": 1})
+    assert [
+        (declaration.number, declared_value(declaration.remainder))
+        for body in (heading, listed)
+        for _, declaration in declared_lines(body)
+        if declaration is not None
+    ] == [("1", (CONSUME, "the shared identity"))] * 2
 
 
 @pytest.mark.live
