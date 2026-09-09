@@ -1026,3 +1026,357 @@ async def test_a_delayed_lease_renewal_stamped_after_the_lapse_grants_nothing() 
     # Both surfaces sit on one issue, so one marker carries the whole set.
     assert paused.through.holders == ["job-b"]
     assert _standing(board.server) == [("job-b", "held")]
+
+
+class _NoncesInTurn:
+    """Land the creations in a stated order, distinguishing grant from grant.
+
+    One holder contending with ITSELF cannot be interleaved by holder
+    name: both markers declare the same one.  What tells its two grants
+    apart is the nonce each carries, so the order is stated as the
+    sequence of grants — ``g0`` is whichever asks to write first — and a
+    grant that never gets its turn fails the case rather than hanging it.
+    """
+
+    #: Loop turns a waiting grant is given before the case is called stuck.
+    SPINS = 1000
+
+    def __init__(self, server: FakeLinearMcpServer, *, order: Sequence[str]) -> None:
+        self._server = server
+        self._order = deque(order)
+        self._labels: dict[str, str] = {}
+
+    async def call_tool(
+        self, *, name: str, arguments: Mapping[str, object]
+    ) -> McpToolResult:
+        if name == "save_comment" and "id" not in arguments:
+            nonce = _nonce_of(str(arguments["body"]))
+            label = self._labels.setdefault(nonce, f"g{len(self._labels)}")
+            for _ in range(self.SPINS):
+                if self._order and self._order[0] == label:
+                    break
+                await asyncio.sleep(0)
+            else:
+                raise AssertionError(f"{label} never reached its turn to write")
+            self._order.popleft()
+        return await self._server.call_tool(name=name, arguments=arguments)
+
+
+def _nonce_of(body: str) -> str:
+    """The grant a marker body belongs to, which its holder does not say."""
+    for line in body.splitlines():
+        if line.startswith("nonce: "):
+            return line.removeprefix("nonce: ")
+    raise AssertionError(f"no nonce in {body!r}")
+
+
+SPANNING = frozenset({CONTAINER, ISSUE_DESCRIPTION})
+
+
+async def test_one_holder_claiming_twice_at_once_holds_the_issue_once() -> None:
+    """A holder identity is what the arbitration is over, so it cannot lose to itself.
+
+    Two processes of one deployment — the realistic restart — both write
+    before either reads.  Neither is a conflict for the other: the grant
+    the backend ordered first stands for both, the later one withdraws
+    INTO it rather than against it, and what the holder ends with is one
+    marker rather than the two annihilating each other left.
+    """
+    server = fixture_server()
+    caller = _WroteTogether(server, writers=2)
+    first, second = (
+        tracker_over(server, caller=caller),
+        tracker_over(server, caller=caller),
+    )
+
+    outcomes = await asyncio.gather(
+        first.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+        ),
+        second.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+        ),
+    )
+
+    assert [outcome.status for outcome in outcomes] == [ClaimStatus.GRANTED] * 2
+    assert _standing(server) == [("runner-one", "held")]
+    held = await first.active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None
+    assert held.holder == "runner-one"
+    # The ownership both calls were granted is one another party is refused.
+    rival = await tracker_over(server).claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.status, rival.current_holder) == (ClaimStatus.LOST, "runner-one")
+    renewed = await second.renew_claim(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    assert renewed is not None and renewed.status is ClaimStatus.GRANTED
+
+
+async def test_one_holder_leasing_a_set_twice_at_once_holds_it_once() -> None:
+    """The same rule over the lease vocabulary, and over a set spanning two logs."""
+    server = fixture_server()
+    caller = _WroteTogether(server, writers=2)
+    first, second = (
+        tracker_over(server, caller=caller),
+        tracker_over(server, caller=caller),
+    )
+
+    leases = await asyncio.gather(
+        first.acquire_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        ),
+        second.acquire_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        ),
+    )
+
+    assert [lease.surfaces for lease in leases] == [SPANNING] * 2
+    assert _standing(server) == [("job-one", "held")] * 2
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await tracker_over(server).acquire_surfaces(
+            surfaces=SPANNING, holder="job-two", lease_seconds=LEASE_SECONDS
+        )
+    assert refused.value.current_holder == "job-one"
+    assert (
+        await second.renew_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        )
+        is not None
+    )
+
+
+async def test_one_holder_earliest_on_each_target_still_holds_the_whole_set() -> None:
+    """A set spanning two logs can be split between one holder's own grants.
+
+    Two grants of one holder can each be earliest on a different target,
+    which is the shape that leaves two DIFFERENT holders with half a set
+    and nothing.  For one holder it is still one ownership, so the split
+    is decided over the whole grant rather than per target: one of them
+    stands on both logs and the set is never halved.
+    """
+    server = fixture_server()
+    # The container is written first by both grants, so this order makes
+    # g0 earliest there and g1 earliest on the issue.
+    caller = _NoncesInTurn(server, order=("g0", "g1", "g1", "g0"))
+    first, second = (
+        tracker_over(server, caller=caller),
+        tracker_over(server, caller=caller),
+    )
+
+    leases = await asyncio.gather(
+        first.acquire_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        ),
+        second.acquire_surfaces(
+            surfaces=SPANNING, holder="job-one", lease_seconds=LEASE_SECONDS
+        ),
+    )
+
+    assert [lease.surfaces for lease in leases] == [SPANNING] * 2
+    assert _standing(server) == [("job-one", "held")] * 2
+    assert len({_nonce_of(comment.body) for comment in server.comments}) == 1
+    with pytest.raises(SurfaceLeaseError) as refused:
+        await tracker_over(server).acquire_surfaces(
+            surfaces=SPANNING, holder="job-two", lease_seconds=LEASE_SECONDS
+        )
+    assert refused.value.current_holder == "job-one"
+
+
+async def test_a_rival_arriving_while_a_holder_meets_itself_meets_an_owner() -> None:
+    """The window a self-contention resolves in never reads as unowned.
+
+    Between the restart writing its bid and the retraction that takes it
+    back off, a third party asks who owns the issue.  What answers is the
+    marker its predecessor still holds — the ownership the restart is
+    withdrawing into, which was never vacated for an instant.
+    """
+    server = fixture_server()
+    predecessor = tracker_over(server)
+    await predecessor.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    async def late_arrival() -> str | None:
+        outcome = await tracker_over(server).claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="runner-two",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert outcome.status is ClaimStatus.LOST
+        return outcome.current_holder
+
+    caller = _ArrivesWhileWithdrawing(server, arrival=late_arrival)
+    restarted = await tracker_over(server, caller=caller).claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert restarted.status is ClaimStatus.GRANTED
+    assert caller.holders == ["runner-one"]
+    assert _standing(server) == [("runner-one", "held")]
+
+
+async def test_a_restart_meeting_its_own_live_marker_carries_it_forward() -> None:
+    """A redeployed process claims what its predecessor still holds, and gets it."""
+    board = _Board()
+    predecessor = board.holder()
+    granted = await predecessor.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    marker = board.server.comments[0].id
+    board.advance(LEASE_SECONDS / 2)
+
+    restarted = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert restarted.status is ClaimStatus.GRANTED
+    # The predecessor's own marker, carried forward rather than replaced.
+    assert [comment.id for comment in board.server.comments] == [marker]
+    assert restarted.expires_at > granted.expires_at
+    renewed = await board.holder().renew_claim(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    assert renewed is not None
+
+
+async def test_a_restart_after_its_own_grant_lapsed_starts_a_fresh_one() -> None:
+    """A lapsed marker of the holder's own is litter, never an inheritance.
+
+    Nothing here is adopted: the grant ran out, so the restart takes the
+    issue on its own terms and dates it from now.  The marker the lapse
+    left behind is this holder's to take off, and it is taken off.
+    """
+    board = _Board()
+    await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    lapsed = board.server.comments[0].id
+    board.advance(LEASE_SECONDS + 1)
+
+    restarted = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert restarted.status is ClaimStatus.GRANTED
+    assert restarted.expires_at == board.clock() + timedelta(seconds=LEASE_SECONDS)
+    assert [comment.id for comment in board.server.comments] != [lapsed]
+    assert _standing(board.server) == [("runner-one", "held")]
+
+
+async def test_a_claim_after_the_holder_released_it_is_a_new_grant() -> None:
+    """A release is the holder saying it owns nothing, and it is believed."""
+    board = _Board()
+    tracker = board.holder()
+    await tracker.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="runner-one")
+    assert board.server.comments == []
+    board.advance(LEASE_SECONDS / 3)
+
+    again = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert again.status is ClaimStatus.GRANTED
+    assert again.expires_at == board.clock() + timedelta(seconds=LEASE_SECONDS)
+    assert _standing(board.server) == [("runner-one", "held")]
+
+
+async def test_a_restart_cannot_take_back_what_its_lapse_handed_to_another() -> None:
+    """Meeting itself is not a way back in: the issue is the successor's."""
+    board = _Board()
+    await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    board.advance(LEASE_SECONDS + 1)
+    successor = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-two", lease_seconds=LEASE_SECONDS
+    )
+    assert successor.status is ClaimStatus.GRANTED
+
+    restarted = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert (restarted.status, restarted.current_holder) == (
+        ClaimStatus.LOST,
+        "runner-two",
+    )
+    held = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None and held.holder == "runner-two"
+
+
+async def test_two_holders_racing_leave_the_issue_to_exactly_one() -> None:
+    """Two DIFFERENT identities are still arbitrated, and never merged.
+
+    The rule that makes a holder's second grant its own ownership must
+    not read two deployments as one: they write before either reads, and
+    what comes out is one owner and one marker, not two grants that
+    adopted each other.
+    """
+    server = fixture_server()
+    caller = _WroteTogether(server, writers=2)
+    first, second = (
+        tracker_over(server, caller=caller),
+        tracker_over(server, caller=caller),
+    )
+
+    outcomes = await asyncio.gather(
+        first.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+        ),
+        second.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="runner-two", lease_seconds=LEASE_SECONDS
+        ),
+    )
+
+    granted = [outcome for outcome in outcomes if outcome.status is ClaimStatus.GRANTED]
+    assert len(granted) == 1
+    assert _standing(server) == [(granted[0].holder, "held")]
+    held = await first.active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None and held.holder == granted[0].holder
+
+
+async def test_two_markers_of_one_holder_are_a_duplicate_and_not_two_owners() -> None:
+    """What the real board produced when it hid one grant from the other.
+
+    The restart meets its predecessor's live marker and withdraws into
+    it, and the backend refuses BOTH requests it can make about its own
+    marker — the retraction and the deletion — so two markers of one
+    holder are left standing.  That is a duplicate rather than a second
+    owner: the issue reads as this holder's, another deployment is
+    refused in its name, the holder renews what it holds, and the marker
+    nothing renews lapses on its own without anybody acting.
+    """
+    board = _Board()
+    await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    board.advance(LEASE_SECONDS / 2)
+    stubborn = board.holder(caller=_RefusesEveryWithdrawal(board.server))
+
+    restarted = await stubborn.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert restarted.status is ClaimStatus.GRANTED
+    assert _standing(board.server) == [("runner-one", "held")] * 2
+    held = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None and held.holder == "runner-one"
+    rival = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.status, rival.current_holder) == (ClaimStatus.LOST, "runner-one")
+    assert (
+        await board.holder().renew_claim(
+            issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+        )
+        is not None
+    )
+    # The duplicate is what nothing renews, so it goes on its own.
+    board.advance(LEASE_SECONDS * 0.9)
+    still = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
+    assert still is not None and still.holder == "runner-one"

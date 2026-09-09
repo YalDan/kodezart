@@ -1,11 +1,13 @@
 """The all-or-nothing arithmetic a surface-lease implementation shares."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from kodezart.domain.surface_lease import (
     live_conflict,
+    one_ownership,
     renewed_deadline,
     surface_address,
 )
@@ -169,3 +171,74 @@ def test_how_long_the_write_took_to_land_cannot_move_the_fence() -> None:
             renewed_deadline(published_at=deadline, lease=lease, since=deadline)
             == deadline
         )
+
+
+@dataclass(frozen=True)
+class Grant:
+    """A grant as the self-arbitration reads it: where it sits, until when."""
+
+    order: tuple[datetime, str]
+    expires_at: datetime
+
+
+def grant(*, at: float, key: str, seconds: float) -> Grant:
+    return Grant(
+        order=(NOW + timedelta(seconds=at), key),
+        expires_at=NOW + timedelta(seconds=seconds),
+    )
+
+
+def test_a_holder_alone_over_a_set_is_its_own_ownership() -> None:
+    mine = grant(at=0, key="c1", seconds=60)
+
+    assert one_ownership(mine=mine, siblings=(), now=NOW) is mine
+
+
+def test_the_earlier_of_one_holders_two_live_grants_stands_for_both() -> None:
+    """The rule both sides reach: whoever asks, the same grant answers."""
+    earlier = grant(at=0, key="c1", seconds=60)
+    later = grant(at=1, key="c2", seconds=90)
+
+    assert one_ownership(mine=later, siblings=(earlier,), now=NOW) is earlier
+    assert one_ownership(mine=earlier, siblings=(later,), now=NOW) is earlier
+
+
+def test_a_lapsed_grant_of_the_holders_own_never_stands() -> None:
+    """A restart cleans its predecessor up rather than inheriting it."""
+    lapsed = grant(at=0, key="c1", seconds=30)
+    mine = grant(at=60, key="c2", seconds=120)
+
+    assert (
+        one_ownership(mine=mine, siblings=(lapsed,), now=NOW + timedelta(seconds=60))
+        is mine
+    )
+
+
+def test_a_grant_expiring_at_the_instant_asked_about_is_already_gone() -> None:
+    """The deadline is the first instant the set is free, here as everywhere."""
+    lapsing = grant(at=0, key="c1", seconds=30)
+    mine = grant(at=10, key="c2", seconds=120)
+
+    assert (
+        one_ownership(mine=mine, siblings=(lapsing,), now=NOW + timedelta(seconds=30))
+        is mine
+    )
+
+
+def test_the_earliest_of_several_live_grants_is_the_one_all_reach() -> None:
+    """Three attempts of one holder converge on one, not on a chain of two."""
+    earliest = grant(at=0, key="c1", seconds=60)
+    middle = grant(at=1, key="c2", seconds=60)
+    mine = grant(at=2, key="c3", seconds=60)
+
+    assert one_ownership(mine=mine, siblings=(middle, earliest), now=NOW) is earliest
+    assert one_ownership(mine=middle, siblings=(mine, earliest), now=NOW) is earliest
+
+
+def test_an_instant_two_creations_shared_is_settled_by_identity() -> None:
+    """Both sides order the pair the same way round, so both name one."""
+    first = Grant(order=(NOW, "c1"), expires_at=NOW + timedelta(seconds=60))
+    second = Grant(order=(NOW, "c2"), expires_at=NOW + timedelta(seconds=60))
+
+    assert one_ownership(mine=second, siblings=(first,), now=NOW) is first
+    assert one_ownership(mine=first, siblings=(second,), now=NOW) is first

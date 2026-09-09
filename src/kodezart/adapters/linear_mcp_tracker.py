@@ -52,6 +52,7 @@ from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import (
     live_conflict,
+    one_ownership,
     renewed_deadline,
     renews,
     surface_address,
@@ -546,6 +547,53 @@ class _Granted:
     """A grant that survived its own read-back."""
 
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _OwnGrant:
+    """One grant of one holder, folded to what the self-arbitration reads.
+
+    A grant covers a marker on every target it spans, and those markers
+    carry the backend's stamps separately.  The whole grant is placed
+    where its earliest marker was created and lives only as long as its
+    earliest deadline, so a grant is never read as owning anything past
+    the point where any part of it lapsed.
+    """
+
+    order: tuple[datetime, str]
+    expires_at: datetime
+
+
+def _own_grants(
+    markers: Sequence[_GrantMarker], *, holder: str, addresses: frozenset[str]
+) -> dict[str, _OwnGrant]:
+    """This holder's confirmed grants over exactly this set, one per nonce.
+
+    Exactly this set, because a grant over a different one is a different
+    ownership rather than a second reading of this one; confirmed,
+    because a bid still inside its own race owns nothing and a holder
+    that withdrew into one would end up holding what that bid retracts.
+    """
+    grants: dict[str, _OwnGrant] = {}
+    for marker in markers:
+        if (
+            marker.holder != holder
+            or marker.state is not _GrantState.HELD
+            or marker.addresses != addresses
+        ):
+            continue
+        standing = grants.get(marker.nonce)
+        grants[marker.nonce] = _OwnGrant(
+            order=marker.order
+            if standing is None
+            else min(standing.order, marker.order),
+            expires_at=(
+                marker.deadline
+                if standing is None
+                else min(standing.expires_at, marker.deadline)
+            ),
+        )
+    return grants
 
 
 @dataclass(frozen=True, slots=True)
@@ -1919,18 +1967,92 @@ class LinearMcpTracker:
         )
         if refused is not None:
             return refused
-        # Its own predecessor for exactly this set — the marker a restart
-        # left behind — is a duplicate of this grant, never a competitor.
+        # A grant of this holder's own over exactly this set is the same
+        # ownership observed twice, never a competitor: the earliest of
+        # them stands for all, and this one either is it or withdraws
+        # into it.  Both parties read one log and reach one answer, so a
+        # holder meeting itself ends holding one marker and never none.
+        #
+        # Measured on the real board: when the log hid each grant's
+        # confirmation from the other's read, both stood, and two markers
+        # of ONE holder were left.  That is a duplicate and not a second
+        # owner — every reader names the same holder, a rival is refused
+        # in that name, and the marker nothing renews lapses on its own —
+        # so it is left to lapse rather than compensated for by deleting a
+        # marker another live grant of this holder may still be reading.
+        covered = frozenset(encoded)
+        instant = min(marker.updated_at for marker in held.values())
+        grants = _own_grants(after, holder=holder, addresses=covered)
+        standing = one_ownership(
+            mine=grants[nonce],
+            siblings=[
+                grant for its_nonce, grant in grants.items() if its_nonce != nonce
+            ],
+            now=instant,
+        )
+        if standing is not grants[nonce]:
+            return await self._withdraw_into(
+                addressing=addressing,
+                addresses=addresses,
+                holder=holder,
+                lease_seconds=lease_seconds,
+                mine=held,
+                expires_at=advertised,
+            )
+        # What is left of this holder's earlier attempts owns nothing and
+        # nobody but this holder may take it off the log.
         await self._stand_down(
             tuple(
                 _retraction(marker, body=self._void_body(marker))
                 for marker in after
                 if marker.holder == holder
                 and marker.nonce != nonce
-                and marker.addresses == frozenset(encoded)
+                and marker.addresses == covered
+                and marker.deadline <= instant
             )
         )
         return _Granted(expires_at=advertised)
+
+    async def _withdraw_into[AddressT](
+        self,
+        *,
+        addressing: _Addressing[AddressT],
+        addresses: frozenset[AddressT],
+        holder: str,
+        lease_seconds: float,
+        mine: Mapping[_Target, _GrantMarker],
+        expires_at: datetime,
+    ) -> _Granted | _Refused[AddressT]:
+        """Stand this grant down into the holder's own earlier one, and renew it.
+
+        Withdrawing into an ownership is not withdrawing from the set: the
+        holder still holds it, under the marker the backend ordered first,
+        so this grant takes its own markers back off and then carries that
+        one forward for the duration it was asked for.  The renewal is the
+        same fenced write every renewal is, which is what keeps a restart
+        from resurrecting a grant that lapsed while it was standing down —
+        it renews nothing, and the address stays with whoever took it.
+        """
+        await self._stand_down(
+            tuple(
+                _retraction(marker, body=self._void_body(marker))
+                for marker in mine.values()
+            )
+        )
+        extended = await self._extend(
+            addressing=addressing,
+            addresses=addresses,
+            holder=holder,
+            lease_seconds=lease_seconds,
+        )
+        if extended is None:
+            return _Refused(
+                address=min(addresses, key=addressing.order),
+                holder=None,
+                settled=False,
+                expires_at=expires_at,
+            )
+        return extended
 
     async def _refuse_bid[AddressT](
         self,

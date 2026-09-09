@@ -3879,15 +3879,28 @@ class FakeTrackerPort:
         # a fake whose claim is not genuinely atomic proves nothing about
         # exactly-once semantics.
         await asyncio.sleep(0)
-        expires_at = self._clock() + timedelta(seconds=lease_seconds)
+        now = self._clock()
+        expires_at = now + timedelta(seconds=lease_seconds)
         held = self.claims.get(issue_key)
-        if held is not None and held.expires_at > self._clock():
+        # Decided by the same function the lease side is decided by, so
+        # this registry and a backend that keeps ownership on a comment
+        # log answer a holder that meets ITSELF the same way: one identity
+        # is what the arbitration is over, and re-acquiring what it
+        # already holds carries that ownership forward.
+        conflict = live_conflict(
+            requested=frozenset({issue_key}),
+            held={} if held is None else {issue_key: held},
+            holder=holder,
+            now=now,
+            order=lambda key: (key,),
+        )
+        if conflict is not None:
             return ClaimResult(
                 issue_key=issue_key,
                 status=ClaimStatus.LOST,
                 holder=holder,
                 expires_at=expires_at,
-                current_holder=held.holder,
+                current_holder=conflict[1],
             )
         granted = ClaimResult(
             issue_key=issue_key,
