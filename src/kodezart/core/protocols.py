@@ -1016,8 +1016,11 @@ class TrackerPort(
         ``GRANTED``; every other claimant observes ``LOST``, or
         ``CONTENDED`` where the backend settled no order between them and
         nobody holds the issue. Neither is an exception: both are values
-        the caller routes on, and both name the other party in
-        ``current_holder``.
+        the caller routes on. ``current_holder`` names an OWNER and
+        nothing else, so it carries the winner under ``LOST`` and is
+        absent under ``CONTENDED``: a race nobody won has no owner to
+        name, and naming the party met would report a refused claimant as
+        holding the issue.
 
         *holder* is the deployment's PROCESS identity, the value
         ``core/config.py::dispatch_holder`` carries. It answers which
