@@ -1,8 +1,10 @@
 """The tracker-native fire: an execution-only graph over staged criteria.
 
-The graph HOLDS no ticket- or criteria-generation node, and reaches its
-loop only through the pre-loop step that re-reads, at head, every Todo
-criterion sub-issue the subject's whole subtree carries.
+Two contracts live here.  The graph HOLDS no ticket- or criteria-generation
+node and reaches its loop only through the pre-loop re-validation step; the
+step reads what the fire owes from the tracker's own spec read, over the
+subject's whole subtree, and nothing carried alongside that read stands in
+for it.
 """
 
 import pytest
@@ -15,11 +17,13 @@ from kodezart.chains.fire_review import FireReview
 from kodezart.chains.fire_specification import FireSpecification
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.domain.errors import (
+    FireSpecEntryError,
     InvalidFireCriterionError,
     ScopedExecutionUnavailableError,
 )
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode
@@ -46,16 +50,16 @@ from tests.fakes import (
 #: The operation's own key for "the criteria stage finished on this issue".
 STAGE_KEY = "criteria-staged"
 
-SUBJECT = "KOD-1"
+SUBJECT = "fire/subject"
 #: Two direct criteria the fire owes, one direct criterion already Done,
 #: a deliverable child, and the criterion that sits under THAT child —
 #: the offending shape the 2026-09-09 subtree ruling is about.
-DIRECT_OWED = "KOD-2"
-DIRECT_DONE = "KOD-3"
-DELIVERABLE_CHILD = "KOD-4"
-NESTED_OWED = "KOD-5"
-DIRECT_OWED_TOO = "KOD-6"
-NESTED_DONE = "KOD-7"
+DIRECT_OWED = "fire/owed-direct"
+DIRECT_DONE = "fire/done-direct"
+DELIVERABLE_CHILD = "fire/deliverable-child"
+NESTED_OWED = "fire/owed-nested"
+DIRECT_OWED_TOO = "fire/owed-direct-2"
+NESTED_DONE = "fire/done-nested"
 
 GENERATION_NODES = frozenset(
     {
@@ -242,8 +246,8 @@ def reachable(fire_graph, *, without: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# KOD-450 — the fire graph holds no generation node, and the pre-loop step
-# stands between the entry and the loop.
+# The graph holds no generation node, and the pre-loop step stands between
+# the entry and the loop.
 # ---------------------------------------------------------------------------
 
 
@@ -333,7 +337,7 @@ def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
     with pytest.raises(ScopedExecutionUnavailableError, match="disagree"):
         fire.prepare(
             prompt="Implement the requested behavior",
-            issue_key="KOD-999",
+            issue_key="fire/other-subject",
             repo_path="/tmp/fire",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
@@ -345,7 +349,7 @@ def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
 
 
 # ---------------------------------------------------------------------------
-# What the fire owes: the subtree's Todo criteria, at head.
+# The spec read is the source; the subtree is the extent it is read over.
 # ---------------------------------------------------------------------------
 
 
@@ -359,6 +363,58 @@ async def test_the_criteria_a_fire_owes_are_its_subtrees_todo_criteria() -> None
         NESTED_OWED: check_of(NESTED_OWED),
         DIRECT_OWED_TOO: check_of(DIRECT_OWED_TOO),
     }
+
+
+async def test_only_the_check_reaches_the_fire_never_the_recorded_evidence() -> None:
+    stage = TrackerCriteria(tracker=tracker())
+
+    owed = await stage.read_owed_criteria(issue_key=SUBJECT)
+
+    for key, check in owed.items():
+        assert check == check_of(key)
+        assert "evidence" not in check
+        assert "the build" not in check
+
+
+@pytest.mark.parametrize("absent", ["stage", "approval"])
+async def test_a_refused_spec_read_refuses_the_fire_though_the_subtree_reads(
+    absent: str,
+) -> None:
+    port = tracker(staged=absent != "stage", approved=absent != "approval")
+    stage = TrackerCriteria(tracker=port)
+
+    with pytest.raises(FireSpecEntryError) as caught:
+        await stage.read_owed_criteria(issue_key=SUBJECT)
+
+    assert caught.value.issue_key == SUBJECT
+    # The side channel is intact: the very criteria the fire would have
+    # owed are readable off the subtree, and are not an answer.
+    subtree = await port.scope_issues(ref=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
+    assert {
+        issue.issue_key for issue in subtree if "criterion" in issue.issue_labels
+    } == {DIRECT_OWED, DIRECT_DONE, NESTED_OWED, DIRECT_OWED_TOO, NESTED_DONE}
+
+
+async def test_a_criterion_the_spec_names_that_the_subtree_lost_refuses() -> None:
+    class Moving(FakeTrackerPort):
+        """A criterion archived between the spec read and the subtree read."""
+
+        async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+            spec = await super().read_fire_spec(issue_key=issue_key)
+            del self.issues[DIRECT_OWED_TOO]
+            return spec
+
+    port = tracker()
+    moving = Moving(
+        issues=list(port.issues.values()),
+        criteria_stage_label_key=STAGE_KEY,
+        scope_label_members=port.scope_label_members,
+    )
+
+    with pytest.raises(InvalidFireCriterionError) as caught:
+        await TrackerCriteria(tracker=moving).read_owed_criteria(issue_key=SUBJECT)
+
+    assert caught.value.criterion_key == DIRECT_OWED_TOO
 
 
 async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
