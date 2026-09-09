@@ -15,7 +15,8 @@ arm: a claim nobody could substantiate is a claim that did not
 substantiate, and that is already one of the two.
 """
 
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Self
@@ -163,3 +164,45 @@ class AmendmentVerdict(CamelCaseModel):
             msg = "an upheld verdict rests on no ground and no evidence"
             raise ValueError(msg)
         return self
+
+
+class UpheldRepeat(CamelCaseModel):
+    """One subject whose claims have been refused more than once.
+
+    A single refusal is an ordinary outcome and carries no signal.  The
+    same subject refused again is the shape worth reporting: a writer
+    that keeps re-asserting a ground the base never bears out is not
+    converging, and the loop is the only place that can see it happening
+    across iterations.  ``count`` therefore starts at two — a one is not
+    a repeat, and a model that could hold one would need every reader to
+    remember to filter it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    subject_id: CriterionRef
+    count: int = Field(ge=2)
+
+
+def repeat_upheld(verdicts: Sequence[AmendmentVerdict]) -> tuple[UpheldRepeat, ...]:
+    """Every subject upheld more than once in *verdicts*, in subject order.
+
+    Pure: a fold over the verdicts a run has retained and nothing else —
+    no clock, no tracker read, no loop state beyond the list itself, so
+    the same list always counts the same and the count can be taken
+    wherever the list is.
+
+    Amended verdicts are not counted.  The question this answers is how
+    often a subject's claim was REFUSED, and an amendment is the arm
+    where it was not.
+    """
+    counts = Counter(
+        verdict.subject_id
+        for verdict in verdicts
+        if verdict.decision is AmendmentDecision.UPHELD
+    )
+    return tuple(
+        UpheldRepeat(subject_id=subject, count=count)
+        for subject, count in sorted(counts.items())
+        if count > 1
+    )
