@@ -41,6 +41,27 @@ IDENTITY_OWNERS = {
     "CriterionRef": "domain/fire_spec.py",
     "RulingId": "domain/agent.py",
 }
+BACKEND = CODE
+#: Every cross-member invariant of the model, with the packaged module whose
+#: code it checks. ``None`` says the code does not exist yet, which routes the
+#: invariant onto the spec backend now rather than deferring it.
+MODEL_INVARIANTS = {
+    "criterion address minting": "kodezart.domain.fire_spec",
+    "ruling address minting": "kodezart.domain.agent",
+    "run event vocabulary": "kodezart.types.domain.run_event",
+    "run event state table": "kodezart.types.domain.operation",
+    "vendor freedom": "kodezart.types.domain.tracker",
+    "cross-lane pointer resolution": None,
+    "model value naming": None,
+}
+#: The invariants this backend runs, each with the test that runs it.
+INVARIANTS = {
+    "criterion address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "ruling address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "run event vocabulary": "test_run_event_invariant_uses_the_actual_code_backend",
+    "run event state table": "test_run_event_invariant_uses_the_actual_code_backend",
+    "vendor freedom": "test_the_invariant_modules_and_their_values_name_no_vendor",
+}
 
 
 def vendor_terms(text: str) -> tuple[str, ...]:
@@ -127,6 +148,146 @@ def tracker_attributes(source: str) -> tuple[str, ...]:
             }
         )
     )
+
+
+def _literal(node, constants, seen=frozenset()):
+    """Fold a module constant without importing or executing the module."""
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            raise AssertionError(f"constant {node.id} is defined in terms of itself")
+        return _literal(constants[node.id], constants, seen | {node.id})
+    return ast.literal_eval(node)
+
+
+def declared_invariants(module: Path) -> tuple[str, dict[str, str]]:
+    """A module's declared backend and the test it runs each invariant by."""
+    tree = ast.parse(module.read_text())
+    constants = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    runners = _literal(constants["INVARIANTS"], constants)
+    defined = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+    missing = sorted(set(runners.values()) - defined)
+    if missing:
+        raise AssertionError(f"{module.name} runs no test named {missing}")
+    return _literal(constants["BACKEND"], constants), runners
+
+
+def backend_for(invariant: str) -> str:
+    """An invariant whose packaged code exists runs on the code backend; one
+    whose code does not yet exist runs on the spec backend, never nowhere."""
+    declared = MODEL_INVARIANTS[invariant]
+    return CODE if declared and _module_path(declared) else SPEC
+
+
+def routing_failures(declarations: dict[str, dict[str, str]]) -> tuple[str, ...]:
+    """Every invariant no backend runs, or that the wrong backend runs."""
+    failures = []
+    for invariant in sorted(MODEL_INVARIANTS):
+        routed = backend_for(invariant)
+        running = sorted(
+            backend for backend, runners in declarations.items() if invariant in runners
+        )
+        if running != [routed]:
+            failures.append(
+                f"{invariant}: routed to the {routed} backend, run by "
+                f"{' and '.join(running) or 'no backend'}"
+            )
+    for backend, runners in sorted(declarations.items()):
+        for invariant in sorted(set(runners) - set(MODEL_INVARIANTS)):
+            failures.append(
+                f"{invariant}: the {backend} backend runs an invariant the "
+                "model does not declare"
+            )
+    return tuple(failures)
+
+
+def actual_declarations() -> dict[str, dict[str, str]]:
+    return {
+        backend: declared_invariants(module)[1]
+        for backend, module in INVARIANT_MODULES.items()
+    }
+
+
+@pytest.mark.parametrize("backend", sorted(INVARIANT_MODULES))
+def test_each_module_declares_the_backend_it_is_registered_under(backend):
+    assert declared_invariants(INVARIANT_MODULES[backend])[0] == backend
+
+
+def test_every_invariant_runs_on_the_backend_its_code_routes_it_to():
+    assert routing_failures(actual_declarations()) == ()
+
+
+def test_an_invariant_whose_code_does_not_exist_runs_on_the_spec_backend_now():
+    codeless = {name for name, code in MODEL_INVARIANTS.items() if code is None}
+    assert codeless
+    assert all(backend_for(name) == SPEC for name in codeless)
+    assert codeless <= set(declared_invariants(INVARIANT_MODULES[SPEC])[1])
+
+
+def test_a_declared_module_that_does_not_exist_routes_to_the_spec_backend(
+    monkeypatch,
+):
+    absent = f"{SOURCE_ROOT.name}.domain.not_yet_built"
+    assert _module_path(absent) is None
+    monkeypatch.setitem(MODEL_INVARIANTS, "invented invariant", absent)
+    assert backend_for("invented invariant") == SPEC
+
+
+@pytest.mark.parametrize("dropped", sorted(MODEL_INVARIANTS))
+def test_an_invariant_running_on_neither_backend_fails(dropped):
+    declarations = {
+        backend: {name: test for name, test in runners.items() if name != dropped}
+        for backend, runners in actual_declarations().items()
+    }
+    failures = routing_failures(declarations)
+    assert len(failures) == 1
+    assert dropped in failures[0] and "no backend" in failures[0]
+
+
+@pytest.mark.parametrize("deferred", ["cross-lane pointer resolution"])
+def test_a_codeless_invariant_moved_onto_the_code_backend_fails(deferred):
+    declarations = actual_declarations()
+    declarations[CODE][deferred] = declarations[SPEC].pop(deferred)
+    failures = routing_failures(declarations)
+    assert len(failures) == 1
+    assert deferred in failures[0] and f"routed to the {SPEC} backend" in failures[0]
+
+
+def test_a_backend_running_an_undeclared_invariant_fails():
+    declarations = actual_declarations()
+    declarations[CODE]["invented invariant"] = INVARIANTS["vendor freedom"]
+    failures = routing_failures(declarations)
+    assert len(failures) == 1 and "the model does not declare" in failures[0]
+
+
+def test_a_declared_runner_must_be_a_test_defined_in_that_module(tmp_path):
+    module = tmp_path / "test_another_backend.py"
+    header = 'CODE = "code"\nBACKEND = CODE\n'
+    module.write_text(f'{header}INVARIANTS = {{"an invariant": "test_absent"}}\n')
+    with pytest.raises(AssertionError, match="test_absent"):
+        declared_invariants(module)
+    module.write_text(
+        f'{header}INVARIANTS = {{"an invariant": "test_present"}}\n'
+        "def test_present():\n    pass\n"
+    )
+    assert declared_invariants(module) == (CODE, {"an invariant": "test_present"})
+
+
+def test_a_backend_constant_defined_in_terms_of_itself_refuses(tmp_path):
+    module = tmp_path / "test_circular_backend.py"
+    module.write_text("BACKEND = OTHER\nOTHER = BACKEND\nINVARIANTS = {}\n")
+    with pytest.raises(AssertionError, match="defined in terms of itself"):
+        declared_invariants(module)
 
 
 def test_the_invariant_modules_and_their_values_name_no_vendor():

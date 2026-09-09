@@ -26,6 +26,18 @@ from kodezart.domain.fire_spec import _without_comments
 from kodezart.types.domain.tracker import TrackerIssue
 
 BACKEND = "spec"
+#: The cross-member invariants this backend runs, each with the test that
+#: runs it. An invariant whose packaged code does not exist yet is routed
+#: here rather than deferred; the routing itself is checked on the code
+#: backend, which reads this declaration.
+INVARIANTS = {
+    "cross-lane pointer resolution": (
+        "test_committed_fixture_runs_actual_query_and_pointer_resolution"
+    ),
+    "model value naming": (
+        "test_committed_fixture_resolves_each_name_to_its_one_definition"
+    ),
+}
 FIXTURE = Path(__file__).with_name("fixtures") / "model_members.json"
 _ISSUE_LINK = re.compile(r"<issue\b(?P<attrs>[^>]*)>(?P<label>[^<]+)</issue>")
 _MARKDOWN_LINK = re.compile(r"\[(?P<label>[^\]\n]+)\]\((?P<url><[^>\n]+>|[^)\n]+)\)")
