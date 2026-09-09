@@ -38,6 +38,7 @@ from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
+from kodezart.types.domain.run_event_record import RunEventRecord
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
@@ -1182,6 +1183,28 @@ class TrackerPort(
         carries that address — never another subject's or another signal's
         alarm.  A record that cannot be read back as the value written
         raises; it never becomes a ``None`` or a repaired alarm.
+        """
+        ...
+
+    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
+        """Post *event* onto its lane's stream, carried on *issue_key*.
+
+        A post and never an edit: an event is a thing that happened and
+        takes its place in an order, so posting the same event twice
+        records that it happened twice.
+        """
+        ...
+
+    async def run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[RunEventRecord]:
+        """Exactly the events posted for *lane_key*, in write order.
+
+        A record the run edits in place is not an event and never appears
+        here, and neither does a threaded reply — a decision recorded
+        under a thread answers a comment, it does not happen to the lane.
+        A successful read with nothing posted returns an empty sequence;
+        an unreadable one raises rather than becoming an empty stream.
         """
         ...
 

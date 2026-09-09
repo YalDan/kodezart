@@ -18,6 +18,8 @@ import pytest
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
+from kodezart.domain.run_event_stream import render_run_event, run_event_marker
+from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
@@ -30,6 +32,8 @@ from kodezart.types.domain.run_alarm import (
     RunAlarm,
     surface_alarm_member_id,
 )
+from kodezart.types.domain.run_event import RunEventKind
+from kodezart.types.domain.run_event_record import RunEventRecord
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
@@ -63,6 +67,7 @@ from tests.tracker.conftest import (
     TEAM_IDENTIFIERS,
     FixtureClock,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 LEASE_SECONDS = 600.0
 TEAM = TEAM_IDENTIFIERS["engineering"]
@@ -2266,3 +2271,150 @@ class TestRunAlarmRecords:
             )
             is None
         )
+
+
+class TestRunEventStream:
+    """P3 — the lane's stream is what was POSTED, in the order it landed.
+
+    The split the port draws between its two comment writes: a post adds
+    one entry to an order, an upsert keeps one fact current. An
+    implementation that enumerated the log would report the run's own
+    records as things that happened to the lane, and would report a
+    threaded reply — an answer to a comment — as a second event.
+    """
+
+    LANE = "lane-seven"
+    EVENT_MARKER = run_event_marker(lane_key=LANE, marker_prefixes=MARKER_PREFIXES)
+
+    def _event(self, kind: RunEventKind, subject_ref: str) -> RunEventRecord:
+        return RunEventRecord(lane_key=self.LANE, kind=kind, subject_ref=subject_ref)
+
+    def _stream(self) -> tuple[RunEventRecord, ...]:
+        """Four posts, one of them a repeat: a stream is an order, not a set."""
+        return (
+            self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven"),
+            self._event(RunEventKind.GATE_RED, "check-chain"),
+            self._event(RunEventKind.GATE_GREEN, "check-chain"),
+            self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven"),
+        )
+
+    def _alarm(self, *, observed: int) -> RunAlarm:
+        return RunAlarm(
+            subject=AlarmSubject(
+                kind=AlarmSubjectKind.LANE,
+                scope_key="fixture-scope",
+                lane_key=self.LANE,
+            ),
+            signal=AlarmSignal.TALLY_UNMOVED,
+            readings=(AlarmReading(source_ref="tally", value=str(observed)),),
+            bound=None,
+            raised_at_sha="e" * 40,
+            raised_by="fixture-supervisor",
+        )
+
+    async def test_the_stream_is_exactly_the_posted_events_in_write_order(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        posted = self._stream()
+
+        for event in posted:
+            await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
+
+        read = await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
+        assert tuple(read) == posted
+
+    async def test_a_record_edited_in_place_never_appears_in_the_stream(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        posted = self._stream()
+
+        await tracker.record_run_alarm(
+            issue_key=CLAIMED_ISSUE, alarm=self._alarm(observed=3)
+        )
+        for event in posted:
+            await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
+        await tracker.record_run_alarm(
+            issue_key=CLAIMED_ISSUE, alarm=self._alarm(observed=4)
+        )
+
+        read = await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
+        assert tuple(read) == posted
+        # The record IS on the same log and IS about the same lane: the
+        # stream excludes it because it is edited, not because it is absent.
+        log = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        assert len(log) == len(posted) + 1
+
+    async def test_the_stream_is_scoped_to_its_lane_and_its_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        event = self._event(RunEventKind.FIRST_PUSH, "kodezart/lane-seven")
+        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
+
+        assert (
+            await tracker.run_events(issue_key=CLAIMED_ISSUE, lane_key="lane-other")
+            == ()
+        )
+        assert (
+            await tracker.run_events(issue_key=APPROVED_ISSUE, lane_key=self.LANE) == ()
+        )
+
+    async def test_a_threaded_record_is_not_an_event(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        """A reply carrying a whole, well-formed event body is still a reply.
+
+        Seeded through the fake MCP server, which is the adapters' input:
+        the port offers no reply write, and a decision recorded under a
+        thread is exactly the shape that reaches this read in the field.
+        The paired top-level post proves the exclusion is the parent link
+        and not the body.
+        """
+        threaded = self._event(RunEventKind.ESCALATION_RAISED, "escalation-4")
+        body = marked_comment_body(
+            marker=self.EVENT_MARKER, body=render_run_event(event=threaded)
+        )
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-threaded-decision",
+                issue_id=CLAIMED_ISSUE,
+                author=APPROVER,
+                body=body,
+                created_at=FIXTURE_NOW - timedelta(days=1),
+                parent_id="comment-some-thread-root",
+            ),
+        )
+        posted = self._stream()
+        for event in posted:
+            await adapter.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
+
+        read = await adapter.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
+
+        assert tuple(read) == posted
+
+    async def test_the_same_body_posted_top_level_is_an_event(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        """The paired positive for the reply exclusion."""
+        top_level = self._event(RunEventKind.ESCALATION_RAISED, "escalation-4")
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-top-level-event",
+                issue_id=CLAIMED_ISSUE,
+                author=APPROVER,
+                body=marked_comment_body(
+                    marker=self.EVENT_MARKER, body=render_run_event(event=top_level)
+                ),
+                created_at=FIXTURE_NOW - timedelta(days=1),
+            ),
+        )
+
+        read = await adapter.run_events(issue_key=CLAIMED_ISSUE, lane_key=self.LANE)
+
+        assert tuple(read) == (top_level,)

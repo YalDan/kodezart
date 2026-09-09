@@ -57,6 +57,11 @@ from kodezart.domain.run_alarm_record import (
     render_run_alarm,
     run_alarm_marker,
 )
+from kodezart.domain.run_event_stream import (
+    lane_run_events,
+    render_run_event,
+    run_event_marker,
+)
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
@@ -119,6 +124,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
+from kodezart.types.domain.run_event_record import RunEventRecord
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
@@ -4103,6 +4109,33 @@ class FakeTrackerPort:
                 "run-alarm record does not match its declared shape",
                 tool="list_comments",
                 detail=stored.comment_key,
+            ) from exc
+
+    async def post_run_event(self, *, issue_key: str, event: RunEventRecord) -> None:
+        await self.post_comment(
+            issue_key=issue_key,
+            body=marked_comment_body(
+                marker=run_event_marker(
+                    lane_key=event.lane_key, marker_prefixes=self.marker_prefixes
+                ),
+                body=render_run_event(event=event),
+            ),
+        )
+
+    async def run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[RunEventRecord]:
+        try:
+            return lane_run_events(
+                lane_key=lane_key,
+                marker_prefixes=self.marker_prefixes,
+                comments=await self.list_comments(issue_key=issue_key),
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-event post does not match its declared shape",
+                tool="list_comments",
+                detail=issue_key,
             ) from exc
 
     async def recorded_repository(self, *, issue_key: str) -> str | None:
