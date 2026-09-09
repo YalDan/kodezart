@@ -966,7 +966,12 @@ class TrackerPort(
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
-        """Read first and move only if the configured state differs."""
+        """Read first and move only if the configured state differs.
+
+        Moves state and NOTHING else.  A description written alongside a
+        transition would ride on the transition's success and never face
+        ``edit_description``'s precondition at all.
+        """
         ...
 
     async def edit_description(
@@ -978,6 +983,16 @@ class TrackerPort(
         Exact expected bytes return EDITED; any other current body raises
         StaleWriteError with no write. Substrings do not identify the target.
         Callers serialize writes; this is not an atomic compare-and-swap.
+
+        No write on this port carries a body and a workflow state
+        together, and a backend offering to do both in one act is refused
+        rather than used: one act cannot be ordered and cannot be
+        half-undone, so a body that did not land the way its caller
+        asserted would have moved the state anyway and the issue would
+        read as reviewed carrying text nobody reviewed.  A caller needing
+        both issues two writes in one order — this one first, under its
+        precondition, and the transition only after it — so a refused
+        edit leaves the state where its reader found it.
         """
         ...
 

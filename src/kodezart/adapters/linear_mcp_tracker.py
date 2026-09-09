@@ -164,6 +164,13 @@ _TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
 _TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
 
+#: The save arguments that REWRITE an issue's body, against the one that
+#: moves its workflow state.  The vendor's single save takes them together
+#: and applies them as one act — which is exactly what this deployment
+#: never asks it for.
+_BODY_SAVE_ARGUMENTS: Final[frozenset[str]] = frozenset({"description", "patch"})
+_STATE_SAVE_ARGUMENT: Final[str] = "state"
+
 #: One configured scope label has a separate native definition per kind.
 #: Project creation uses the connected app's declared save tool with no id;
 #: its availability to the deployment's service credential is unverified.
@@ -702,6 +709,30 @@ def _may_resend(tool: str, exc: Exception) -> bool:
     refusal — is retried as it always was.
     """
     return not isinstance(exc, McpCallUnansweredError) or tool in _READ_TOOLS
+
+
+def refuse_combined_issue_write(arguments: Mapping[str, object]) -> None:
+    """Refuse one save carrying both a description edit and a state move.
+
+    The backend offers to do both in one act, and one act cannot be
+    ordered and cannot be half-undone.  A body that did not land the way
+    its caller asserted would have moved the workflow state anyway, and
+    the issue would then read as reviewed while carrying text nobody
+    reviewed — the state saying one thing about work the body does not.
+
+    Issued separately, in one order — the description edit first, under
+    ``edit_description``'s assert-then-edit precondition, and the
+    transition only after it — an edit that refused leaves the state
+    exactly where its reader found it.
+    """
+    if _STATE_SAVE_ARGUMENT in arguments and not _BODY_SAVE_ARGUMENTS.isdisjoint(
+        arguments
+    ):
+        raise TrackerProtocolError(
+            "a description edit and a state transition are separate writes",
+            tool=_TOOL_SAVE_ISSUE,
+            detail=f"arguments={sorted(arguments)}",
+        )
 
 
 class LinearMcpTracker:
@@ -3403,6 +3434,10 @@ class LinearMcpTracker:
         tool: str,
         arguments: Mapping[str, object],
     ) -> McpToolResult:
+        if tool == _TOOL_SAVE_ISSUE:
+            # Every issue write funnels through here, so the refusal is
+            # stated once and no future write path can route around it.
+            refuse_combined_issue_write(arguments)
         attempt = 0
         while True:
             try:

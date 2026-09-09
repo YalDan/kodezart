@@ -18,7 +18,11 @@ import pytest
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    StaleWriteError,
+    SurfaceLeaseError,
+)
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
@@ -39,6 +43,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
     is_open,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
@@ -2267,3 +2272,64 @@ class TestAThreadedRecordIsNotAnEvent:
         )
 
         assert list(stream) == [DISPATCHED, DISPATCHED]
+
+
+class TestTheEditAndTheTransitionAreSeparateWrites:
+    """Two writes in one order, so a refused edit leaves the state alone.
+
+    Each of the two touches its own surface and nothing else.  The pair
+    matters because the alternative — one act carrying both — cannot be
+    ordered and cannot be half-undone: an issue would read as reviewed
+    while carrying the text that failed to land.
+    """
+
+    async def test_an_edit_moves_no_workflow_state(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+
+        edited = await tracker.edit_description(
+            target=APPROVED_ISSUE,
+            expected=before.body,
+            replacement="a body written by its owner",
+        )
+
+        assert edited is DescriptionEditResult.EDITED
+        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert after.body == "a body written by its owner"
+        assert after.state_name == before.state_name
+
+    async def test_a_transition_rewrites_no_description(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+
+        moved = await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_REVIEW
+        )
+
+        assert moved.state_name != before.state_name
+        assert moved.body == before.body
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)).body == before.body
+
+    async def test_a_refused_edit_leaves_the_state_where_it_was(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The edit goes first precisely so its refusal can stop the pair."""
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        written = tracker_writes()
+
+        with pytest.raises(StaleWriteError):
+            await tracker.edit_description(
+                target=APPROVED_ISSUE,
+                expected="a body nobody ever wrote",
+                replacement="a body written by its owner",
+            )
+
+        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert (after.body, after.state_name) == (before.body, before.state_name)
+        assert tracker_writes() == written
