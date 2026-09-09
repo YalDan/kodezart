@@ -21,6 +21,15 @@ from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.run_alarm import (
+    AlarmBound,
+    AlarmReading,
+    AlarmSignal,
+    AlarmSubject,
+    AlarmSubjectKind,
+    RunAlarm,
+    surface_alarm_member_id,
+)
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
@@ -2068,3 +2077,192 @@ class TestRecordedBaseSpec:
         assert [ref.role for ref in refs] == [WorkRefRole.DELIVERABLE]
         recorded = await tracker.read_base_spec(issue_key=APPROVED_ISSUE)
         assert recorded is not None and recorded.base_branch == "kodezart/blocker"
+
+
+class TestRunAlarmRecords:
+    """P1 — an alarm's identity is the complete ``(subject, signal)`` pair.
+
+    An implementation addressing the record by a lane key alone passes the
+    single-subject round trip and fails here: two writable surfaces on one
+    issue in one lane under one signal collapse onto one record, and a
+    scope subject has no lane key to address at all.
+    """
+
+    SCOPE_KEY = "fixture-scope"
+    LANE_KEY = CLAIMED_ISSUE
+
+    def _surface_subject(self, surface: WritableSurface) -> AlarmSubject:
+        return AlarmSubject(
+            kind=AlarmSubjectKind.SURFACE,
+            scope_key=self.SCOPE_KEY,
+            lane_key=self.LANE_KEY,
+            member_id=surface_alarm_member_id(surface),
+        )
+
+    def _contended(self, surface: WritableSurface, *, holder: str) -> RunAlarm:
+        return RunAlarm(
+            subject=self._surface_subject(surface),
+            signal=AlarmSignal.SURFACE_CONTENDED,
+            readings=(
+                AlarmReading(source_ref=f"{holder}/lease", value=holder),
+                AlarmReading(source_ref=f"{holder}/holders", value="2"),
+            ),
+            bound=AlarmBound(
+                config_field="run_alarm_max_surface_holders",
+                configured_value=1,
+                observed_value=2,
+            ),
+            raised_at_sha="c" * 40,
+            raised_by="fixture-supervisor",
+        )
+
+    def _scope_alarm(self) -> RunAlarm:
+        return RunAlarm(
+            subject=AlarmSubject(
+                kind=AlarmSubjectKind.SCOPE,
+                scope_key=self.SCOPE_KEY,
+            ),
+            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES,
+            readings=(
+                AlarmReading(source_ref="rulings", value="7"),
+                AlarmReading(source_ref="closures", value="1"),
+            ),
+            bound=None,
+            raised_at_sha="d" * 40,
+            raised_by="fixture-supervisor",
+        )
+
+    async def test_an_alarm_round_trips_field_for_field_with_its_reading_order(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        alarm = self._contended(MARKER_A, holder=JOB_A)
+
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
+
+        stored = await tracker.read_run_alarm(
+            issue_key=CLAIMED_ISSUE,
+            subject=alarm.subject,
+            signal=alarm.signal,
+        )
+        assert stored == alarm
+        assert stored is not None
+        assert [reading.source_ref for reading in stored.readings] == [
+            f"{JOB_A}/lease",
+            f"{JOB_A}/holders",
+        ]
+
+    async def test_recording_the_identical_alarm_again_writes_no_second_record(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        alarm = self._contended(MARKER_A, holder=JOB_A)
+        before = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
+        once = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
+        twice = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+
+        assert len(once) == len(before) + 1
+        assert list(twice) == list(once)
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=alarm.subject,
+                signal=alarm.signal,
+            )
+            == alarm
+        )
+
+    async def test_two_surfaces_in_one_lane_under_one_signal_are_two_records(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The collision D5's lane-keyed marker could not tell apart."""
+        first = self._contended(MARKER_A, holder=JOB_A)
+        second = self._contended(MARKER_B, holder=JOB_B)
+        before = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=first)
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=second)
+
+        assert first.subject != second.subject
+        assert first.signal is second.signal
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=first.subject,
+                signal=first.signal,
+            )
+            == first
+        )
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=second.subject,
+                signal=second.signal,
+            )
+            == second
+        )
+        after = await tracker.list_comments(issue_key=CLAIMED_ISSUE)
+        assert len(after) == len(before) + 2
+
+    async def test_a_scope_subject_carrying_no_lane_key_round_trips(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        alarm = self._scope_alarm()
+        assert alarm.subject.lane_key is None
+
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
+
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=alarm.subject,
+                signal=alarm.signal,
+            )
+            == alarm
+        )
+
+    async def test_an_address_no_record_carries_reads_as_none(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """No latest-record fallback: a miss is a miss, not the last alarm."""
+        recorded = self._contended(MARKER_A, holder=JOB_A)
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=recorded)
+
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=self._surface_subject(MARKER_B),
+                signal=AlarmSignal.SURFACE_CONTENDED,
+            )
+            is None
+        )
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=CLAIMED_ISSUE,
+                subject=recorded.subject,
+                signal=AlarmSignal.RECORD_SUPERSEDED,
+            )
+            is None
+        )
+
+    async def test_a_record_is_scoped_to_the_issue_that_carries_it(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        alarm = self._contended(MARKER_A, holder=JOB_A)
+        await tracker.record_run_alarm(issue_key=CLAIMED_ISSUE, alarm=alarm)
+
+        assert (
+            await tracker.read_run_alarm(
+                issue_key=APPROVED_ISSUE,
+                subject=alarm.subject,
+                signal=alarm.signal,
+            )
+            is None
+        )

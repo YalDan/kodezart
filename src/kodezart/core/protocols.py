@@ -37,6 +37,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
@@ -1152,6 +1153,35 @@ class TrackerPort(
         ``None`` means no dispatch ever recorded one — a first dispatch,
         not a stale base.  The two are different states and no caller may
         conflate them.
+        """
+        ...
+
+    async def record_run_alarm(self, *, issue_key: str, alarm: RunAlarm) -> None:
+        """Record *alarm* on *issue_key*; ``read_run_alarm`` is the read.
+
+        The record is addressed by the complete ``(subject, signal)`` pair,
+        so two alarms whose subjects differ anywhere are two records: two
+        writable surfaces on one issue in one lane under one signal, and a
+        scope subject that carries no lane key at all.  Recording the
+        identical alarm again writes nothing and leaves the stored record
+        exactly as it stands.
+
+        The issue carrying the record is the caller's to state.  No lane
+        key is inferred from the subject, and no most-recent record ever
+        stands in for an address that does not resolve.
+        """
+        ...
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """The alarm recorded on *issue_key* under exactly this address.
+
+        The value returned is the value written, field for field, with its
+        readings in the order they were recorded.  ``None`` means no record
+        carries that address — never another subject's or another signal's
+        alarm.  A record that cannot be read back as the value written
+        raises; it never becomes a ``None`` or a repaired alarm.
         """
         ...
 
