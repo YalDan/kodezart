@@ -1,5 +1,8 @@
 """Spec backend: queried bodies resolve explicit deliverable/criterion pointers.
 
+A named model value resolves to the one member deliverable that defines it,
+so one value never carries two names and an attribution cycle never stands in
+for a definition.
 This module checks reference structure, not the meaning of model-value prose.
 The committed synthetic workspace is a regression fixture, never a board spec.
 ``compare_snapshot`` is the same comparison used for a separately supplied live
@@ -23,6 +26,18 @@ from kodezart.domain.fire_spec import _without_comments
 from kodezart.types.domain.tracker import TrackerIssue
 
 BACKEND = "spec"
+#: The cross-member invariants this backend runs, each with the test that
+#: runs it. An invariant whose packaged code does not exist yet is routed
+#: here rather than deferred; the routing itself is checked on the code
+#: backend, which reads this declaration.
+INVARIANTS = {
+    "cross-lane pointer resolution": (
+        "test_committed_fixture_runs_actual_query_and_pointer_resolution"
+    ),
+    "model value naming": (
+        "test_committed_fixture_resolves_each_name_to_its_one_definition"
+    ),
+}
 FIXTURE = Path(__file__).with_name("fixtures") / "model_members.json"
 _ISSUE_LINK = re.compile(r"<issue\b(?P<attrs>[^>]*)>(?P<label>[^<]+)</issue>")
 _MARKDOWN_LINK = re.compile(r"\[(?P<label>[^\]\n]+)\]\((?P<url><[^>\n]+>|[^)\n]+)\)")
@@ -34,6 +49,11 @@ _HEADING = re.compile(
     r"(?P<after>\*\*|\s|[\u2014\u2013:-]|$)"
 )
 _ORDINAL = re.compile(r"^(?P<number>[1-9]\d*)\.\s+\S")
+DEFINE = "Define"
+CONSUME = "Consume"
+_VALUE_VERB = re.compile(
+    rf"^(?P<verb>{DEFINE}|{CONSUME})\s+(?P<name>\S.*)$", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +65,24 @@ class Pointer:
     comment_target: bool = False
     native_id: str | None = None
     url: str | None = None
+
+
+@dataclass(frozen=True)
+class ValueSite:
+    """One member deliverable that defines or consumes a named model value."""
+
+    source: str
+    number: str
+    verb: str
+    name: str
+    attribution: Pointer | None
+
+    @property
+    def address(self) -> tuple[str, str]:
+        return self.source, self.number
+
+    def __str__(self) -> str:
+        return f"{self.source} D{self.number}"
 
 
 def _visible_lines(body: str) -> list[str]:
@@ -74,6 +112,17 @@ def _visible_lines(body: str) -> list[str]:
     return lines
 
 
+def _heading_number(text: str) -> str | None:
+    """The deliverable number a declared heading opens, never a bare mention."""
+    heading = _HEADING.match(text)
+    if heading and (
+        heading["format"]
+        or re.match(r"\s*[\u2014\u2013:-]", text[heading.end("number") :])
+    ):
+        return heading["number"]
+    return None
+
+
 def numbered_deliverables(body: str) -> Counter[str]:
     """Only explicit D headings or a declared deliverables numbered list."""
     numbers: Counter[str] = Counter()
@@ -84,11 +133,9 @@ def numbered_deliverables(body: str) -> Counter[str]:
             continue
         text = line.strip()
         heading = _HEADING.match(text)
-        if heading and (
-            heading["format"]
-            or re.match(r"\s*[\u2014\u2013:-]", text[heading.end("number") :])
-        ):
-            numbers[heading["number"]] += 1
+        number = _heading_number(text)
+        if number is not None:
+            numbers[number] += 1
         normalized = text.strip("#* :").casefold()
         if normalized.startswith(("deliverables", "deliverable sketch")):
             numbered_list = True
@@ -100,6 +147,93 @@ def numbered_deliverables(body: str) -> Counter[str]:
     return numbers
 
 
+def _line_pointers(issue_key: str, line: str) -> list[Pointer]:
+    """Read one visible line; a numbered range refuses rather than narrows."""
+    pointers = []
+    matches = sorted(
+        [
+            *_ISSUE_LINK.finditer(line),
+            *_MARKDOWN_LINK.finditer(line),
+            *_QUOTED_KEY.finditer(line),
+        ],
+        key=lambda match: match.start(),
+    )
+    code_spans = [match.span() for match in _INLINE_CODE.finditer(line)]
+    previous_end = -1
+    for match in matches:
+        if match.start() < previous_end:
+            continue
+        if match.re is not _QUOTED_KEY and any(
+            start <= match.start() < end for start, end in code_spans
+        ):
+            continue
+        previous_end = match.end()
+        label = unescape(match["label"]).strip().strip("`")
+        inner = re.search(r"(?<=\s)D(?P<number>[1-9]\d*(?:\.\d+)*[a-z]?)$", label)
+        target = label[: inner.start()].strip() if inner else label
+        suffix = line[match.end() :]
+        parenthetical = re.match(r"\s*\((D[^)\n]*)\)", suffix)
+        adjacent = re.match(
+            r"\s+(D[1-9]\d*(?:\.\d+)*[a-z]?(?:\s*[/,]\s*D[1-9]\d*(?:\.\d+)*[a-z]?)*)",
+            suffix,
+        )
+        declared = (
+            inner[0]
+            if inner
+            else parenthetical[1]
+            if parenthetical
+            else adjacent[1]
+            if adjacent
+            else ""
+        )
+        if adjacent and re.match(
+            r"\s*[-\u2013\u2014]\s*D?\d", suffix[adjacent.end() :]
+        ):
+            raise AssertionError(
+                f"{issue_key}: numbered reference range is not expanded: "
+                f"{line[match.start() :]}"
+            )
+        if re.search(r"D\d+\s*[-\u2013\u2014]\s*D?\d", declared):
+            raise AssertionError(
+                f"{issue_key}: numbered reference range is not expanded: {declared}"
+            )
+        numbers = [item["number"] for item in _DELIVERABLE.finditer(declared)]
+        # Non-key prose such as [ruling](...) is contextual unless it
+        # explicitly declares a numbered target, in which case it refuses.
+        fragment = match.groupdict().get("url", "")
+        if match.re is _ISSUE_LINK:
+            href = re.search(r"""\bhref\s*=\s*["']([^"']*)["']""", match["attrs"])
+            fragment = href[1] if href else ""
+        anchor = urlsplit(unescape(fragment).strip("<>")).fragment
+        comment = "commentId=" in fragment
+        native_id = None
+        if match.re is _ISSUE_LINK:
+            identity = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", match["attrs"])
+            native_id = unescape(identity[1]) if identity else None
+        if not numbers and " " in target:
+            continue
+        for number in numbers or [None]:
+            end = match.end() + (
+                parenthetical.end()
+                if parenthetical and not inner
+                else adjacent.end()
+                if adjacent and not inner
+                else 0
+            )
+            pointers.append(
+                Pointer(
+                    issue_key,
+                    target,
+                    number,
+                    line[match.start() : end],
+                    comment or bool(anchor and anchor.casefold() != f"d{number}"),
+                    native_id=native_id,
+                    url=unescape(fragment).strip("<>") or None,
+                )
+            )
+    return pointers
+
+
 def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
     """Read native issue mentions and Markdown references with D-n surfaces.
 
@@ -109,91 +243,120 @@ def explicit_pointers(issue: TrackerIssue) -> tuple[Pointer, ...]:
     have no numbered target; the reader recognizes a native criterion target
     from its actual membership, not from an identifier-shaped title.
     """
-    pointers = []
+    return tuple(
+        pointer
+        for line in _visible_lines(issue.body)
+        for pointer in _line_pointers(issue.issue_key, line)
+    )
+
+
+def _value_heading(text: str) -> tuple[str, str, str] | None:
+    """A declared heading that names a model value, with its verb."""
+    heading = _HEADING.match(text)
+    number = _heading_number(text)
+    if heading is None or number is None:
+        return None
+    remainder = text[heading.end("number") :].lstrip(" \u2014\u2013:-").rstrip()
+    remainder = remainder.removesuffix("**").rstrip().rstrip(".").rstrip()
+    named = _VALUE_VERB.match(remainder)
+    if named is None:
+        return None
+    return number, named["verb"].capitalize(), named["name"]
+
+
+def value_sites(issue: TrackerIssue) -> tuple[ValueSite, ...]:
+    """Read the named value each deliverable of a body defines or consumes.
+
+    A consuming deliverable attributes the definition to the one numbered
+    pointer inside it; none and several are both unresolved attributions.
+    """
+    sections: list[tuple[str, str, str, list[Pointer]]] = []
+    section: list[Pointer] | None = None
     for line in _visible_lines(issue.body):
-        matches = sorted(
-            [
-                *_ISSUE_LINK.finditer(line),
-                *_MARKDOWN_LINK.finditer(line),
-                *_QUOTED_KEY.finditer(line),
-            ],
-            key=lambda match: match.start(),
+        text = line.strip()
+        named = _value_heading(text)
+        if named is not None:
+            number, verb, name = named
+            section = []
+            sections.append((number, verb, name, section))
+        elif _heading_number(text) is not None:
+            section = None
+        elif section is not None:
+            section.extend(
+                pointer
+                for pointer in _line_pointers(issue.issue_key, line)
+                if pointer.number is not None
+            )
+    return tuple(
+        ValueSite(
+            issue.issue_key,
+            number,
+            verb,
+            name,
+            attributions[0] if len(attributions) == 1 else None,
         )
-        code_spans = [match.span() for match in _INLINE_CODE.finditer(line)]
-        previous_end = -1
-        for match in matches:
-            if match.start() < previous_end:
-                continue
-            if match.re is not _QUOTED_KEY and any(
-                start <= match.start() < end for start, end in code_spans
-            ):
-                continue
-            previous_end = match.end()
-            label = unescape(match["label"]).strip().strip("`")
-            inner = re.search(r"(?<=\s)D(?P<number>[1-9]\d*(?:\.\d+)*[a-z]?)$", label)
-            target = label[: inner.start()].strip() if inner else label
-            suffix = line[match.end() :]
-            parenthetical = re.match(r"\s*\((D[^)\n]*)\)", suffix)
-            adjacent = re.match(
-                r"\s+(D[1-9]\d*(?:\.\d+)*[a-z]?(?:\s*[/,]\s*D[1-9]\d*(?:\.\d+)*[a-z]?)*)",
-                suffix,
+        for number, verb, name, attributions in sections
+    )
+
+
+def _resolve_value(site: ValueSite, sites: dict[tuple[str, str], ValueSite]):
+    """Follow attributions to the one definition, or say what it is not."""
+    visited = [site.address]
+    current = site
+    while True:
+        if current.attribution is None:
+            return [
+                f"{site}: {site.name!r} attributes its definition to no single "
+                "numbered pointer"
+            ]
+        address = (current.attribution.target, current.attribution.number)
+        if address in visited:
+            trail = " -> ".join(
+                f"{source} D{number}" for source, number in (*visited, address)
             )
-            declared = (
-                inner[0]
-                if inner
-                else parenthetical[1]
-                if parenthetical
-                else adjacent[1]
-                if adjacent
-                else ""
-            )
-            if adjacent and re.match(
-                r"\s*[-\u2013\u2014]\s*D?\d", suffix[adjacent.end() :]
-            ):
-                raise AssertionError(
-                    f"{issue.issue_key}: numbered reference range is not expanded: "
-                    f"{line[match.start() :]}"
-                )
-            if re.search(r"D\d+\s*[-\u2013\u2014]\s*D?\d", declared):
-                raise AssertionError(
-                    f"{issue.issue_key}: numbered reference range is not expanded: "
-                    f"{declared}"
-                )
-            numbers = [item["number"] for item in _DELIVERABLE.finditer(declared)]
-            # Non-key prose such as [ruling](...) is contextual unless it
-            # explicitly declares a numbered target, in which case it refuses.
-            fragment = match.groupdict().get("url", "")
-            if match.re is _ISSUE_LINK:
-                href = re.search(r"""\bhref\s*=\s*["']([^"']*)["']""", match["attrs"])
-                fragment = href[1] if href else ""
-            anchor = urlsplit(unescape(fragment).strip("<>")).fragment
-            comment = "commentId=" in fragment
-            native_id = None
-            if match.re is _ISSUE_LINK:
-                identity = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", match["attrs"])
-                native_id = unescape(identity[1]) if identity else None
-            if not numbers and " " in target:
+            return [
+                f"{site}: {site.name!r} definition cycle {trail} resolves to no "
+                "definition"
+            ]
+        visited.append(address)
+        defining = sites.get(address)
+        if defining is None:
+            # An ordinary numbered deliverable declares no model value; the
+            # pointer invariant owns whether that target exists at all.
+            return []
+        if defining.verb == DEFINE:
+            if defining.name.casefold() != site.name.casefold():
+                return [
+                    f"{site} names {defining} {site.name!r}; {defining.source} "
+                    f"defines it as {defining.name!r}"
+                ]
+            return []
+        current = defining
+
+
+def value_agreement(documents: dict[str, TrackerIssue]) -> tuple[str, ...]:
+    """One name per model value, resolved to the one member that defines it."""
+    failures = []
+    sites: dict[tuple[str, str], ValueSite] = {}
+    for key in sorted(documents):
+        for site in value_sites(documents[key]):
+            if site.address in sites:
+                failures.append(f"{site}: the deliverable names a second value")
                 continue
-            for number in numbers or [None]:
-                end = match.end() + (
-                    parenthetical.end()
-                    if parenthetical and not inner
-                    else adjacent.end()
-                    if adjacent and not inner
-                    else 0
-                )
-                pointers.append(
-                    Pointer(
-                        issue.issue_key,
-                        target,
-                        number,
-                        line[match.start() : end],
-                        comment or bool(anchor and anchor.casefold() != f"d{number}"),
-                        native_id=native_id,
-                        url=unescape(fragment).strip("<>") or None,
-                    )
-                )
-    return tuple(pointers)
+            sites[site.address] = site
+    definitions: dict[str, ValueSite] = {}
+    for address in sorted(sites):
+        site = sites[address]
+        if site.verb != DEFINE:
+            continue
+        owner = definitions.setdefault(site.name.casefold(), site)
+        if owner is not site:
+            failures.append(f"{site} and {owner} both define {site.name!r}")
+    for address in sorted(sites):
+        site = sites[address]
+        if site.verb == CONSUME:
+            failures.extend(_resolve_value(site, sites))
+    return tuple(failures)
 
 
 def _document_projection(document):
@@ -249,7 +412,7 @@ async def model_agreement(tracker: TrackerPort, *, classification: str):
         tracker, classification=classification
     )
     captured_model = _projection(members, documents, criteria)
-    failures = []
+    failures = list(value_agreement(documents))
     consulted_criteria = None
     native_mentions = {}
     pointers = tuple(
@@ -1041,23 +1204,24 @@ async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeyp
 async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
     workspace, target_kind
 ):
-    # Actual 644 amendment cites ordinary parent 744 with this short native URL.
-    # The measured issue response reports the longer canonical slug URL.
+    # A measured amendment cites its ordinary parent by a short native URL,
+    # while the issue response reports the longer canonical slug URL.
     await workspace.put(
         FakeMcpIssue(
-            id="KOD-744",
+            id="owner/744",
             description="## D2 — Architecture acceptance",
             labels=["acceptance-condition"] if target_kind == "criterion" else [],
             parent_id="member/beta" if target_kind == "criterion" else None,
-            url="https://linear.app/duckburg/issue/KOD-744/architecture-review",
+            url="https://tracker.invalid/issue/owner/744/architecture-review",
         )
     )
-    label = "KOD-744 D2" if target_kind == "numbered" else "KOD-744"
+    label = "owner/744 D2" if target_kind == "numbered" else "owner/744"
+    short = "https://tracker.invalid/issue/owner/744"
     await workspace.seed(
         [
             {
-                "key": "KOD-644",
-                "body": f"Source amendment: [{label}](<https://linear.app/duckburg/issue/KOD-744>).",
+                "key": "owner/644",
+                "body": f"Source amendment: [{label}](<{short}>).",
                 "labels": [CLASSIFICATION],
             }
         ]
@@ -1068,8 +1232,195 @@ async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
         )
         assert failures == ()
     else:
-        with pytest.raises(AssertionError, match=r"pointer URL differs.*KOD-744"):
+        with pytest.raises(AssertionError, match=r"pointer URL differs.*owner/744"):
             await model_agreement(workspace.tracker, classification=CLASSIFICATION)
+    workspace.read_only()
+
+
+async def test_committed_fixture_resolves_each_name_to_its_one_definition(workspace):
+    _, documents, _ = await read_model(workspace.tracker, classification=CLASSIFICATION)
+    sites = {
+        site.address: site
+        for document in documents.values()
+        for site in value_sites(document)
+    }
+    use = sites[("member/alpha", "1")]
+    definition = sites[("member/beta", "2")]
+    assert use.verb == CONSUME
+    assert use.attribution is not None
+    assert (use.attribution.target, use.attribution.number) == definition.address
+    assert definition.verb == DEFINE
+    assert use.name.casefold() == definition.name.casefold()
+    assert value_agreement(documents) == ()
+    workspace.read_only()
+
+
+async def test_two_bodies_naming_one_value_differently_fail(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": (
+                    "## D3 \u2014 Consume the criterion address\n\n"
+                    "The defining contract is "
+                    '<issue id="member/beta">member/beta</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert all(
+        part in failures[0]
+        for part in (
+            "member/new D3",
+            "member/beta D2",
+            "the criterion address",
+            "the shared identity",
+        )
+    )
+    workspace.read_only()
+
+
+async def test_two_bodies_attributing_to_each_other_fail_as_an_unresolvable_cycle(
+    workspace,
+):
+    await workspace.seed(
+        [
+            {
+                "key": "member/one",
+                "body": (
+                    "## D1 \u2014 Consume the shared address\n\n"
+                    "The defining contract is "
+                    '<issue id="member/two">member/two</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+            {
+                "key": "member/two",
+                "body": (
+                    "## D2 \u2014 Consume the shared address\n\n"
+                    "The defining contract is "
+                    '<issue id="member/one">member/one</issue> D1.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 2
+    assert all(
+        "definition cycle" in failure and "resolves to no definition" in failure
+        for failure in failures
+    )
+    assert "member/one D1" in failures[0] and "member/two D2" in failures[0]
+    workspace.read_only()
+
+
+async def test_one_name_defined_by_two_members_names_both_definitions(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/new",
+                "body": "## D3 \u2014 Define the shared identity",
+                "labels": [CLASSIFICATION],
+            }
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert "member/new D3" in failures[0] and "member/beta D2" in failures[0]
+    workspace.read_only()
+
+
+async def test_a_name_resolves_through_an_intermediate_attribution(workspace):
+    await workspace.seed(
+        [
+            {
+                "key": "member/middle",
+                "body": (
+                    "## D3 \u2014 Consume the shared identity\n\n"
+                    "The defining contract is "
+                    '<issue id="member/beta">member/beta</issue> D2.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+            {
+                "key": "member/new",
+                "body": (
+                    "## D4 \u2014 Consume the shared identity\n\n"
+                    "The defining contract is "
+                    '<issue id="member/middle">member/middle</issue> D3.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert failures == ()
+    workspace.read_only()
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        "## D3 \u2014 Consume the shared identity",
+        "## D3 \u2014 Consume the shared identity\n\nEither "
+        '<issue id="member/beta">member/beta</issue> D2 or '
+        '<issue id="member/alpha">member/alpha</issue> D1.',
+    ],
+)
+async def test_a_consumed_name_without_one_attribution_resolves_to_nothing(
+    workspace, section
+):
+    await workspace.seed(
+        [{"key": "member/new", "body": section, "labels": [CLASSIFICATION]}]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert len(failures) == 1
+    assert (
+        "member/new D3" in failures[0] and "no single numbered pointer" in failures[0]
+    )
+    workspace.read_only()
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "## D3 \u2014 Define the shared address",
+        "**D3 \u2014 Define the shared address.**",
+    ],
+)
+async def test_both_declared_heading_formats_name_the_same_value(workspace, heading):
+    await workspace.seed(
+        [
+            {"key": "member/new", "body": heading, "labels": [CLASSIFICATION]},
+            {
+                "key": "member/other",
+                "body": (
+                    "## D4 \u2014 Consume the shared address\n\n"
+                    "The defining contract is "
+                    '<issue id="member/new">member/new</issue> D3.'
+                ),
+                "labels": [CLASSIFICATION],
+            },
+        ]
+    )
+    failures, _ = await model_agreement(
+        workspace.tracker, classification=CLASSIFICATION
+    )
+    assert failures == ()
     workspace.read_only()
 
 

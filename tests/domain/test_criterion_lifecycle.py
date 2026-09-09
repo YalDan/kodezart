@@ -1,11 +1,20 @@
-"""Code backend: shared identities and the actual run-event table agree."""
+"""Code backend: shared identities, the run-event table and vendor freedom.
 
+The static vendor check reads both invariant modules, every packaged module
+whose values they assert over, and the committed workspace the spec backend
+reads.  The roster of selectable adapters is the one place a vendor may be
+named, so it is the only exemption.
+"""
+
+import ast
+import re
 import tomllib
 from enum import StrEnum
 from pathlib import Path
 
 import pytest
 
+from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
@@ -14,13 +23,360 @@ from kodezart.types.domain.run_event import (
     RunEventPublisher,
     RunEventTableError,
 )
+from kodezart.types.domain.tracker import TrackerBackend
 from tests.identity_guards import construction_sites, invalid_ruling_fields
 
-SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
+REPO_ROOT = Path(__file__).parents[2]
+SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
+CODE = "code"
+SPEC = "spec"
+INVARIANT_MODULES = {
+    CODE: Path(__file__),
+    SPEC: REPO_ROOT / "tests" / "spec" / "test_model_agreement.py",
+}
+VENDOR_ROSTER = SOURCE_ROOT / "types" / "domain" / "tracker.py"
+VENDOR_TERMS = tuple(sorted(backend.value for backend in TrackerBackend))
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+")
 IDENTITY_OWNERS = {
     "CriterionRef": "domain/fire_spec.py",
     "RulingId": "domain/agent.py",
 }
+BACKEND = CODE
+#: Every cross-member invariant of the model, with the packaged module whose
+#: code it checks. ``None`` says the code does not exist yet, which routes the
+#: invariant onto the spec backend now rather than deferring it.
+MODEL_INVARIANTS = {
+    "criterion address minting": "kodezart.domain.fire_spec",
+    "ruling address minting": "kodezart.domain.agent",
+    "run event vocabulary": "kodezart.types.domain.run_event",
+    "run event state table": "kodezart.types.domain.operation",
+    "vendor freedom": "kodezart.types.domain.tracker",
+    "cross-lane pointer resolution": None,
+    "model value naming": None,
+}
+#: The invariants this backend runs, each with the test that runs it.
+INVARIANTS = {
+    "criterion address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "ruling address minting": "test_identity_invariant_uses_the_actual_code_backend",
+    "run event vocabulary": "test_run_event_invariant_uses_the_actual_code_backend",
+    "run event state table": "test_run_event_invariant_uses_the_actual_code_backend",
+    "vendor freedom": "test_the_invariant_modules_and_their_values_name_no_vendor",
+}
+
+
+def vendor_terms(text: str) -> tuple[str, ...]:
+    """Vendor names a text carries, in any casing or word separation."""
+    words = {word.casefold() for word in _WORD.findall(text)}
+    return tuple(term for term in VENDOR_TERMS if term in words)
+
+
+def vendor_violations(sources: dict[str, str]) -> dict[str, tuple[str, ...]]:
+    return {
+        name: terms
+        for name, text in sorted(sources.items())
+        if (terms := vendor_terms(text))
+    }
+
+
+def _module_path(name: str) -> Path | None:
+    """The packaged file a dotted name addresses, or nothing."""
+    parts = name.split(".")
+    if parts[0] != SOURCE_ROOT.name or len(parts) < 2:
+        return None
+    module = SOURCE_ROOT.joinpath(*parts[1:])
+    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def first_party_modules(source: str) -> tuple[Path, ...]:
+    """Every packaged module an invariant reads its asserted values from."""
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            names = (
+                []
+                if node.level
+                else [
+                    node.module or "",
+                    *(f"{node.module}.{alias.name}" for alias in node.names),
+                ]
+            )
+        elif isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            continue
+        found.update(path for name in names if (path := _module_path(name)))
+    return tuple(sorted(found))
+
+
+def invariant_sources() -> dict[str, str]:
+    """The scanned set, read from the tree rather than transcribed."""
+    paths = set()
+    for module in INVARIANT_MODULES.values():
+        paths.add(module)
+        paths.update(first_party_modules(module.read_text()))
+    paths.update(
+        path
+        for path in (INVARIANT_MODULES[SPEC].parent / "fixtures").iterdir()
+        if path.is_file()
+    )
+    return {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+        for path in sorted(paths)
+        if path != VENDOR_ROSTER
+    }
+
+
+def _names_a_tracker(node) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id.endswith("tracker")
+    if isinstance(node, ast.Attribute):
+        return node.attr.endswith("tracker")
+    return False
+
+
+def tracker_attributes(source: str) -> tuple[str, ...]:
+    """Every attribute an invariant reads off a tracker object."""
+    return tuple(
+        sorted(
+            {
+                node.attr
+                for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.Attribute) and _names_a_tracker(node.value)
+            }
+        )
+    )
+
+
+def _literal(node, constants, seen=frozenset()):
+    """Fold a module constant without importing or executing the module."""
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            raise AssertionError(f"constant {node.id} is defined in terms of itself")
+        return _literal(constants[node.id], constants, seen | {node.id})
+    return ast.literal_eval(node)
+
+
+def declared_invariants(module: Path) -> tuple[str, dict[str, str]]:
+    """A module's declared backend and the test it runs each invariant by."""
+    tree = ast.parse(module.read_text())
+    constants = {
+        target.id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    runners = _literal(constants["INVARIANTS"], constants)
+    defined = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+    missing = sorted(set(runners.values()) - defined)
+    if missing:
+        raise AssertionError(f"{module.name} runs no test named {missing}")
+    return _literal(constants["BACKEND"], constants), runners
+
+
+def backend_for(invariant: str) -> str:
+    """An invariant whose packaged code exists runs on the code backend; one
+    whose code does not yet exist runs on the spec backend, never nowhere."""
+    declared = MODEL_INVARIANTS[invariant]
+    return CODE if declared and _module_path(declared) else SPEC
+
+
+def routing_failures(declarations: dict[str, dict[str, str]]) -> tuple[str, ...]:
+    """Every invariant no backend runs, or that the wrong backend runs."""
+    failures = []
+    for invariant in sorted(MODEL_INVARIANTS):
+        routed = backend_for(invariant)
+        running = sorted(
+            backend for backend, runners in declarations.items() if invariant in runners
+        )
+        if running != [routed]:
+            failures.append(
+                f"{invariant}: routed to the {routed} backend, run by "
+                f"{' and '.join(running) or 'no backend'}"
+            )
+    for backend, runners in sorted(declarations.items()):
+        for invariant in sorted(set(runners) - set(MODEL_INVARIANTS)):
+            failures.append(
+                f"{invariant}: the {backend} backend runs an invariant the "
+                "model does not declare"
+            )
+    return tuple(failures)
+
+
+def actual_declarations() -> dict[str, dict[str, str]]:
+    return {
+        backend: declared_invariants(module)[1]
+        for backend, module in INVARIANT_MODULES.items()
+    }
+
+
+@pytest.mark.parametrize("backend", sorted(INVARIANT_MODULES))
+def test_each_module_declares_the_backend_it_is_registered_under(backend):
+    assert declared_invariants(INVARIANT_MODULES[backend])[0] == backend
+
+
+def test_every_invariant_runs_on_the_backend_its_code_routes_it_to():
+    assert routing_failures(actual_declarations()) == ()
+
+
+def test_an_invariant_whose_code_does_not_exist_runs_on_the_spec_backend_now():
+    codeless = {name for name, code in MODEL_INVARIANTS.items() if code is None}
+    assert codeless
+    assert all(backend_for(name) == SPEC for name in codeless)
+    assert codeless <= set(declared_invariants(INVARIANT_MODULES[SPEC])[1])
+
+
+def test_a_declared_module_that_does_not_exist_routes_to_the_spec_backend(
+    monkeypatch,
+):
+    absent = f"{SOURCE_ROOT.name}.domain.not_yet_built"
+    assert _module_path(absent) is None
+    monkeypatch.setitem(MODEL_INVARIANTS, "invented invariant", absent)
+    assert backend_for("invented invariant") == SPEC
+
+
+@pytest.mark.parametrize("dropped", sorted(MODEL_INVARIANTS))
+def test_an_invariant_running_on_neither_backend_fails(dropped):
+    declarations = {
+        backend: {name: test for name, test in runners.items() if name != dropped}
+        for backend, runners in actual_declarations().items()
+    }
+    failures = routing_failures(declarations)
+    assert len(failures) == 1
+    assert dropped in failures[0] and "no backend" in failures[0]
+
+
+@pytest.mark.parametrize("deferred", ["cross-lane pointer resolution"])
+def test_a_codeless_invariant_moved_onto_the_code_backend_fails(deferred):
+    declarations = actual_declarations()
+    declarations[CODE][deferred] = declarations[SPEC].pop(deferred)
+    failures = routing_failures(declarations)
+    assert len(failures) == 1
+    assert deferred in failures[0] and f"routed to the {SPEC} backend" in failures[0]
+
+
+def test_a_backend_running_an_undeclared_invariant_fails():
+    declarations = actual_declarations()
+    declarations[CODE]["invented invariant"] = INVARIANTS["vendor freedom"]
+    failures = routing_failures(declarations)
+    assert len(failures) == 1 and "the model does not declare" in failures[0]
+
+
+def test_a_declared_runner_must_be_a_test_defined_in_that_module(tmp_path):
+    module = tmp_path / "test_another_backend.py"
+    header = 'CODE = "code"\nBACKEND = CODE\n'
+    module.write_text(f'{header}INVARIANTS = {{"an invariant": "test_absent"}}\n')
+    with pytest.raises(AssertionError, match="test_absent"):
+        declared_invariants(module)
+    module.write_text(
+        f'{header}INVARIANTS = {{"an invariant": "test_present"}}\n'
+        "def test_present():\n    pass\n"
+    )
+    assert declared_invariants(module) == (CODE, {"an invariant": "test_present"})
+
+
+def test_a_backend_constant_defined_in_terms_of_itself_refuses(tmp_path):
+    module = tmp_path / "test_circular_backend.py"
+    module.write_text("BACKEND = OTHER\nOTHER = BACKEND\nINVARIANTS = {}\n")
+    with pytest.raises(AssertionError, match="defined in terms of itself"):
+        declared_invariants(module)
+
+
+def test_the_invariant_modules_and_their_values_name_no_vendor():
+    assert vendor_violations(invariant_sources()) == {}
+
+
+def test_the_scanned_set_covers_every_packaged_value_each_invariant_imports():
+    sources = invariant_sources()
+    for backend, module in INVARIANT_MODULES.items():
+        assert module.relative_to(REPO_ROOT).as_posix() in sources, backend
+        for path in first_party_modules(module.read_text()):
+            if path != VENDOR_ROSTER:
+                assert path.relative_to(REPO_ROOT).as_posix() in sources
+    assert any(name.endswith(".json") for name in sources)
+    for name, text in sources.items():
+        assert (REPO_ROOT / name).read_text() == text
+
+
+@pytest.mark.parametrize("scanned", sorted(invariant_sources()))
+def test_a_vendor_term_injected_into_any_scanned_source_is_reported(scanned):
+    sources = invariant_sources()
+    sources[scanned] += f"\n{VENDOR_TERMS[0].capitalize()}Client\n"
+    assert vendor_violations(sources) == {scanned: VENDOR_TERMS}
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "{title}McpTracker",
+        "{lower}.app",
+        "from adapters import {upper}",
+        "{lower}_client",
+        "{upper}-CLIENT",
+        "tracker.{title}()",
+    ],
+)
+def test_a_vendor_name_is_found_however_it_is_written(spelling):
+    """The guard never spells a vendor itself; it renders the declared roster."""
+    term = VENDOR_TERMS[0]
+    rendered = spelling.format(title=term.capitalize(), lower=term, upper=term.upper())
+    assert vendor_terms(rendered) == VENDOR_TERMS
+
+
+@pytest.mark.parametrize("innocent", ["nonlinear", "linearity", "collinear", "linea"])
+def test_a_longer_word_is_not_a_vendor_name(innocent):
+    assert vendor_terms(innocent) == ()
+
+
+def test_only_the_selectable_backend_roster_may_name_a_vendor():
+    assert vendor_terms(VENDOR_ROSTER.read_text()) == VENDOR_TERMS
+    assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in invariant_sources()
+
+
+@pytest.mark.parametrize(
+    "statement,found",
+    [
+        ("from kodezart.core.protocols import TrackerPort", ("core/protocols.py",)),
+        ("import kodezart.core.protocols", ("core/protocols.py",)),
+        ("from kodezart import core", ("core/__init__.py",)),
+        ("from tests.fakes import FakeTrackerPort", ()),
+        ("from . import sibling", ()),
+        ("import kodezart", ()),
+    ],
+)
+def test_only_packaged_imports_are_read_as_asserted_values(statement, found):
+    assert first_party_modules(statement) == tuple(SOURCE_ROOT / name for name in found)
+
+
+def test_the_spec_backend_reads_through_the_tracker_port_alone():
+    surface = {name for name in dir(TrackerPort) if not name.startswith("_")}
+    used = set(tracker_attributes(INVARIANT_MODULES[SPEC].read_text()))
+    assert used
+    assert used <= surface
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("await workspace.tracker.read_criteria(issue_key=key)", ("read_criteria",)),
+        (
+            "await live_model_tracker.read_labeled_issues(name)",
+            ("read_labeled_issues",),
+        ),
+        ("tracker.caller.call_tool(name)", ("caller",)),
+        ("issue.body", ()),
+    ],
+)
+def test_a_reach_past_the_port_is_named_and_other_objects_are_not(source, expected):
+    assert tracker_attributes(source) == expected
 
 
 def identity_violations(sources: dict[str, str]) -> tuple[str, ...]:
@@ -242,3 +598,11 @@ def test_a_posting_declaration_outside_the_vocabulary_is_named(
         "run-event notification partition names undeclared event "
         "'unregistered_posted_event'",
     )
+
+
+def test_the_deployed_event_table_names_no_vendor_state(deployed_event_table):
+    table = "\n".join(
+        f"{event} {effect}"
+        for event, effect in sorted(deployed_event_table.run_event_states.items())
+    )
+    assert vendor_violations({"run_event_states": table}) == {}
