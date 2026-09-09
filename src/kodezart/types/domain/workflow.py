@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.amendment import AmendmentVerdict
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
@@ -183,12 +184,20 @@ class RalphLoopState(TypedDict):
     ``_evaluate_node`` reads it via ``state.get(...)``.  There is no
     cumulative iteration SHA field — that would clobber the per-iter
     semantic of the SSE event.
+
+    ``amendment_verdicts`` is the run's retained ruling history — every
+    verdict the reconciler returned on a claim raised against one of this
+    run's criteria.  Retained rather than folded: the repeat count the
+    iteration report names is taken from this list by a pure function,
+    and a running total kept beside it would be a second answer that
+    could disagree with the first.
     """
 
     iteration: int
     verdict: AcceptVerdict
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
+    amendment_verdicts: list[AmendmentVerdict]
     iteration_commit_sha: NotRequired[str | None]
 
 

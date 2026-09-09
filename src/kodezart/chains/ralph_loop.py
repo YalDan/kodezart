@@ -37,6 +37,7 @@ from kodezart.types.domain.agent import (
     ResultEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.amendment import repeat_upheld
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
@@ -149,6 +150,7 @@ class RalphLoop:
             "verdict": AcceptVerdict.rejected,
             "pending_failures": [],
             "iteration_records": [],
+            "amendment_verdicts": [],
         }
 
         # TODO(time-travel): For E2E checkpoint resume, two changes needed:
@@ -387,6 +389,25 @@ class RalphLoop:
             ),
         ]
         trajectory = fold_trajectory(records, plateau_window=self._plateau_window)
+        # The iteration's own report: what is still failing, and beside it
+        # how often a subject's amendment claim has already been refused.
+        # The two belong in one record because they answer one question —
+        # is this loop converging? — and a repeat refusal is the shape a
+        # writer arguing with a criterion leaves instead of progress. The
+        # count is taken from the retained verdicts by a pure fold at the
+        # moment of reporting, never accumulated alongside them.
+        await self._log.ainfo(
+            "iteration_report",
+            iteration=state["iteration"],
+            branch=ctx.ralph_branch,
+            failing_criterion_ids=[
+                failure.criterion_id for failure in pending_failures
+            ],
+            repeat_upheld=[
+                repeat.model_dump(mode="json")
+                for repeat in repeat_upheld(state["amendment_verdicts"])
+            ],
+        )
         writer(
             WorkflowIterationEvent(
                 iteration=state["iteration"],

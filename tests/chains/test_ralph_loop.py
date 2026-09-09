@@ -7,9 +7,10 @@ import time
 from collections.abc import AsyncGenerator, Sequence
 from itertools import pairwise
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, get_type_hints
 
 import pytest
+import structlog.testing
 from pydantic import ValidationError
 
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
@@ -34,6 +35,14 @@ from kodezart.types.domain.agent import (
     WorkflowCompleteEvent,
     WorkflowIterationEvent,
 )
+from kodezart.types.domain.amendment import (
+    AmendmentDecision,
+    AmendmentGround,
+    AmendmentVerdict,
+    GroundEvidence,
+    UpheldRepeat,
+    repeat_upheld,
+)
 from kodezart.types.domain.branch import (
     BaseInput,
     BaseSpec,
@@ -41,6 +50,7 @@ from kodezart.types.domain.branch import (
     trunk_base,
 )
 from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
+from kodezart.types.domain.criterion_ref import CriterionRef
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
@@ -53,7 +63,8 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from kodezart.types.domain.trajectory import IterationRecord
+from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
+from kodezart.types.domain.workflow import RalphLoopState
 from tests.chains.test_dispatch_definitions import chain_source, dispatch_block
 from tests.fakes import (
     FAKE_SESSION_TYPE,
@@ -2050,3 +2061,131 @@ async def test_a_rate_limited_evaluation_waits_the_floor_before_its_next_attempt
     assert second_attempt - first_attempt >= RATE_LIMIT_FLOOR_SECONDS
     iterations = [e for e in events if isinstance(e, WorkflowIterationEvent)]
     assert len(iterations) == 1, "the retried attempt finished the iteration"
+
+
+# ---------------------------------------------------------------------------
+# KOD-97-AC-6 — repeat UPHELD verdicts, counted purely and reported
+# ---------------------------------------------------------------------------
+
+
+def _upheld(subject: str) -> AmendmentVerdict:
+    return AmendmentVerdict(
+        subject_id=CriterionRef(subject), decision=AmendmentDecision.UPHELD
+    )
+
+
+def _amended(subject: str) -> AmendmentVerdict:
+    return AmendmentVerdict(
+        subject_id=CriterionRef(subject),
+        decision=AmendmentDecision.AMENDED,
+        ground=AmendmentGround.UNSATISFIABLE_AT_BASE,
+        reproduced=(GroundEvidence(path="src/house.py", quote="a committed line"),),
+    )
+
+
+def test_a_single_upheld_verdict_is_not_a_repeat() -> None:
+    """One refusal per subject is the ordinary shape and reports nothing."""
+    assert repeat_upheld([_upheld("criterion/a"), _upheld("criterion/b")]) == ()
+
+
+def test_a_subject_upheld_again_is_counted_with_its_total() -> None:
+    """The count is how many times THAT subject was refused, not how many ran."""
+    verdicts = [
+        _upheld("criterion/a"),
+        _upheld("criterion/b"),
+        _upheld("criterion/a"),
+        _upheld("criterion/a"),
+    ]
+    assert repeat_upheld(verdicts) == (
+        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=3),
+    )
+
+
+def test_amended_verdicts_are_not_counted_as_refusals() -> None:
+    """An amendment is the arm where the claim was NOT refused."""
+    verdicts = [
+        _amended("criterion/a"),
+        _amended("criterion/a"),
+        _upheld("criterion/a"),
+    ]
+    assert repeat_upheld(verdicts) == ()
+
+
+def test_repeat_counts_are_ordered_by_subject_and_pure_over_the_list() -> None:
+    """Same list, same answer, in subject order and with no other input."""
+    verdicts = [
+        _upheld("criterion/z"),
+        _upheld("criterion/a"),
+        _upheld("criterion/z"),
+        _upheld("criterion/a"),
+    ]
+    expected = (
+        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=2),
+        UpheldRepeat(subject_id=CriterionRef("criterion/z"), count=2),
+    )
+    assert repeat_upheld(verdicts) == expected
+    assert repeat_upheld(verdicts) == expected
+    assert repeat_upheld(list(reversed(verdicts))) == expected
+    assert repeat_upheld([]) == ()
+
+
+def test_a_repeat_cannot_be_constructed_from_a_single_refusal() -> None:
+    """The model itself refuses a count of one, so no reader has to filter it."""
+    with pytest.raises(ValidationError):
+        UpheldRepeat(subject_id=CriterionRef("criterion/a"), count=1)
+
+
+def test_the_loop_retains_the_verdicts_the_count_is_taken_from() -> None:
+    """The ruling history is a channel on the loop's own state."""
+    assert (
+        get_type_hints(RalphLoopState)["amendment_verdicts"] == list[AmendmentVerdict]
+    )
+
+
+async def test_the_iteration_report_names_the_repeat_count_beside_the_failures() -> (
+    None
+):
+    """One record per iteration carrying both, from the state the loop retained."""
+    executor = _ScriptedLoopExecutor(_THREE_CRITERIA, _PLATEAU_MASKS)
+    loop = _make_loop(executor=executor, max_iterations=3, plateau_window=2)
+
+    with structlog.testing.capture_logs() as logs:
+        events = [
+            e
+            async for e in loop.run(**_run_kwargs(acceptance_criteria=_THREE_CRITERIA))
+        ]
+
+    iteration_events = [e for e in events if isinstance(e, WorkflowIterationEvent)]
+    reports = [entry for entry in logs if entry["event"] == "iteration_report"]
+    assert len(reports) == len(iteration_events)
+    for report, event in zip(reports, iteration_events, strict=True):
+        assert report["iteration"] == event.iteration
+        assert report["failing_criterion_ids"] == [
+            result.criterion_id
+            for result in event.evaluation.criteria_results
+            if not result.passed
+        ]
+        assert report["repeat_upheld"] == []
+    assert any(report["failing_criterion_ids"] for report in reports)
+
+
+def test_the_loop_trajectory_shape_is_unchanged() -> None:
+    """AC-6 leaves the fold and its two types exactly as they were."""
+    assert list(IterationRecord.model_fields) == [
+        "iteration",
+        "passed_count",
+        "failing_criterion_ids",
+        "commit_sha",
+    ]
+    assert list(LoopTrajectory.model_fields) == [
+        "records",
+        "never_passed_ids",
+        "best_passed_count",
+        "best_iteration",
+        "best_commit_sha",
+        "plateaued",
+    ]
+    assert [
+        (name, parameter.kind.name)
+        for name, parameter in inspect.signature(fold_trajectory).parameters.items()
+    ] == [("records", "POSITIONAL_OR_KEYWORD"), ("plateau_window", "KEYWORD_ONLY")]
