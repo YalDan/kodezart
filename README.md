@@ -144,6 +144,9 @@ written down here to go stale.
   first.
 - [docs/migration-v0.1-to-v0.2.md](docs/migration-v0.1-to-v0.2.md) — the
   upgrade guide for a v0.1.x operator or API client.
+- [docs/migration-v0.2-to-v0.3.md](docs/migration-v0.2-to-v0.3.md) — the
+  upgrade guide for a v0.2.x operator: the settings renames, the names that
+  stay flat and the ones that are gone.
 
 ## Configuration
 

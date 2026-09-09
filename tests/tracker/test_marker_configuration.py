@@ -1,5 +1,7 @@
 """Nondefault prefixes reach the real adapter through production composition."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from kodezart.composition.tracker import build_tracker
@@ -7,9 +9,9 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.errors import UnsupportedClaimError
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
+from kodezart.types.domain.tracker import ClaimStatus
 from tests.fakes import FakeMcpComment
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
@@ -50,7 +52,10 @@ async def test_all_existing_marker_carriers_use_the_injected_operation_mapping()
             "repository": "different.repository",
         },
     )
-    server = fixture_server()
+    # Composition gives the adapter the deployment's own clock, so the
+    # backend this case dials has to be on one too: ownership is decided
+    # by the stamps it puts on writes.
+    server = fixture_server(clock=lambda: datetime.now(UTC))
     config = AppConfig()
     tracker, _ = build_tracker(
         backend=config.tracker.backend,
@@ -61,24 +66,18 @@ async def test_all_existing_marker_carriers_use_the_injected_operation_mapping()
         operation=operation,
         caller=server,
     )
-    server.comments.append(
-        FakeMcpComment(
-            id="legacy-claim",
-            issue_id=CLAIMED_ISSUE,
-            author="fixture-service",
-            body=(
-                '<!-- different.claim holder="one-job" '
-                'expires-at="2099-01-01T00:00:00+00:00" -->'
-            ),
-            created_at=FIXTURE_NOW,
-        )
+    granted = await tracker.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
     )
+    assert granted.status is ClaimStatus.GRANTED
+    assert len(server.comments) == 1
+    assert server.comments[0].body.startswith("```different.claim\n")
     claim = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
     assert claim is not None and claim.holder == "one-job"
-    with pytest.raises(UnsupportedClaimError):
-        await tracker.renew_claim(
-            issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
-        )
+    renewed = await tracker.renew_claim(
+        issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=1200
+    )
+    assert renewed is not None
     assert len(server.comments) == 1
     await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="one-job")
     assert server.comments == []
@@ -134,7 +133,7 @@ async def test_unconfigured_marker_write_fails_before_any_backend_mutation():
         operation=operation,
         caller=server,
     )
-    with pytest.raises(UnsupportedClaimError):
+    with pytest.raises(OperationMemberAbsentError):
         await tracker.claim_issue(
             issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
         )

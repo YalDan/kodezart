@@ -1094,16 +1094,32 @@ identify the target. `upsert_issue` supplies the complete body it read and
 preserves its adapter-owned identity. This is optimistic stale-read detection,
 not atomic compare-and-swap; callers still serialize writes.
 
-### Native claim ownership
+### Ownership on the tracker's own capabilities
 
-The Linear MCP adapter refuses acquisition and renewal before any backend
-request with `UnsupportedClaimError`: comment updates expose no atomic owner
-or version precondition. A delayed renewal must not restore an expired owner.
-This permanent refusal stops claim-dependent dispatch before enqueue; heartbeat
-logs it once and stops. Legacy marker reads and releases remain available.
-The shared claim contract permits unsupported refusal only before mutation;
-capable test doubles still exercise grant, renewal, expiry and replay behavior.
-This does not implement surface-set leases or provide a native fencing token.
+A claim on an issue and a lease over a set of write surfaces are one
+mechanism: a marker comment per grant, on each target the grant addresses,
+carrying its kind, holder, per-grant nonce, expiry and the whole address
+set. The backend orders creations and stamps them, answers a listing with
+what it holds, keeps a comment's place across an edit by id, and deletes by
+id. It offers no conditional write, so no grant is believed from the echo of
+its own write.
+
+Acquisition writes, then re-reads every target. The grant stands only where
+no other holder's live marker over a requested address was created no later
+than this one; an earlier one is an owner to name, and an equal instant is an
+order the backend did not settle, so both sides withdraw and report the tie
+rather than either claiming it. A holder that cannot find its own marker in
+the read-back withdraws and refuses: a grant that cannot be verified is not a
+grant.
+
+Renewal reads before it writes — a holder without a live marker over the
+whole set writes nothing — then edits its marker in place, which is what
+preserves the order the grant was taken in. The write can outlive the lease
+it was extending; after it lands, the holder compares its own clock against
+the expiry it HAD, and a lease that lapsed mid-write is handed back with its
+marker deleted, whoever took the issue meanwhile. Release deletes only this
+holder's own markers, and expiry is read from the marker against the reader's
+clock, so a process that died renews nothing and its grant lapses on its own.
 
 ### Owned resource operations
 

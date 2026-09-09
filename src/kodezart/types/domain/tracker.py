@@ -157,12 +157,16 @@ class EnsureAction(StrEnum):
 class ClaimStatus(StrEnum):
     """Outcome partition of one atomic claim attempt.
 
-    ``LOST`` is a value, never an exception: losing a race is an ordinary
-    result the caller routes on.
+    ``LOST`` and ``CONTENDED`` are values, never exceptions: losing a race
+    is an ordinary result the caller routes on.  They differ in what the
+    backend settled: ``LOST`` names a holder that owns the issue now,
+    ``CONTENDED`` a race the backend could not order, where every claimant
+    stood back and nobody holds it.  Only ``GRANTED`` is ownership.
     """
 
     GRANTED = "granted"
     LOST = "lost"
+    CONTENDED = "contended"
 
 
 class TrackerModel(CamelCaseModel):
@@ -270,12 +274,22 @@ class TrackerComment(TrackerModel):
 
 
 class ClaimResult(TrackerModel):
-    """The outcome of one atomic claim attempt."""
+    """The outcome of one atomic claim attempt.
+
+    ``holder`` is always the claimant this result answers, so a caller
+    reads its own identity back whatever the outcome.  ``current_holder``
+    names an OWNER and nothing else: the holder that owns the issue after
+    a ``LOST``.  It is absent on a grant, and absent under a
+    ``CONTENDED`` — a race the backend settled for nobody has no owner to
+    name, and naming the party contended with would report a claimant as
+    holding an issue it was refused.
+    """
 
     issue_key: str = Field(min_length=1)
     status: ClaimStatus
     holder: str = Field(min_length=1)
     expires_at: datetime
+    current_holder: str | None = None
 
 
 class TrackerAsset(TrackerModel):

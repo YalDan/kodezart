@@ -20,6 +20,11 @@ for configuration. All settings are loaded from environment variables with the
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
+Upgrading a v0.2 deployment: [migration-v0.2-to-v0.3.md](migration-v0.2-to-v0.3.md)
+carries every rename in one place, with the flat names that stay and the
+settings that are gone. The sections below are the per-subsystem detail behind
+that guide.
+
 Audit claim, Evidence, source, terminal and sweep consumers receive only the
 resolved Git remote name, rather than the application configuration object.
 `KODEZART_GIT__REMOTE` retains its existing default and environment override;
@@ -247,7 +252,7 @@ and leased alarm writer remain separate work.
 | `KODEZART_TRACKER__TIMEOUT_SECONDS` | `float` | `30.0` | >= 5.0, <= 120.0 | Timeout the tracker MCP transport gives one HTTP exchange with the server, on every phase but the session stream's read: a streamable-HTTP response stays open across quiet minutes, and that phase is bounded by KODEZART_TRACKER__SSE_READ_TIMEOUT_SECONDS instead. |
 | `KODEZART_TRACKER__CALL_TIMEOUT_SECONDS` | `float` | `60.0` | >= 1.0, <= 120.0 | Seconds one tracker MCP tool call may wait for its answer before it is abandoned as the typed transport failure. A session torn down mid-call — the shape a refused credential arrives in, measured 2026-09-01 — never sends the close its reader is waiting for, so without this bound the call in flight waits forever and the pass holding it never returns. Separate from KODEZART_TRACKER__TIMEOUT_SECONDS: that bound is the transport's, on the HTTP exchange; this one is the session's, on the wait for one answer. |
 | `KODEZART_TRACKER__SSE_READ_TIMEOUT_SECONDS` | `float` | `300.0` | >= 30.0, <= 3600.0 | Seconds the tracker MCP session's event stream may go quiet before its read is abandoned. The third bound on this transport and the only one about the STREAM: KODEZART_TRACKER__TIMEOUT_SECONDS bounds one HTTP exchange's connect and write phases, KODEZART_TRACKER__CALL_TIMEOUT_SECONDS bounds the wait for one answer, and this bounds how long the long-lived streamable-HTTP response may say nothing at all. The default is the value the session ran on while the bound came from a private vendor constant. |
-| `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Requested claim duration for a capable backend. Linear MCP currently refuses acquisition and renewal because it cannot fence ownership; changing this value cannot enable them. |
+| `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Lease an atomic claim holds before it expires and the issue becomes eligible again. |
 | `KODEZART_TRACKER_SURFACE_LEASE_SECONDS` | `float` | `900.0` | >= 60.0, <= 86400.0 | Bound for write-surface leases held by a writing run's job id. Renewal is explicit; no background task extends these leases. |
 | `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | `float` | `0.25` | > 0.0, <= 0.5 | Fraction of the claim lease at which a job in flight renews its claim. Expressed against the lease so renewal outpaces expiry by construction, whatever the lease is set to: at 0.25 three consecutive renewal failures are survivable before the claim lapses, and the 0.5 bound leaves at least one. |
 | `KODEZART_TRACKER__AUTH_HEADER` | `str` | `Authorization` | min length 1 | Request header the tracker credential is presented in. |
