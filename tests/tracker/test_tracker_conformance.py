@@ -17,10 +17,17 @@ import pytest
 
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
+from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.errors import (
+    DuplicateWorkRefError,
+    StaleWriteError,
+    SurfaceLeaseError,
+)
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
@@ -36,6 +43,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
     is_open,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.fakes import FakeLinearMcpServer, FakeMcpComment
 from tests.tracker.conftest import (
     APPROVED_ISSUE,
@@ -54,6 +62,7 @@ from tests.tracker.conftest import (
     TEAM_IDENTIFIERS,
     FixtureClock,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 LEASE_SECONDS = 600.0
 TEAM = TEAM_IDENTIFIERS["engineering"]
@@ -91,6 +100,44 @@ JOB_B = "job-b"
 #: identity holds a fire claim, a run's job id holds a write lease.
 PROCESS_HOLDER = "kodezart-process"
 JOB_HOLDER = "job-17"
+
+#: The lane whose event stream the cases post to, and a second lane on the
+#: same issue, so lane scoping is a boundary rather than a tautology.
+EVENT_LANE = "lane-alpha"
+OTHER_EVENT_LANE = "lane-beta"
+
+DISPATCHED = LaneRunEvent(kind=RunEventKind.LANE_DISPATCHED, lane_key=EVENT_LANE)
+PUSHED = LaneRunEvent(kind=RunEventKind.FIRST_PUSH, lane_key=EVENT_LANE)
+REFUTED = LaneRunEvent(
+    kind=RunEventKind.CRITERION_REFUTED,
+    lane_key=EVENT_LANE,
+    subject_key=ASSET_ISSUE,
+)
+GREEN = LaneRunEvent(kind=RunEventKind.GATE_GREEN, lane_key=EVENT_LANE)
+NEIGHBOUR_EVENT = LaneRunEvent(kind=RunEventKind.FIRST_PUSH, lane_key=OTHER_EVENT_LANE)
+
+#: The four events, in the order the posting calls land.
+POSTED_EVENTS = (DISPATCHED, PUSHED, REFUTED, GREEN)
+
+#: What the backend stamps each of those four writes with, in that same
+#: order.  They do NOT rise with the log: a backend settles the order of
+#: writes reaching it and its stamp is that settlement, so the log order
+#: and the write order are two different things and a fixture where they
+#: agreed would leave the stream's ordering untested.  Ascending, the
+#: stamps put the events back in the order asserted on: PUSHED, GREEN,
+#: REFUTED, DISPATCHED — which is neither the log's order nor its reverse.
+EVENT_INSTANTS = (
+    FIXTURE_NOW + timedelta(seconds=40),
+    FIXTURE_NOW + timedelta(seconds=10),
+    FIXTURE_NOW + timedelta(seconds=30),
+    FIXTURE_NOW + timedelta(seconds=20),
+)
+
+#: A record's marker on the same log — a surface written once and then
+#: rewritten, which is what the stream must not mistake for an event.
+RECORD_MARKER = compose_comment_marker(
+    prefixes=MARKER_PREFIXES, purpose="decision", lane=EVENT_LANE
+)
 
 
 class TestScanAndRead:
@@ -2068,3 +2115,221 @@ class TestRecordedBaseSpec:
         assert [ref.role for ref in refs] == [WorkRefRole.DELIVERABLE]
         recorded = await tracker.read_base_spec(issue_key=APPROVED_ISSUE)
         assert recorded is not None and recorded.base_branch == "kodezart/blocker"
+
+
+class TestRunEventStream:
+    """W3 under P3 — the stream is ordered, and records are not events.
+
+    A lane's comment log carries two different kinds of thing.  A RECORD is
+    one surface rewritten in place, so its text is the present answer and
+    says nothing about when that answer became true.  An EVENT is appended
+    once and never touched, so a series of them is history.  The stream is
+    exactly the second kind, in the order the backend recorded the writes.
+    """
+
+    async def test_the_stream_is_exactly_the_posted_events_in_write_order(
+        self,
+        tracker: TrackerPort,
+        server: FakeLinearMcpServer,
+        clock: FixtureClock,
+    ) -> None:
+        """Ordered by the backend's stamp, which the log order is not.
+
+        The four stamps this case states do not rise with the log.  They
+        are what the backend records each write as having happened at,
+        which is the only write order anything reading a tracker can
+        observe — a listing's own order is the vendor's business and its
+        default ordering is not creation at all.
+
+        Stated that way for a measured reason: an earlier ordering fixture
+        here posted onto a monotonically stamped log, so write order, log
+        order and stamp order agreed by construction, and an
+        implementation with its whole sort DELETED passed it.
+        """
+        server.comment_instants = list(EVENT_INSTANTS)
+        for event, instant in zip(POSTED_EVENTS, EVENT_INSTANTS, strict=True):
+            clock.now = instant
+            assert (
+                await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=event)
+                == event
+            )
+        await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="not an event")
+
+        stream = await tracker.lane_run_events(
+            issue_key=CLAIMED_ISSUE, lane_key=EVENT_LANE
+        )
+
+        assert list(stream) == [PUSHED, GREEN, REFUTED, DISPATCHED]
+
+    async def test_a_record_edited_in_place_is_never_an_event(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """A rewritten surface stays a record however recently it moved."""
+        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
+        first = await tracker.upsert_comment(
+            target=CLAIMED_ISSUE, marker=RECORD_MARKER, body="the first reading"
+        )
+        edited = await tracker.upsert_comment(
+            target=CLAIMED_ISSUE, marker=RECORD_MARKER, body="the reading after"
+        )
+        assert edited.comment_key == first.comment_key
+        assert edited.body != first.body
+
+        stream = await tracker.lane_run_events(
+            issue_key=CLAIMED_ISSUE, lane_key=EVENT_LANE
+        )
+
+        assert list(stream) == [DISPATCHED]
+
+    async def test_a_lanes_stream_holds_only_that_lanes_events(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
+        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=NEIGHBOUR_EVENT)
+
+        assert list(
+            await tracker.lane_run_events(issue_key=CLAIMED_ISSUE, lane_key=EVENT_LANE)
+        ) == [DISPATCHED]
+        assert list(
+            await tracker.lane_run_events(
+                issue_key=CLAIMED_ISSUE, lane_key=OTHER_EVENT_LANE
+            )
+        ) == [NEIGHBOUR_EVENT]
+
+    async def test_a_stream_with_nothing_posted_to_it_is_empty(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Scoped to its issue, and an empty read is a successful one."""
+        await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
+
+        assert (
+            await tracker.lane_run_events(issue_key=ASSET_ISSUE, lane_key=EVENT_LANE)
+            == ()
+        )
+
+
+class TestAThreadedRecordIsNotAnEvent:
+    """The reply link decides, not the text — over ``TRACKER_ADAPTERS``.
+
+    A decision record is written as a reply in the thread it answers, and
+    the workspace is seeded through the fake MCP server because that is the
+    adapters' input: no port write takes a parent, so a threaded comment
+    cannot be produced through the surface under test.
+
+    Both cases seed the SAME bytes — the body a real posted event was
+    written with, read back off the log — so the only difference between
+    them is the reply link.  Nothing else can be what excluded it.
+    """
+
+    async def test_a_threaded_record_is_not_an_event(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        await adapter.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
+        posted = server.comments[-1]
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-threaded",
+                issue_id=CLAIMED_ISSUE,
+                author=APPROVER,
+                body=posted.body,
+                created_at=FIXTURE_NOW + timedelta(seconds=5),
+                parent_id=posted.id,
+            ),
+        )
+
+        stream = await adapter.lane_run_events(
+            issue_key=CLAIMED_ISSUE, lane_key=EVENT_LANE
+        )
+
+        assert list(stream) == [DISPATCHED]
+
+    async def test_the_same_bytes_at_top_level_are_an_event(
+        self,
+        server: FakeLinearMcpServer,
+        adapter: TrackerPort,
+    ) -> None:
+        """The pair: identical content, unthreaded, and it is in the stream."""
+        await adapter.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
+        posted = server.comments[-1]
+        server.comments.append(
+            FakeMcpComment(
+                id="comment-top-level",
+                issue_id=CLAIMED_ISSUE,
+                author=APPROVER,
+                body=posted.body,
+                created_at=FIXTURE_NOW + timedelta(seconds=5),
+                parent_id=None,
+            ),
+        )
+
+        stream = await adapter.lane_run_events(
+            issue_key=CLAIMED_ISSUE, lane_key=EVENT_LANE
+        )
+
+        assert list(stream) == [DISPATCHED, DISPATCHED]
+
+
+class TestTheEditAndTheTransitionAreSeparateWrites:
+    """Two writes in one order, so a refused edit leaves the state alone.
+
+    Each of the two touches its own surface and nothing else.  The pair
+    matters because the alternative — one act carrying both — cannot be
+    ordered and cannot be half-undone: an issue would read as reviewed
+    while carrying the text that failed to land.
+    """
+
+    async def test_an_edit_moves_no_workflow_state(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+
+        edited = await tracker.edit_description(
+            target=APPROVED_ISSUE,
+            expected=before.body,
+            replacement="a body written by its owner",
+        )
+
+        assert edited is DescriptionEditResult.EDITED
+        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert after.body == "a body written by its owner"
+        assert after.state_name == before.state_name
+
+    async def test_a_transition_rewrites_no_description(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+
+        moved = await tracker.set_workflow_state(
+            issue_key=APPROVED_ISSUE, stage=LifecycleStage.IN_REVIEW
+        )
+
+        assert moved.state_name != before.state_name
+        assert moved.body == before.body
+        assert (await tracker.read_issue(issue_key=APPROVED_ISSUE)).body == before.body
+
+    async def test_a_refused_edit_leaves_the_state_where_it_was(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        """The edit goes first precisely so its refusal can stop the pair."""
+        before = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        written = tracker_writes()
+
+        with pytest.raises(StaleWriteError):
+            await tracker.edit_description(
+                target=APPROVED_ISSUE,
+                expected="a body nobody ever wrote",
+                replacement="a body written by its owner",
+            )
+
+        after = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+        assert (after.body, after.state_name) == (before.body, before.state_name)
+        assert tracker_writes() == written

@@ -420,6 +420,54 @@ class GitHubAPIClient:
             json={"body": body},
         )
 
+    # -- ForgeQuery ----------------------------------------------------------
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """Ask this forge's own head filter, and refuse a contradictory answer.
+
+        The filter is the forge's: its listing takes ``owner:branch`` and
+        answers with the open pull requests on that head, so the question
+        is asked once, of the party that knows, instead of being
+        reconstructed by paging every open pull request and matching here.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        listing = await self._parsed_with_retry(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            _pull_request_listing,
+            params={
+                "state": self._OPEN_STATE,
+                "head": f"{owner}:{head}",
+                "per_page": self._PAGE_SIZE,
+            },
+        )
+        if not listing:
+            return None
+        if len(listing) > 1:
+            raise ForgeAPIError(
+                f"the forge reports {len(listing)} open pull requests on one head",
+                status_code=None,
+                detail=f"GET /repos/{owner}/{repo}/pulls?head={owner}:{head}",
+            )
+        return (listing[0].html_url, listing[0].number)
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """Compose the branch page from this repository's own host and path.
+
+        The host comes from the origin rather than from the configured API
+        base: this forge serves its API and its pages from two different
+        hosts, and a deployment against an enterprise instance has both of
+        them different again.
+        """
+        owner, repo = extract_owner_repo(repo_url)
+        origin = urlsplit(repo_url)
+        if origin.scheme != "https" or not origin.netloc:
+            msg = f"Cannot compose a branch page for origin: {repo_url}"
+            raise ValueError(msg)
+        return f"https://{origin.netloc}/{owner}/{repo}/tree/{quote(branch)}"
+
     # -- PRStateReader -------------------------------------------------------
 
     async def read_pr_state(self, *, repo_url: str, pr_number: int) -> PRState:

@@ -9,6 +9,7 @@ from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     CIObservationReader,
+    ForgeQuery,
     PRStateReader,
 )
 from kodezart.domain.git_url import is_forge_less_origin
@@ -55,4 +56,16 @@ def pr_state_reader_for_origin(
     *, client: PRStateReader | None, repo_url: str
 ) -> PRStateReader | None:
     """Select native PR lifecycle reads only for an origin with a forge."""
+    return None if is_forge_less_origin(repo_url) else client
+
+
+def forge_query_for_origin(
+    *, client: ForgeQuery | None, repo_url: str
+) -> ForgeQuery | None:
+    """Select the forge's read side only for an origin with a forge.
+
+    A bare local origin has no pull requests to look for and no pages to
+    link to, and handing it this client would put the same refusal at the
+    end of a run that KOD-148 measured — after the work, not before it.
+    """
     return None if is_forge_less_origin(repo_url) else client

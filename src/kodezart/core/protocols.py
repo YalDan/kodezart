@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
+from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
@@ -470,6 +471,48 @@ class PRCreator(Protocol):
 
 
 @runtime_checkable
+class ForgeQuery(Protocol):
+    """The forge's READ side: what already exists, and where to look at it.
+
+    Separate from ``PRCreator`` because it grants nothing.  A caller
+    asking "is there already a pull request for this head?" before opening
+    one needs no authority to open one, and a port that bundled the two
+    would hand the write to every caller that only wanted the answer.
+    """
+
+    async def open_pr_for_head(
+        self, *, repo_url: str, head: str
+    ) -> tuple[str, int] | None:
+        """The OPEN pull request on *head* — its web URL and number — or none.
+
+        ``None`` is an ANSWER and not a failure: the forge was asked and
+        reported nothing open on that head.  A read that could not be
+        made RAISES, because "nobody has opened one" and "we could not
+        find out" send a check-before-create caller to opposite branches,
+        and the second one arriving as the first opens a duplicate.
+
+        More than one open pull request on one head is the forge
+        contradicting the question it was asked, and it raises rather
+        than picking: a caller that skipped its own create because of an
+        arbitrary pick would attach its work to whichever came back first.
+        """
+        ...
+
+    def branch_web_url(self, *, repo_url: str, branch: str) -> str:
+        """The page a person opens to look at *branch* on this forge.
+
+        Composed by the adapter because the shape of that address belongs
+        to the forge: a caller assembling it would be a second statement
+        of one vendor's URL layout, free to disagree with the first.
+
+        This asks the forge nothing, so it is not a coroutine and it
+        never reports whether the branch exists — an address is not an
+        observation, and a caller must not read one as the other.
+        """
+        ...
+
+
+@runtime_checkable
 class PRStateReader(Protocol):
     """Read one PR's native lifecycle without edit, close or merge authority."""
 
@@ -923,7 +966,12 @@ class TrackerPort(
         issue_key: str,
         stage: LifecycleStage,
     ) -> TrackerIssue:
-        """Read first and move only if the configured state differs."""
+        """Read first and move only if the configured state differs.
+
+        Moves state and NOTHING else.  A description written alongside a
+        transition would ride on the transition's success and never face
+        ``edit_description``'s precondition at all.
+        """
         ...
 
     async def edit_description(
@@ -935,6 +983,16 @@ class TrackerPort(
         Exact expected bytes return EDITED; any other current body raises
         StaleWriteError with no write. Substrings do not identify the target.
         Callers serialize writes; this is not an atomic compare-and-swap.
+
+        No write on this port carries a body and a workflow state
+        together, and a backend offering to do both in one act is refused
+        rather than used: one act cannot be ordered and cannot be
+        half-undone, so a body that did not land the way its caller
+        asserted would have moved the state anyway and the issue would
+        read as reviewed carrying text nobody reviewed.  A caller needing
+        both issues two writes in one order — this one first, under its
+        precondition, and the transition only after it — so a refused
+        edit leaves the state where its reader found it.
         """
         ...
 
@@ -989,6 +1047,37 @@ class TrackerPort(
         writes nothing. Several comments under the marker raise
         ``DuplicateCommentMarkerError`` before any write. Callers compose
         the marker and serialize concurrent writers to the same target.
+        """
+        ...
+
+    async def post_run_event(
+        self, *, issue_key: str, event: LaneRunEvent
+    ) -> LaneRunEvent:
+        """Append *event* to its lane's stream on *issue_key*, as posted.
+
+        Appending is the stream's only write.  An event already in it is
+        never rewritten and never removed, which is what lets the stream
+        be read as a history rather than as a set of current answers.
+
+        Two equal events are two events.  A repeat is a fact about the
+        run — the same thing happened twice — and collapsing it would
+        report a lane that stalled and retried as one that never did.
+        """
+        ...
+
+    async def lane_run_events(
+        self, *, issue_key: str, lane_key: str
+    ) -> Sequence[LaneRunEvent]:
+        """*lane_key*'s events on *issue_key*, in write order.
+
+        Exactly the events posted for that lane on that issue, ordered by
+        when the backend recorded each write.  A record edited in place
+        under its own marker is not one of them, and neither is a threaded
+        reply — a decision record among them — whatever it carries.
+
+        A successful read with nothing posted returns an empty sequence.
+        An unreadable or damaged entry raises: a stream answering with a
+        hole would report a history that never happened.
         """
         ...
 
