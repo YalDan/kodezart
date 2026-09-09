@@ -16,6 +16,7 @@ import importlib
 import pkgutil
 import re
 import tomllib
+from collections import Counter
 from enum import StrEnum
 from pathlib import Path
 from typing import get_args
@@ -60,6 +61,12 @@ IDENTITY_OWNERS = {
     "CriterionRef": "domain/fire_spec.py",
     "RulingId": "domain/agent.py",
 }
+#: Where a value the spec backend holds came from: the tracker port a
+#: port-returning fixture or a port-annotated parameter handed over, or the
+#: workspace one of the module's own fixtures built.
+PORT_ORIGIN = "port"
+WORKSPACE_ORIGIN = "workspace"
+PORT_TYPE = TrackerPort.__name__
 BACKEND = CODE
 #: Every cross-member invariant of the model, with the packaged module whose
 #: code it checks. ``None`` says the code does not exist yet, which routes the
@@ -130,12 +137,28 @@ def first_party_modules(source: str) -> tuple[Path, ...]:
     return tuple(sorted(found))
 
 
+def reachable_modules(seeds) -> set[Path]:
+    """Every packaged module the seeds read a value from, however deep.
+
+    A value an invariant asserts over is composed of the values ITS module
+    imports, so the scanned set is the closure and not the first hop.
+    """
+    reached = set(seeds)
+    frontier = set(seeds)
+    while frontier:
+        found = {
+            module
+            for path in frontier
+            for module in first_party_modules(path.read_text())
+        }
+        frontier = found - reached
+        reached |= frontier
+    return reached
+
+
 def invariant_sources() -> dict[str, str]:
     """The scanned set, read from the tree rather than transcribed."""
-    paths = set()
-    for module in INVARIANT_MODULES.values():
-        paths.add(module)
-        paths.update(first_party_modules(module.read_text()))
+    paths = reachable_modules(INVARIANT_MODULES.values())
     paths.update(
         path
         for path in (INVARIANT_MODULES[SPEC].parent / "fixtures").iterdir()
@@ -148,25 +171,192 @@ def invariant_sources() -> dict[str, str]:
     }
 
 
-def _names_a_tracker(node) -> bool:
-    if isinstance(node, ast.Name):
-        return node.id.endswith("tracker")
-    if isinstance(node, ast.Attribute):
-        return node.attr.endswith("tracker")
-    return False
+def port_surface() -> frozenset[str]:
+    """What the tracker port itself offers, read off the protocol."""
+    return frozenset(name for name in dir(TrackerPort) if not name.startswith("_"))
 
 
-def tracker_attributes(source: str) -> tuple[str, ...]:
-    """Every attribute an invariant reads off a tracker object."""
-    return tuple(
-        sorted(
-            {
-                node.attr
-                for node in ast.walk(ast.parse(source))
-                if isinstance(node, ast.Attribute) and _names_a_tracker(node.value)
-            }
-        )
+def _is_fixture(decorator) -> bool:
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    return (isinstance(target, ast.Attribute) and target.attr == "fixture") or (
+        isinstance(target, ast.Name) and target.id == "fixture"
     )
+
+
+def _functions(tree) -> list:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+
+def _fixture_origins(tree) -> dict[str, str]:
+    """Each fixture a module defines, and what it hands whoever asks for it.
+
+    A fixture that declares the port as its return type hands out the port;
+    every other one hands out the workspace it was built from.
+    """
+    return {
+        node.name: (
+            PORT_ORIGIN
+            if node.returns is not None and ast.unparse(node.returns) == PORT_TYPE
+            else WORKSPACE_ORIGIN
+        )
+        for node in _functions(tree)
+        if any(_is_fixture(decorator) for decorator in node.decorator_list)
+    }
+
+
+def _port_analysis(source: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """What a module reads off the port, and every read it makes past it.
+
+    The receiver's spelling is never consulted: a value is the port because a
+    port-returning fixture or a port-annotated parameter handed it over, and
+    it is a workspace because a fixture of this module did.  A workspace is
+    read by calling the actions it declares; the one fixture that returns the
+    port is the only place a handle is taken off it.
+    """
+    tree = ast.parse(source)
+    parents = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+
+    def scope_of(node) -> tuple[str, ...]:
+        scope = []
+        while id(node) in parents:
+            node = parents[id(node)]
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                scope.append(node.name)
+        return tuple(reversed(scope))
+
+    def qualified(name: str, scope: tuple[str, ...]) -> str:
+        return ".".join((*scope, name))
+
+    fixtures = _fixture_origins(tree)
+    port_fixtures = {name for name, origin in fixtures.items() if origin == PORT_ORIGIN}
+    module_functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    origins: dict[str, str] = {}
+
+    def lookup(name: str, scope: tuple[str, ...]) -> str | None:
+        for length in range(len(scope), -1, -1):
+            origin = origins.get(qualified(name, scope[:length]))
+            if origin is not None:
+                return origin
+        return None
+
+    def derive(node, scope: tuple[str, ...]) -> str | None:
+        if isinstance(node, ast.Await):
+            return derive(node.value, scope)
+        if isinstance(node, ast.Name):
+            return lookup(node.id, scope)
+        if isinstance(node, (ast.Attribute, ast.Call)):
+            inner = node.value if isinstance(node, ast.Attribute) else node.func
+            return (
+                WORKSPACE_ORIGIN if derive(inner, scope) == WORKSPACE_ORIGIN else None
+            )
+        return None
+
+    def parameters(node) -> list:
+        return [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+
+    for node in _functions(tree):
+        inner = (*scope_of(node), node.name)
+        for parameter in parameters(node):
+            declared = (
+                PORT_ORIGIN
+                if parameter.annotation is not None
+                and ast.unparse(parameter.annotation) == PORT_TYPE
+                else fixtures.get(parameter.arg)
+            )
+            if declared is not None:
+                origins[qualified(parameter.arg, inner)] = declared
+
+    changed = True
+    while changed:
+        previous = dict(origins)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                origin = derive(node.value, scope_of(node))
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+                for target in targets:
+                    if origin is not None and isinstance(target, ast.Name):
+                        origins.setdefault(
+                            qualified(target.id, scope_of(target)), origin
+                        )
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                target_function = module_functions.get(node.func.id)
+                if target_function is None:
+                    continue
+                scope = scope_of(node)
+                inner = (*scope_of(target_function), target_function.name)
+                declared = parameters(target_function)
+                handed = [
+                    (parameter.arg, argument)
+                    for parameter, argument in zip(
+                        [*target_function.args.posonlyargs, *target_function.args.args],
+                        node.args,
+                        strict=False,
+                    )
+                ]
+                names = {parameter.arg for parameter in declared}
+                handed.extend(
+                    (keyword.arg, keyword.value)
+                    for keyword in node.keywords
+                    if keyword.arg in names
+                )
+                for name, argument in handed:
+                    origin = derive(argument, scope)
+                    if origin is not None:
+                        origins.setdefault(qualified(name, inner), origin)
+        changed = origins != previous
+
+    surface = port_surface()
+    attributes: set[str] = set()
+    failures: list[str] = []
+    handles: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        scope = scope_of(node)
+        origin = derive(node.value, scope)
+        if origin == PORT_ORIGIN:
+            attributes.add(node.attr)
+            if node.attr not in surface:
+                failures.append(f"{ast.unparse(node)}: not on the {PORT_TYPE} surface")
+        elif origin == WORKSPACE_ORIGIN:
+            enclosing = scope[-1] if scope else ""
+            if enclosing in port_fixtures:
+                handles[enclosing] += 1
+            elif not (
+                isinstance(parents.get(id(node)), ast.Call)
+                and parents[id(node)].func is node
+            ):
+                failures.append(f"{ast.unparse(node)}: reaches past the {PORT_TYPE}")
+    for name in sorted(port_fixtures):
+        if handles[name] != 1:
+            failures.append(
+                f"{name}: takes {handles[name]} handles off the workspace, not one"
+            )
+    return tuple(sorted(attributes)), tuple(sorted(set(failures)))
+
+
+def port_attributes(source: str) -> tuple[str, ...]:
+    """Every attribute a module reads off the tracker port handed to it."""
+    return _port_analysis(source)[0]
+
+
+def port_reaches(source: str) -> tuple[str, ...]:
+    """Every read a module makes past the tracker port handed to it."""
+    return _port_analysis(source)[1]
 
 
 def _literal(node, constants, seen=frozenset()):
@@ -313,13 +503,28 @@ def test_the_invariant_modules_and_their_values_name_no_vendor():
     assert vendor_violations(invariant_sources()) == {}
 
 
-def test_the_scanned_set_covers_every_packaged_value_each_invariant_imports():
+def test_the_scanned_set_is_closed_under_the_values_those_values_read():
     sources = invariant_sources()
+    direct = set()
     for backend, module in INVARIANT_MODULES.items():
         assert module.relative_to(REPO_ROOT).as_posix() in sources, backend
-        for path in first_party_modules(module.read_text()):
-            if path != VENDOR_ROSTER:
-                assert path.relative_to(REPO_ROOT).as_posix() in sources
+        direct.update(first_party_modules(module.read_text()))
+    for name in sources:
+        path = REPO_ROOT / name
+        if path.suffix != ".py":
+            continue
+        for reached in first_party_modules(path.read_text()):
+            if reached != VENDOR_ROSTER:
+                assert reached.relative_to(REPO_ROOT).as_posix() in sources, name
+    first_hop = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (*INVARIANT_MODULES.values(), *direct)
+    }
+    assert (
+        set(sources)
+        - first_hop
+        - {name for name in sources if not name.endswith(".py")}
+    )
     assert any(name.endswith(".json") for name in sources)
     for name, text in sources.items():
         assert (REPO_ROOT / name).read_text() == text
@@ -375,27 +580,110 @@ def test_only_packaged_imports_are_read_as_asserted_values(statement, found):
     assert first_party_modules(statement) == tuple(SOURCE_ROOT / name for name in found)
 
 
-def test_the_spec_backend_reads_through_the_tracker_port_alone():
-    surface = {name for name in dir(TrackerPort) if not name.startswith("_")}
-    used = set(tracker_attributes(INVARIANT_MODULES[SPEC].read_text()))
+def spec_shaped_module(body: str) -> str:
+    """A module in the spec backend's shape, around one probed read.
+
+    The port fixture is deliberately not spelled ``tracker``: what marks a
+    value as the port is the type it declares, never its name.
+    """
+    return (
+        "import pytest\n"
+        "from kodezart.core.protocols import TrackerPort\n\n\n"
+        "@pytest.fixture(params=['native', 'fake'])\n"
+        "async def workspace(request):\n"
+        "    return await model_workspace(request.param)\n\n\n"
+        "@pytest.fixture\n"
+        f"def handle(workspace) -> {PORT_TYPE}:\n"
+        "    return workspace.tracker\n\n\n"
+        "async def test_reads(handle, workspace, monkeypatch):\n"
+        + "".join(f"    {line}\n" for line in body.splitlines())
+    )
+
+
+def test_the_spec_backend_reads_member_bodies_through_the_tracker_port_alone():
+    source = INVARIANT_MODULES[SPEC].read_text()
+    used = set(port_attributes(source))
     assert used
-    assert used <= surface
+    assert used <= port_surface()
+    assert port_reaches(source) == ()
 
 
 @pytest.mark.parametrize(
-    "source,expected",
+    "reach",
     [
-        ("await workspace.tracker.read_criteria(issue_key=key)", ("read_criteria",)),
-        (
-            "await live_model_tracker.read_labeled_issues(name)",
-            ("read_labeled_issues",),
-        ),
-        ("tracker.caller.call_tool(name)", ("caller",)),
-        ("issue.body", ()),
+        "await workspace.native.read_planning_issue(issue_key='k')",
+        "vendor = workspace.native\nawait vendor.read_planning_issue(issue_key='k')",
+        "workspace.native.caller.call_tool('get_issue')",
+        "port = workspace.tracker\nawait port.caller.call_tool('x')",
+        "adapter = workspace.native\nadapter.caller.call_tool('x')",
+        "same = workspace\nsame.native.caller.call_tool('x')",
+        "await handle.caller.call_tool('x')",
+        "await workspace.server.list_issues()",
+        "async def editing():\n    return workspace.native",
     ],
 )
-def test_a_reach_past_the_port_is_named_and_other_objects_are_not(source, expected):
-    assert tracker_attributes(source) == expected
+def test_a_reach_past_the_port_is_named_however_the_handle_is_spelled(reach):
+    assert port_reaches(spec_shaped_module(reach)) != ()
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        "await workspace.seed([])",
+        "workspace.read_only()",
+        "await workspace.put(None)",
+        "await handle.read_criteria(issue_key='k')",
+        "monkeypatch.setattr(handle, 'read_planning_issue', None)",
+        "original = handle.read_planning_issue\nawait original(issue_key='k')",
+        "async def editing():\n    await workspace.seed([])",
+    ],
+)
+def test_declared_workspace_actions_and_port_reads_are_not_reaches(read):
+    assert port_reaches(spec_shaped_module(read)) == ()
+
+
+def test_a_port_fixture_taking_a_second_handle_off_the_workspace_is_named():
+    source = spec_shaped_module("await handle.read_criteria(issue_key='k')")
+    assert port_reaches(source) == ()
+    assert (
+        port_reaches(
+            source.replace(
+                "    return workspace.tracker",
+                "    workspace.native.caller.call_tool('x')\n"
+                "    return workspace.tracker",
+            )
+        )
+        != ()
+    )
+
+
+@pytest.mark.parametrize("spelling", ["tracker", "anything", "vendor"])
+def test_the_port_is_recognised_by_its_declared_type_not_its_name(spelling):
+    source = (
+        "from kodezart.core.protocols import TrackerPort\n\n\n"
+        f"async def read({spelling}: {PORT_TYPE}):\n"
+        f"    await {spelling}.read_criteria(issue_key='k')\n"
+        f"    return {spelling}.caller\n"
+    )
+    assert port_attributes(source) == ("caller", "read_criteria")
+    assert port_reaches(source) == (
+        f"{spelling}.caller: not on the {PORT_TYPE} surface",
+    )
+
+
+def test_the_port_handed_to_a_helper_is_followed_into_it():
+    source = spec_shaped_module("await consume(handle)")
+    assert port_reaches(source) == ()
+    assert (
+        port_reaches(
+            source + "\n\nasync def consume(anything):\n    return anything.caller\n"
+        )
+        != ()
+    )
+
+
+def test_a_module_reading_nothing_through_the_port_names_no_attribute():
+    assert port_attributes(spec_shaped_module("assert True")) == ()
 
 
 def identity_violations(sources: dict[str, str]) -> tuple[str, ...]:
