@@ -682,3 +682,90 @@ async def test_release_frees_for_the_next_holder(ownership: Ownership) -> None:
     assert inherited.holder == holder_b
     assert claimed.status is ClaimStatus.GRANTED
     assert unclaimed is None
+
+
+async def test_a_redeployed_process_claims_what_its_predecessor_holds(
+    ownership: Ownership,
+) -> None:
+    """One deployment identity on two sessions, both claiming at once.
+
+    The realistic restart, and the interleaving that refuted the round
+    before this one: a process claims an issue its predecessor already
+    holds, both calls in flight together. A holder identity is what the
+    arbitration is over, so the two grants are one ownership observed
+    twice rather than a tie to break: both must be granted, the issue
+    must read as that holder's, another deployment must be refused in
+    its name, and the holder must still be able to renew what it holds —
+    what may never happen is the annihilation, where both grants retract
+    each other and the identity is left owning nothing.
+
+    Everything still standing must be this holder's. How MANY markers is
+    measured rather than asserted: a backend with no conditional write
+    can hide each grant's confirmation from the other's read, and what
+    that leaves is a duplicate marker rather than a second owner — every
+    reader names one holder, and the marker nothing renews lapses.
+    """
+    holder_a, holder_b = ownership.holders
+    before = await ownership.markers()
+    outcomes = await asyncio.gather(
+        ownership.first.claim_issue(
+            issue_key=ownership.issue_key,
+            holder=holder_a,
+            lease_seconds=LEASE_SECONDS,
+        ),
+        ownership.second.claim_issue(
+            issue_key=ownership.issue_key,
+            holder=holder_a,
+            lease_seconds=LEASE_SECONDS,
+        ),
+    )
+    standing = await ownership.markers()
+    bodies = [
+        comment.body
+        for comment in await ownership.first.list_comments(
+            issue_key=ownership.issue_key
+        )
+        if ownership.run_id in comment.body
+    ]
+    held = await ownership.first.active_claim(issue_key=ownership.issue_key)
+    rival = await ownership.second.claim_issue(
+        issue_key=ownership.issue_key,
+        holder=holder_b,
+        lease_seconds=LEASE_SECONDS,
+    )
+    renewed = await ownership.first.renew_claim(
+        issue_key=ownership.issue_key,
+        holder=holder_a,
+        lease_seconds=LEASE_SECONDS,
+    )
+
+    record(
+        probe=PROBE,
+        question="does one holder claiming twice at once end up holding the issue?",
+        configuration=(
+            f"{ownership.issue_key}, two sessions under ONE holder, "
+            f"lease {LEASE_SECONDS:g}s, board carried {len(before)} markers before"
+        ),
+        observed=(
+            f"granted {[one.status.value for one in outcomes]}; "
+            f"markers standing {_ids(standing)}; "
+            f"active claim {None if held is None else held.holder}; "
+            f"rival {rival.status.value} naming {rival.current_holder}; "
+            f"renewal {'None' if renewed is None else renewed.status.value}"
+        ),
+        verdict=(
+            "one ownership" if standing and renewed is not None else "ANNIHILATED"
+        ),
+    )
+
+    assert [one.status for one in outcomes] == [ClaimStatus.GRANTED] * 2
+    assert standing
+    assert all(holder_a in body and holder_b not in body for body in bodies)
+    assert held is not None
+    assert held.holder == holder_a
+    assert rival.status is ClaimStatus.LOST
+    assert rival.current_holder == holder_a
+    assert renewed is not None
+    assert renewed.status is ClaimStatus.GRANTED
+    await ownership.first.release_claim(issue_key=ownership.issue_key, holder=holder_a)
+    assert await ownership.first.active_claim(issue_key=ownership.issue_key) is None

@@ -1972,6 +1972,14 @@ class LinearMcpTracker:
         # them stands for all, and this one either is it or withdraws
         # into it.  Both parties read one log and reach one answer, so a
         # holder meeting itself ends holding one marker and never none.
+        #
+        # Measured on the real board: when the log hid each grant's
+        # confirmation from the other's read, both stood, and two markers
+        # of ONE holder were left.  That is a duplicate and not a second
+        # owner — every reader names the same holder, a rival is refused
+        # in that name, and the marker nothing renews lapses on its own —
+        # so it is left to lapse rather than compensated for by deleting a
+        # marker another live grant of this holder may still be reading.
         covered = frozenset(encoded)
         instant = min(marker.updated_at for marker in held.values())
         grants = _own_grants(after, holder=holder, addresses=covered)

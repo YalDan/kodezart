@@ -1338,3 +1338,45 @@ async def test_two_holders_racing_leave_the_issue_to_exactly_one() -> None:
     assert _standing(server) == [(granted[0].holder, "held")]
     held = await first.active_claim(issue_key=CLAIMED_ISSUE)
     assert held is not None and held.holder == granted[0].holder
+
+
+async def test_two_markers_of_one_holder_are_a_duplicate_and_not_two_owners() -> None:
+    """What the real board produced when it hid one grant from the other.
+
+    The restart meets its predecessor's live marker and withdraws into
+    it, and the backend refuses BOTH requests it can make about its own
+    marker — the retraction and the deletion — so two markers of one
+    holder are left standing.  That is a duplicate rather than a second
+    owner: the issue reads as this holder's, another deployment is
+    refused in its name, the holder renews what it holds, and the marker
+    nothing renews lapses on its own without anybody acting.
+    """
+    board = _Board()
+    await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+    board.advance(LEASE_SECONDS / 2)
+    stubborn = board.holder(caller=_RefusesEveryWithdrawal(board.server))
+
+    restarted = await stubborn.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+    )
+
+    assert restarted.status is ClaimStatus.GRANTED
+    assert _standing(board.server) == [("runner-one", "held")] * 2
+    held = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
+    assert held is not None and held.holder == "runner-one"
+    rival = await board.holder().claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="runner-two", lease_seconds=LEASE_SECONDS
+    )
+    assert (rival.status, rival.current_holder) == (ClaimStatus.LOST, "runner-one")
+    assert (
+        await board.holder().renew_claim(
+            issue_key=CLAIMED_ISSUE, holder="runner-one", lease_seconds=LEASE_SECONDS
+        )
+        is not None
+    )
+    # The duplicate is what nothing renews, so it goes on its own.
+    board.advance(LEASE_SECONDS * 0.9)
+    still = await board.holder().active_claim(issue_key=CLAIMED_ISSUE)
+    assert still is not None and still.holder == "runner-one"
