@@ -1447,24 +1447,6 @@ def make_generated_criteria() -> list[GeneratedCriterion]:
     )
 
 
-def make_passing_evaluation(
-    criterion: str = "Tests pass",
-    reasoning: str = "Fake passing evaluation.",
-    criterion_id: str = DEFAULT_CRITERION_ID,
-) -> AcceptanceCriteriaOutput:
-    """Construct an AcceptanceCriteriaOutput where the criterion passes."""
-    return AcceptanceCriteriaOutput(
-        criteria_results=[
-            CriterionResult(
-                criterion_id=criterion_id,
-                criterion=criterion,
-                passed=True,
-                reasoning=reasoning,
-            ),
-        ],
-    )
-
-
 #: Every id the fake criteria generator mints, in emission order.
 #:
 #: A fixture that means "the loop passed" answers all of them: grading
