@@ -4,13 +4,21 @@ from kodezart.core.protocols import TrackerPort
 from kodezart.domain.dispatch import blocker_keys
 from kodezart.domain.errors import ScopePlanRefusalError, ScopeReadError
 from kodezart.domain.topology import plan_topology
-from kodezart.services.scope_membership import read_scope_members
+from kodezart.services.scope_membership import (
+    read_member_subtrees,
+    read_scope_members,
+)
 from kodezart.types.domain.scope import ResolvedScope, ScopePlanSnapshot, ScopeRef
 from kodezart.types.domain.tracker import WorkflowStateKind, is_open
 
 
 async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSnapshot:
     """Read a coherent dependency closure and refuse named invalid stage facts.
+
+    The stage barrier is measured over the same thing the exit condition is:
+    every member's complete subtree. An offending key under a deliverable
+    child is therefore named here, before the walk, rather than reached only
+    once a fire has already begun owing it.
 
     This establishes no approval or readiness. The future walker must apply
     approval, live subtree closure and dispatch ownership to the returned facts.
@@ -20,6 +28,14 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
     for key, issue in members.items():
         if await tracker.read_planning_issue(issue_key=key) != issue:
             raise ScopeReadError(f"scope fact changed during planning: {key}", ref=ref)
+    subtree = await read_member_subtrees(tracker=tracker, scope=ref, members=members)
+    for key, issue in subtree.items():
+        if key in members:
+            continue
+        if await tracker.read_planning_issue(issue_key=key) != issue:
+            raise ScopeReadError(
+                f"subtree fact changed during planning: {key}", ref=ref
+            )
     facts = dict(members)
     pending = list(members.values())
     while pending:
@@ -41,14 +57,19 @@ async def read_scope_plan(*, ref: ScopeRef, tracker: TrackerPort) -> ScopePlanSn
             raise ScopeReadError(f"dependency changed during planning: {key}", ref=ref)
     if await read_scope_members(tracker=tracker, scope=ref) != members:
         raise ScopeReadError("scope family changed during planning", ref=ref)
+    if (
+        await read_member_subtrees(tracker=tracker, scope=ref, members=members)
+        != subtree
+    ):
+        raise ScopeReadError("member subtrees changed during planning", ref=ref)
     open_decisions = tuple(
         key
-        for key, issue in members.items()
+        for key, issue in subtree.items()
         if "decision" in issue.issue_labels and is_open(issue.state_kind)
     )
     backlog = tuple(
         key
-        for key, issue in members.items()
+        for key, issue in subtree.items()
         if "criterion" in issue.issue_labels
         and issue.state_kind is WorkflowStateKind.BACKLOG
     )
