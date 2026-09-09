@@ -80,6 +80,15 @@ MODEL_INVARIANTS = {
     "cross-lane pointer resolution": None,
     "model value naming": None,
 }
+#: A model this suite owns, kept disjoint from the roster above so a case
+#: about an invariant the roster stops naming survives the roster's edits.
+DEFERRED_INVARIANT = "an invariant whose code is not written yet"
+BUILT_INVARIANT = "an invariant whose code exists"
+ABSENT_MODULE = "kodezart.domain.not_yet_built"
+FIXTURE_MODEL = {
+    DEFERRED_INVARIANT: None,
+    BUILT_INVARIANT: "kodezart.types.domain.run_event",
+}
 #: The invariants this backend runs, each with the test that runs it.
 INVARIANTS = {
     "criterion address minting": "test_identity_invariant_uses_the_actual_code_backend",
@@ -391,18 +400,25 @@ def declared_invariants(module: Path) -> tuple[str, dict[str, str]]:
     return _literal(constants["BACKEND"], constants), runners
 
 
-def backend_for(invariant: str) -> str:
+def backend_for(invariant: str, model: dict[str, str | None]) -> str:
     """An invariant whose packaged code exists runs on the code backend; one
     whose code does not yet exist runs on the spec backend, never nowhere."""
-    declared = MODEL_INVARIANTS[invariant]
+    declared = model[invariant]
     return CODE if declared and _module_path(declared) else SPEC
 
 
-def routing_failures(declarations: dict[str, dict[str, str]]) -> tuple[str, ...]:
-    """Every invariant no backend runs, or that the wrong backend runs."""
+def routing_failures(
+    model: dict[str, str | None], declarations: dict[str, dict[str, str]]
+) -> tuple[str, ...]:
+    """Every invariant no backend runs, or that the wrong backend runs.
+
+    The model is an argument rather than this module's roster, so a case
+    about an invariant the roster stops naming is still a case this suite
+    can state: dropping an entry cannot drop its own guard with it.
+    """
     failures = []
-    for invariant in sorted(MODEL_INVARIANTS):
-        routed = backend_for(invariant)
+    for invariant in sorted(model):
+        routed = backend_for(invariant, model)
         running = sorted(
             backend for backend, runners in declarations.items() if invariant in runners
         )
@@ -412,7 +428,7 @@ def routing_failures(declarations: dict[str, dict[str, str]]) -> tuple[str, ...]
                 f"{' and '.join(running) or 'no backend'}"
             )
     for backend, runners in sorted(declarations.items()):
-        for invariant in sorted(set(runners) - set(MODEL_INVARIANTS)):
+        for invariant in sorted(set(runners) - set(model)):
             failures.append(
                 f"{invariant}: the {backend} backend runs an invariant the "
                 "model does not declare"
@@ -432,51 +448,105 @@ def test_each_module_declares_the_backend_it_is_registered_under(backend):
     assert declared_invariants(INVARIANT_MODULES[backend])[0] == backend
 
 
+def fixture_declarations() -> dict[str, dict[str, str]]:
+    """Both backends running the fixture model, each invariant on its own."""
+    return {
+        CODE: {BUILT_INVARIANT: "test_runs_the_built_invariant"},
+        SPEC: {DEFERRED_INVARIANT: "test_runs_the_deferred_invariant"},
+    }
+
+
 def test_every_invariant_runs_on_the_backend_its_code_routes_it_to():
-    assert routing_failures(actual_declarations()) == ()
+    assert routing_failures(MODEL_INVARIANTS, actual_declarations()) == ()
 
 
 def test_an_invariant_whose_code_does_not_exist_runs_on_the_spec_backend_now():
     codeless = {name for name, code in MODEL_INVARIANTS.items() if code is None}
     assert codeless
-    assert all(backend_for(name) == SPEC for name in codeless)
+    assert all(backend_for(name, MODEL_INVARIANTS) == SPEC for name in codeless)
     assert codeless <= set(declared_invariants(INVARIANT_MODULES[SPEC])[1])
 
 
-def test_a_declared_module_that_does_not_exist_routes_to_the_spec_backend(
-    monkeypatch,
-):
-    absent = f"{SOURCE_ROOT.name}.domain.not_yet_built"
-    assert _module_path(absent) is None
-    monkeypatch.setitem(MODEL_INVARIANTS, "invented invariant", absent)
-    assert backend_for("invented invariant") == SPEC
+def test_a_declared_module_that_does_not_exist_routes_to_the_spec_backend():
+    assert _module_path(ABSENT_MODULE) is None
+    invented = "an invariant naming a module nothing built"
+    assert backend_for(invented, {invented: ABSENT_MODULE}) == SPEC
 
 
-@pytest.mark.parametrize("dropped", sorted(MODEL_INVARIANTS))
+def test_the_fixture_model_routes_each_of_its_invariants_to_one_backend():
+    assert _module_path(FIXTURE_MODEL[BUILT_INVARIANT]) is not None
+    assert FIXTURE_MODEL[DEFERRED_INVARIANT] is None
+    assert backend_for(BUILT_INVARIANT, FIXTURE_MODEL) == CODE
+    assert backend_for(DEFERRED_INVARIANT, FIXTURE_MODEL) == SPEC
+    assert routing_failures(FIXTURE_MODEL, fixture_declarations()) == ()
+
+
+@pytest.mark.parametrize("dropped", sorted(FIXTURE_MODEL))
 def test_an_invariant_running_on_neither_backend_fails(dropped):
-    declarations = {
-        backend: {name: test for name, test in runners.items() if name != dropped}
-        for backend, runners in actual_declarations().items()
-    }
-    failures = routing_failures(declarations)
+    declarations = fixture_declarations()
+    for runners in declarations.values():
+        runners.pop(dropped, None)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
     assert len(failures) == 1
     assert dropped in failures[0] and "no backend" in failures[0]
 
 
-@pytest.mark.parametrize("deferred", ["cross-lane pointer resolution"])
-def test_a_codeless_invariant_moved_onto_the_code_backend_fails(deferred):
-    declarations = actual_declarations()
-    declarations[CODE][deferred] = declarations[SPEC].pop(deferred)
-    failures = routing_failures(declarations)
+def test_the_neither_backend_case_is_not_drawn_from_the_roster_it_guards():
+    """A roster edit cannot take this suite's own guard case with it."""
+    running = {
+        name
+        for module in INVARIANT_MODULES.values()
+        for name in declared_invariants(module)[1]
+    }
+    assert not set(FIXTURE_MODEL) & (set(MODEL_INVARIANTS) | running)
+
+
+def test_a_codeless_invariant_moved_onto_the_code_backend_fails():
+    declarations = fixture_declarations()
+    declarations[CODE][DEFERRED_INVARIANT] = declarations[SPEC].pop(DEFERRED_INVARIANT)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
     assert len(failures) == 1
-    assert deferred in failures[0] and f"routed to the {SPEC} backend" in failures[0]
+    assert (
+        DEFERRED_INVARIANT in failures[0]
+        and f"routed to the {SPEC} backend" in failures[0]
+    )
+
+
+def test_a_built_invariant_moved_onto_the_spec_backend_fails():
+    declarations = fixture_declarations()
+    declarations[SPEC][BUILT_INVARIANT] = declarations[CODE].pop(BUILT_INVARIANT)
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert (
+        BUILT_INVARIANT in failures[0]
+        and f"routed to the {CODE} backend" in failures[0]
+    )
+
+
+def test_an_invariant_both_backends_run_fails():
+    declarations = fixture_declarations()
+    declarations[SPEC][BUILT_INVARIANT] = "test_runs_it_a_second_time"
+    failures = routing_failures(FIXTURE_MODEL, declarations)
+    assert len(failures) == 1
+    assert f"{CODE} and {SPEC}" in failures[0]
 
 
 def test_a_backend_running_an_undeclared_invariant_fails():
-    declarations = actual_declarations()
-    declarations[CODE]["invented invariant"] = INVARIANTS["vendor freedom"]
-    failures = routing_failures(declarations)
+    declarations = fixture_declarations()
+    declarations[CODE]["an invariant the model does not name"] = "test_runs_it"
+    failures = routing_failures(FIXTURE_MODEL, declarations)
     assert len(failures) == 1 and "the model does not declare" in failures[0]
+
+
+@pytest.mark.parametrize("dropped", sorted(MODEL_INVARIANTS))
+def test_a_declared_invariant_its_backend_stops_running_is_named(dropped):
+    declarations = {
+        backend: {name: test for name, test in runners.items() if name != dropped}
+        for backend, runners in actual_declarations().items()
+    }
+    failures = routing_failures(MODEL_INVARIANTS, declarations)
+    assert len(failures) == 1
+    assert dropped in failures[0] and "no backend" in failures[0]
 
 
 def test_a_declared_runner_must_be_a_test_defined_in_that_module(tmp_path):
