@@ -1,11 +1,20 @@
-"""Code backend: shared identities and the actual run-event table agree."""
+"""Code backend: shared identities, the run-event table and vendor freedom.
 
+The static vendor check reads both invariant modules, every packaged module
+whose values they assert over, and the committed workspace the spec backend
+reads.  The roster of selectable adapters is the one place a vendor may be
+named, so it is the only exemption.
+"""
+
+import ast
+import re
 import tomllib
 from enum import StrEnum
 from pathlib import Path
 
 import pytest
 
+from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_event import (
     RUN_EVENT_PUBLISHERS,
@@ -14,13 +23,199 @@ from kodezart.types.domain.run_event import (
     RunEventPublisher,
     RunEventTableError,
 )
+from kodezart.types.domain.tracker import TrackerBackend
 from tests.identity_guards import construction_sites, invalid_ruling_fields
 
-SOURCE_ROOT = Path(__file__).parents[2] / "src" / "kodezart"
+REPO_ROOT = Path(__file__).parents[2]
+SOURCE_ROOT = REPO_ROOT / "src" / "kodezart"
+CODE = "code"
+SPEC = "spec"
+INVARIANT_MODULES = {
+    CODE: Path(__file__),
+    SPEC: REPO_ROOT / "tests" / "spec" / "test_model_agreement.py",
+}
+VENDOR_ROSTER = SOURCE_ROOT / "types" / "domain" / "tracker.py"
+VENDOR_TERMS = tuple(sorted(backend.value for backend in TrackerBackend))
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+")
 IDENTITY_OWNERS = {
     "CriterionRef": "domain/fire_spec.py",
     "RulingId": "domain/agent.py",
 }
+
+
+def vendor_terms(text: str) -> tuple[str, ...]:
+    """Vendor names a text carries, in any casing or word separation."""
+    words = {word.casefold() for word in _WORD.findall(text)}
+    return tuple(term for term in VENDOR_TERMS if term in words)
+
+
+def vendor_violations(sources: dict[str, str]) -> dict[str, tuple[str, ...]]:
+    return {
+        name: terms
+        for name, text in sorted(sources.items())
+        if (terms := vendor_terms(text))
+    }
+
+
+def _module_path(name: str) -> Path | None:
+    """The packaged file a dotted name addresses, or nothing."""
+    parts = name.split(".")
+    if parts[0] != SOURCE_ROOT.name or len(parts) < 2:
+        return None
+    module = SOURCE_ROOT.joinpath(*parts[1:])
+    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def first_party_modules(source: str) -> tuple[Path, ...]:
+    """Every packaged module an invariant reads its asserted values from."""
+    found = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            names = (
+                []
+                if node.level
+                else [
+                    node.module or "",
+                    *(f"{node.module}.{alias.name}" for alias in node.names),
+                ]
+            )
+        elif isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            continue
+        found.update(path for name in names if (path := _module_path(name)))
+    return tuple(sorted(found))
+
+
+def invariant_sources() -> dict[str, str]:
+    """The scanned set, read from the tree rather than transcribed."""
+    paths = set()
+    for module in INVARIANT_MODULES.values():
+        paths.add(module)
+        paths.update(first_party_modules(module.read_text()))
+    paths.update(
+        path
+        for path in (INVARIANT_MODULES[SPEC].parent / "fixtures").iterdir()
+        if path.is_file()
+    )
+    return {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text()
+        for path in sorted(paths)
+        if path != VENDOR_ROSTER
+    }
+
+
+def _names_a_tracker(node) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id.endswith("tracker")
+    if isinstance(node, ast.Attribute):
+        return node.attr.endswith("tracker")
+    return False
+
+
+def tracker_attributes(source: str) -> tuple[str, ...]:
+    """Every attribute an invariant reads off a tracker object."""
+    return tuple(
+        sorted(
+            {
+                node.attr
+                for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.Attribute) and _names_a_tracker(node.value)
+            }
+        )
+    )
+
+
+def test_the_invariant_modules_and_their_values_name_no_vendor():
+    assert vendor_violations(invariant_sources()) == {}
+
+
+def test_the_scanned_set_covers_every_packaged_value_each_invariant_imports():
+    sources = invariant_sources()
+    for backend, module in INVARIANT_MODULES.items():
+        assert module.relative_to(REPO_ROOT).as_posix() in sources, backend
+        for path in first_party_modules(module.read_text()):
+            if path != VENDOR_ROSTER:
+                assert path.relative_to(REPO_ROOT).as_posix() in sources
+    assert any(name.endswith(".json") for name in sources)
+    for name, text in sources.items():
+        assert (REPO_ROOT / name).read_text() == text
+
+
+@pytest.mark.parametrize("scanned", sorted(invariant_sources()))
+def test_a_vendor_term_injected_into_any_scanned_source_is_reported(scanned):
+    sources = invariant_sources()
+    sources[scanned] += f"\n{VENDOR_TERMS[0].capitalize()}Client\n"
+    assert vendor_violations(sources) == {scanned: VENDOR_TERMS}
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "{title}McpTracker",
+        "{lower}.app",
+        "from adapters import {upper}",
+        "{lower}_client",
+        "{upper}-CLIENT",
+        "tracker.{title}()",
+    ],
+)
+def test_a_vendor_name_is_found_however_it_is_written(spelling):
+    """The guard never spells a vendor itself; it renders the declared roster."""
+    term = VENDOR_TERMS[0]
+    rendered = spelling.format(title=term.capitalize(), lower=term, upper=term.upper())
+    assert vendor_terms(rendered) == VENDOR_TERMS
+
+
+@pytest.mark.parametrize("innocent", ["nonlinear", "linearity", "collinear", "linea"])
+def test_a_longer_word_is_not_a_vendor_name(innocent):
+    assert vendor_terms(innocent) == ()
+
+
+def test_only_the_selectable_backend_roster_may_name_a_vendor():
+    assert vendor_terms(VENDOR_ROSTER.read_text()) == VENDOR_TERMS
+    assert VENDOR_ROSTER.relative_to(REPO_ROOT).as_posix() not in invariant_sources()
+
+
+@pytest.mark.parametrize(
+    "statement,found",
+    [
+        ("from kodezart.core.protocols import TrackerPort", ("core/protocols.py",)),
+        ("import kodezart.core.protocols", ("core/protocols.py",)),
+        ("from kodezart import core", ("core/__init__.py",)),
+        ("from tests.fakes import FakeTrackerPort", ()),
+        ("from . import sibling", ()),
+        ("import kodezart", ()),
+    ],
+)
+def test_only_packaged_imports_are_read_as_asserted_values(statement, found):
+    assert first_party_modules(statement) == tuple(SOURCE_ROOT / name for name in found)
+
+
+def test_the_spec_backend_reads_through_the_tracker_port_alone():
+    surface = {name for name in dir(TrackerPort) if not name.startswith("_")}
+    used = set(tracker_attributes(INVARIANT_MODULES[SPEC].read_text()))
+    assert used
+    assert used <= surface
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("await workspace.tracker.read_criteria(issue_key=key)", ("read_criteria",)),
+        (
+            "await live_model_tracker.read_labeled_issues(name)",
+            ("read_labeled_issues",),
+        ),
+        ("tracker.caller.call_tool(name)", ("caller",)),
+        ("issue.body", ()),
+    ],
+)
+def test_a_reach_past_the_port_is_named_and_other_objects_are_not(source, expected):
+    assert tracker_attributes(source) == expected
 
 
 def identity_violations(sources: dict[str, str]) -> tuple[str, ...]:
@@ -242,3 +437,11 @@ def test_a_posting_declaration_outside_the_vocabulary_is_named(
         "run-event notification partition names undeclared event "
         "'unregistered_posted_event'",
     )
+
+
+def test_the_deployed_event_table_names_no_vendor_state(deployed_event_table):
+    table = "\n".join(
+        f"{event} {effect}"
+        for event, effect in sorted(deployed_event_table.run_event_states.items())
+    )
+    assert vendor_violations({"run_event_states": table}) == {}

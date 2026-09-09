@@ -1192,23 +1192,24 @@ async def test_target_url_change_refuses_the_retained_pointer(workspace, monkeyp
 async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
     workspace, target_kind
 ):
-    # Actual 644 amendment cites ordinary parent 744 with this short native URL.
-    # The measured issue response reports the longer canonical slug URL.
+    # A measured amendment cites its ordinary parent by a short native URL,
+    # while the issue response reports the longer canonical slug URL.
     await workspace.put(
         FakeMcpIssue(
-            id="KOD-744",
+            id="owner/744",
             description="## D2 — Architecture acceptance",
             labels=["acceptance-condition"] if target_kind == "criterion" else [],
             parent_id="member/beta" if target_kind == "criterion" else None,
-            url="https://linear.app/duckburg/issue/KOD-744/architecture-review",
+            url="https://tracker.invalid/issue/owner/744/architecture-review",
         )
     )
-    label = "KOD-744 D2" if target_kind == "numbered" else "KOD-744"
+    label = "owner/744 D2" if target_kind == "numbered" else "owner/744"
+    short = "https://tracker.invalid/issue/owner/744"
     await workspace.seed(
         [
             {
-                "key": "KOD-644",
-                "body": f"Source amendment: [{label}](<https://linear.app/duckburg/issue/KOD-744>).",
+                "key": "owner/644",
+                "body": f"Source amendment: [{label}](<{short}>).",
                 "labels": [CLASSIFICATION],
             }
         ]
@@ -1219,7 +1220,7 @@ async def test_short_parent_citation_is_context_only_for_an_ordinary_target(
         )
         assert failures == ()
     else:
-        with pytest.raises(AssertionError, match=r"pointer URL differs.*KOD-744"):
+        with pytest.raises(AssertionError, match=r"pointer URL differs.*owner/744"):
             await model_agreement(workspace.tracker, classification=CLASSIFICATION)
     workspace.read_only()
 
