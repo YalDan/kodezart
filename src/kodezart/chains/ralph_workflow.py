@@ -6,8 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import RetryPolicy
 
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
@@ -37,16 +39,26 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
 )
 from kodezart.types.domain.run_records import RunIdentity
-from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     WorkflowState,
 )
 
+#: The compiled shape both compositions produce.
+FireGraph = CompiledStateGraph[WorkflowState, None, WorkflowState, WorkflowState]
+
 
 class RalphWorkflowEngine:
-    """One fire graph with phase-local dependencies and shared run state."""
+    """One node set, two compositions, over one shared run state.
+
+    The arms differ only in where the fire's subject and criteria come
+    from.  The authored arm generates a ticket and a criteria set in the
+    graph.  The tracker-native arm is EXECUTION-ONLY: it generates
+    neither, and re-validates at head the criterion sub-issues an
+    organize pass already staged, before it reaches the loop.
+    """
 
     def __init__(
         self,
@@ -61,12 +73,14 @@ class RalphWorkflowEngine:
         retry_max_attempts: int,
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
+        criteria: TrackerCriteria | None = None,
     ) -> None:
         self.specification = specification
         self.implementation = implementation
         self.consolidation = consolidation
         self.review = review
         self.remediation = remediation
+        self.criteria = criteria
         self._git_base_url = git_base_url
         self.checkpointer = checkpointer
         self.retry = RetryPolicy(
@@ -75,7 +89,16 @@ class RalphWorkflowEngine:
             retry_on=should_retry,
         )
         self.floor = RetryFloor(delay_floor_for)
-        self.graph = self._build_graph().compile(checkpointer=self.checkpointer)
+        self.graph: FireGraph = self._build_graph(criteria=None).compile(
+            checkpointer=self.checkpointer
+        )
+        self.native_graph: FireGraph | None = (
+            None
+            if criteria is None
+            else self._build_graph(criteria=criteria).compile(
+                checkpointer=self.checkpointer
+            )
+        )
 
     async def run(
         self,
@@ -107,7 +130,7 @@ class RalphWorkflowEngine:
             run_identity=run_identity,
         )
         terminal: WorkflowCompleteEvent | None = None
-        async for event in self.graph.astream(
+        async for event in self._composition(scope).astream(
             initial_state,
             config=config,
             stream_mode="custom",
@@ -121,9 +144,37 @@ class RalphWorkflowEngine:
             raise RuntimeError("Fire graph emitted no terminal")
         await self.consolidation.cleanup_backups(terminal, config)
 
+    def _composition(self, scope: ScopeRef | None) -> FireGraph:
+        """The composition this run's addressing selects, or its refusal.
+
+        An addressed run is a tracker-native fire: the subject is the
+        issue the scope names, and the criteria are its own sub-issues.
+        A deployment with no tracker-native criteria stage wired cannot
+        serve one, and says so before any node runs.
+        """
+        if scope is None:
+            return self.graph
+        if self.native_graph is None:
+            msg = "Scoped execution requires the scope entry pipeline"
+            raise ScopedExecutionUnavailableError(msg, ref=scope)
+        if scope.kind is not ScopeKind.ISSUE:
+            msg = "A tracker-native fire is addressed to one issue"
+            raise ScopedExecutionUnavailableError(msg, ref=scope)
+        return self.native_graph
+
     def _build_graph(
         self,
+        *,
+        criteria: TrackerCriteria | None,
     ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
+        """One node set; *criteria* selects the tracker-native composition.
+
+        Everything from the loop onward is the same nodes and the same
+        routes on both arms.  The arms differ in exactly one place — the
+        criteria gate the entry, the validation route and a remediation
+        round all converge on — so the native arm HOLDS no ticket- or
+        criteria-generation node rather than merely skipping one.
+        """
         graph: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = (
             StateGraph(WorkflowState)
         )
@@ -137,21 +188,28 @@ class RalphWorkflowEngine:
             self.floor(self.specification.generate_branch),
             retry_policy=self.retry,
         )
-        graph.add_node(
-            "generate_ticket",
-            self.floor(self.specification.generate_ticket),
-            retry_policy=self.retry,
-        )
-        graph.add_node(
-            "generate_criteria",
-            self.floor(self.specification.generate_criteria),
-            retry_policy=self.retry,
-        )
-        graph.add_node(
-            "validate_criteria",
-            self.floor(self.specification.validate_criteria),
-            retry_policy=self.retry,
-        )
+        if criteria is None:
+            graph.add_node(
+                "generate_ticket",
+                self.floor(self.specification.generate_ticket),
+                retry_policy=self.retry,
+            )
+            graph.add_node(
+                "generate_criteria",
+                self.floor(self.specification.generate_criteria),
+                retry_policy=self.retry,
+            )
+            graph.add_node(
+                "validate_criteria",
+                self.floor(self.specification.validate_criteria),
+                retry_policy=self.retry,
+            )
+        else:
+            graph.add_node(
+                "revalidate_criteria",
+                self.floor(criteria.revalidate_criteria),
+                retry_policy=self.retry,
+            )
         graph.add_node(
             "run_ralph_loop",
             self.floor(self.implementation.run_ralph_loop),
@@ -179,7 +237,10 @@ class RalphWorkflowEngine:
         )
         graph.add_node("complete", self._complete_node)
 
-        if self.implementation.persists_artifacts:
+        # The two artifact writes are the authored arm's: both are keyed
+        # off a generated ticket, which the native arm has not got.
+        persists = criteria is None and self.implementation.persists_artifacts
+        if persists:
             graph.add_node(
                 "persist_ticket",
                 self.floor(self.implementation.persist_ticket),
@@ -191,38 +252,39 @@ class RalphWorkflowEngine:
                 retry_policy=self.retry,
             )
 
+        # The one node the arms disagree about. The entry router and a
+        # remediation round both name the criteria gate; which node that
+        # is, is the whole difference between the compositions.
+        gate = "generate_criteria" if criteria is None else "revalidate_criteria"
         graph.add_conditional_edges(
             START,
             self._route_entry,
-            {
-                "resolve_visibility": "resolve_visibility",
-                "generate_criteria": "generate_criteria",
-            },
+            {"resolve_visibility": "resolve_visibility", "generate_criteria": gate},
         )
         graph.add_edge("resolve_visibility", "generate_branch")
-        graph.add_edge("generate_branch", "generate_ticket")
-        if self.implementation.persists_artifacts:
-            graph.add_edge("generate_ticket", "persist_ticket")
-            graph.add_edge("persist_ticket", "generate_criteria")
+        if criteria is None:
+            graph.add_edge("generate_branch", "generate_ticket")
+            if persists:
+                graph.add_edge("generate_ticket", "persist_ticket")
+                graph.add_edge("persist_ticket", "generate_criteria")
+            else:
+                graph.add_edge("generate_ticket", "generate_criteria")
+            graph.add_edge("generate_criteria", "validate_criteria")
+            proceed = "persist_artifacts" if persists else "run_ralph_loop"
+            graph.add_conditional_edges(
+                "validate_criteria",
+                self._route_after_validation,
+                {
+                    "generate_criteria": "generate_criteria",
+                    proceed: proceed,
+                    "complete": "complete",
+                },
+            )
+            if persists:
+                graph.add_edge("persist_artifacts", "run_ralph_loop")
         else:
-            graph.add_edge("generate_ticket", "generate_criteria")
-        graph.add_edge("generate_criteria", "validate_criteria")
-        proceed = (
-            "persist_artifacts"
-            if self.implementation.persists_artifacts
-            else "run_ralph_loop"
-        )
-        graph.add_conditional_edges(
-            "validate_criteria",
-            self._route_after_validation,
-            {
-                "generate_criteria": "generate_criteria",
-                proceed: proceed,
-                "complete": "complete",
-            },
-        )
-        if self.implementation.persists_artifacts:
-            graph.add_edge("persist_artifacts", "run_ralph_loop")
+            graph.add_edge("generate_branch", "revalidate_criteria")
+            graph.add_edge("revalidate_criteria", "run_ralph_loop")
         graph.add_edge("run_ralph_loop", "merge_to_feature")
         graph.add_conditional_edges(
             "merge_to_feature",
@@ -240,7 +302,7 @@ class RalphWorkflowEngine:
             self._route_after_review,
             {"remediate": "remediate", "complete": "complete"},
         )
-        graph.add_edge("remediate", "generate_criteria")
+        graph.add_edge("remediate", gate)
         graph.add_edge("complete", END)
         return graph
 
@@ -332,8 +394,15 @@ class RalphWorkflowEngine:
         addresses this run's checkpoints.
         """
         if scope is not None:
-            msg = "Scoped execution requires the scope entry pipeline"
-            raise ScopedExecutionUnavailableError(msg, ref=scope)
+            # Refuses here, before any node, when no composition serves
+            # the address. An addressed run's subject IS the issue the
+            # scope names, so a second, disagreeing identity is refused
+            # rather than silently preferred either way.
+            self._composition(scope)
+            if issue_key is not None and issue_key != scope.key:
+                msg = "The addressed issue and the run's issue key disagree"
+                raise ScopedExecutionUnavailableError(msg, ref=scope)
+            issue_key = scope.key
         # TODO(time-travel): E2E checkpoint resume still requires:
         # 2. On resume: pass None (not initial_state) to astream()
         #    so LangGraph loads from the outer checkpoint.
