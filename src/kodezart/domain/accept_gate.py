@@ -1,8 +1,9 @@
 """The accept gate's arithmetic — counted, never judged.
 
-Two inputs: whether a criterion passed, and which partition it is in.  A
-failed hard gate rejects the run; a failed soft signal cannot, but must
-not vanish either, so it ships with a flag.  No model call happens here.
+One input: whether a criterion passed.  Every criterion is graded alike,
+so any failure rejects the run.  A criterion nothing could grade neither
+passed nor failed; it cannot reject, but it must not vanish either, so
+the run ships with a flag.  No model call happens here.
 """
 
 from collections.abc import Sequence
@@ -10,11 +11,7 @@ from collections.abc import Sequence
 from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
-from kodezart.types.domain.criteria import (
-    CriterionClass,
-    CriterionVerdict,
-    ValidatedCriterion,
-)
+from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
 
 
 def is_graded(criterion: ValidatedCriterion) -> bool:
@@ -49,15 +46,15 @@ def named_resource(criterion: ValidatedCriterion) -> str:
 def _failures(
     criteria: Sequence[ValidatedCriterion],
     results: Sequence[CriterionResult],
-) -> list[tuple[ValidatedCriterion, CriterionResult | None]]:
-    """Every GRADED criterion that did not pass, with its result.
+) -> list[ValidatedCriterion]:
+    """Every GRADED criterion that did not pass.
 
     An id with no result did not pass — the same fail-closed denominator
     grading uses — and an ungraded id has no seat here at all.
     """
     answered = {result.criterion_id: result for result in results}
     return [
-        (criterion, answered.get(criterion.id))
+        criterion
         for criterion in criteria
         if is_graded(criterion)
         and (criterion.id not in answered or not answered[criterion.id].passed)
@@ -70,23 +67,22 @@ def accept_verdict(
 ) -> AcceptVerdict:
     """The three-state verdict for one evaluation pass.
 
+    A graded criterion that did not pass rejects: there is no partition
+    whose failure costs less, so no failure is ever downgraded to a flag.
+
     An ungraded criterion clamps the ceiling to ``ship_with_flags``:
     ``accepted`` would claim a criterion nobody graded was satisfied, and
     ``rejected`` would block correct work over a resource the runner lacked.
     """
-    failures = _failures(criteria, results)
-    if any(
-        criterion.criterion_class is CriterionClass.hard_gate
-        for criterion, _ in failures
-    ):
+    if _failures(criteria, results):
         return AcceptVerdict.rejected
-    if failures or ungraded(criteria):
+    if ungraded(criteria):
         return AcceptVerdict.ship_with_flags
     return AcceptVerdict.accepted
 
 
 def gate_cleared(verdict: AcceptVerdict) -> bool:
-    """Whether the hard gates passed — the one routing question.
+    """Whether the run ships at all — the one routing question.
 
     ``accepted`` and ``ship_with_flags`` route alike; they differ in what
     must be SAID.  The verdict itself is never stored as this predicate.
@@ -108,27 +104,17 @@ def sherlock_items(sherlock_flags: Sequence[SherlockFlag]) -> list[FlaggedItem]:
 
 def flagged_items(
     criteria: Sequence[ValidatedCriterion],
-    results: Sequence[CriterionResult],
     sherlock_flags: Sequence[SherlockFlag],
 ) -> list[FlaggedItem]:
     """Everything a flagged run owes its reader, in one ordered list.
 
-    Three producers: a failing soft signal, an ungraded criterion, and a
-    ``[sherlock]`` concern.  The ungraded entries name the resource their
-    verdict cited, because an id alone says nothing about what would
-    settle it.
+    Two producers: an ungraded criterion and a ``[sherlock]`` concern.  A
+    failed criterion is not a third — it rejects, and a rejected run
+    reaches neither the merge nor the pull-request body this list is
+    written into.  The ungraded entries name the resource their verdict
+    cited, because an id alone says nothing about what would settle it.
     """
     items = [
-        FlaggedItem(
-            criterion_id=criterion.id,
-            summary=(
-                f"{criterion.text} — "
-                f"{result.reasoning if result is not None else 'no verdict returned'}"
-            ),
-        )
-        for criterion, result in _failures(criteria, results)
-    ]
-    items.extend(
         FlaggedItem(
             criterion_id=criterion.id,
             summary=(
@@ -137,6 +123,6 @@ def flagged_items(
             ),
         )
         for criterion in ungraded(criteria)
-    )
+    ]
     items.extend(sherlock_items(sherlock_flags))
     return items
