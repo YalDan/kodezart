@@ -258,6 +258,8 @@ An addressed scope request uses one queue job. Each fresh walk reports current
 readiness and remaining obligations; approved lanes run through the native fire
 and delivery graphs. `scope_lane.event` preserves iteration, review and native
 session fields. An inner fire's `workflow_complete` is not a scope terminal event.
+Nested events use their concrete discriminator and retain required null fields,
+so the scope envelope validates against the same schema it emits.
 When this controller invocation finishes, the job is `terminal` with a null
 outcome; this does not certify scope convergence. Unapproved and skipped lanes
 and unresolved criterion keys remain explicit in `scope_walk.observation`.
