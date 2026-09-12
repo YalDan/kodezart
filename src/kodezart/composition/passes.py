@@ -476,7 +476,12 @@ async def build_dispatch_passes(
     lifecycle = LifecycleWatcher(
         queue=queue,
         registry=registry,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=gate),
+        writer=TrackerLifecycleWriter(
+            tracker=tracker,
+            gate=gate,
+            marker_prefixes=operation.marker_prefixes,
+            surface_lease_seconds=config.tracker.surface_lease_seconds,
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=config.dispatch_holder,

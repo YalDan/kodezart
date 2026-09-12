@@ -159,6 +159,7 @@ def operation_config(
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
+        marker_prefixes={"run_outcome": "fixture-outcome"},
         principals=[
             Principal(
                 tracker_user=APPROVER,
@@ -258,7 +259,12 @@ def tick(tracker: FakeTrackerPort) -> tuple[GatedDispatchPass, FakeJobQueue]:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker,
                 holder=HOLDER,
@@ -356,7 +362,12 @@ async def test_an_enqueue_reporting_nothing_enqueued_raises(absent_field: str) -
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
@@ -442,6 +453,8 @@ def failing_tick(
                 queue=queue,
                 registry=queue,
                 writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),

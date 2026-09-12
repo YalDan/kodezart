@@ -77,6 +77,7 @@ from kodezart.domain.errors import (
     EscalationReadError,
     IssueLabelReadError,
     SurfaceLeaseError,
+    SurfaceWriteAttributionError,
     TransientAPIError,
 )
 from kodezart.domain.escalation_resolution import resolution_from_comments
@@ -119,7 +120,7 @@ from kodezart.types.domain.self_writes import (
     field_value,
     field_values,
 )
-from kodezart.types.domain.surface import SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -1752,7 +1753,7 @@ class LinearMcpTracker:
         )
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str
+        self, *, target: str, marker: str, body: str, holder: str | None = None
     ) -> TrackerComment:
         """Resolve the marker across the whole log before creating or editing."""
         content = marked_comment_body(marker=marker, body=body)
@@ -1761,6 +1762,17 @@ class LinearMcpTracker:
             marker=marker,
             comments=await self.list_comments(issue_key=target),
         )
+        surface = WritableSurface(
+            kind=SurfaceKind.MARKER_COMMENT,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+            marker=marker,
+        )
+        if existing is not None and existing.body != content:
+            if existing.author_key not in await self.writer_identity():
+                raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
+        await self._require_surface_holder(surface=surface, holder=holder)
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
         if existing.body == content:
@@ -1769,6 +1781,45 @@ class LinearMcpTracker:
             _TOOL_SAVE_COMMENT, {"id": existing.comment_key, "body": content}
         )
         return self._comment_written(issue_key=target, payload=payload, created=False)
+
+    async def _require_surface_holder(
+        self, *, surface: WritableSurface, holder: str | None
+    ) -> None:
+        """Refuse a write whose caller does not own the addressed live marker.
+
+        This reads the same ordered markers as acquisition and renewal.
+        It checks authority immediately before issuing the write; the
+        backend provides no conditional write that could fence a request
+        still in flight when its lease expires.
+        """
+        target = _LEASE_ADDRESSING.target(surface)
+        encoded = _LEASE_ADDRESSING.encode(surface)
+        markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        now = self._clock()
+        live = [
+            entry
+            for entry in markers
+            if not entry.retracted
+            and entry.in_force
+            and entry.deadline > now
+            and encoded in entry.addresses
+        ]
+        owner: str | None = None
+        if live:
+            earliest = min(live, key=lambda entry: entry.order)
+            tying = {
+                entry.holder
+                for entry in live
+                if entry.created_at == earliest.created_at
+            }
+            if earliest.state is _GrantState.HELD and len(tying) == 1:
+                owner = earliest.holder
+        if holder is None or owner != holder:
+            raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
 
     async def claim_issue(
         self,

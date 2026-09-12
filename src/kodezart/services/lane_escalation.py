@@ -4,10 +4,12 @@ from pydantic import ValidationError
 
 from kodezart.core.logging import get_logger
 from kodezart.core.outbound_write import gated_write
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.domain.tracker_writes import marked_comment_body
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -16,6 +18,8 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
 from kodezart.types.domain.run_state import LaneEscalation
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import TrackerComment
 
 
@@ -28,16 +32,19 @@ class LaneEscalationWriter:
         tracker: TrackerPort,
         gate: OutboundContentGate,
         operation: OperationConfig,
+        surface_lease_seconds: float,
     ) -> None:
         self._tracker = tracker
         self._gate = gate
         self._operation = operation
+        self._surface_lease_seconds = surface_lease_seconds
         self._log = get_logger(__name__)
 
     async def raise_escalation(
         self,
         *,
         lane_key: str,
+        job_id: str,
         escalation: LaneEscalation,
         visibility: RepoVisibility,
     ) -> TrackerComment:
@@ -94,10 +101,33 @@ class LaneEscalationWriter:
                 writer=OutboundDestination.TRACKER_COMMENT.value,
                 categories=[],
             )
-        comment = await self._tracker.upsert_comment(
-            target=escalation.issue_id, marker=marker, body=content
+        ref = ScopeRef(kind=ScopeKind.ISSUE, key=escalation.issue_id)
+        surfaces = frozenset(
+            {
+                WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker=marker
+                ),
+                WritableSurface(kind=SurfaceKind.ISSUE_LABEL_SET, ref=ref),
+            }
         )
-        await self._tracker.set_issue_classification(
-            issue_key=escalation.issue_id, classification="decision"
-        )
-        return comment
+        async with RunSurfaceLease(
+            tracker=self._tracker,
+            job_id=job_id,
+            surfaces=surfaces,
+            lease_seconds=self._surface_lease_seconds,
+        ) as lease:
+            comment = await settle(
+                self._tracker.upsert_comment(
+                    target=escalation.issue_id,
+                    marker=marker,
+                    body=content,
+                    holder=job_id,
+                )
+            )
+            await lease.renew()
+            await settle(
+                self._tracker.set_issue_classification(
+                    issue_key=escalation.issue_id, classification="decision"
+                )
+            )
+            return comment

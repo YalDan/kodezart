@@ -23,13 +23,16 @@ one too, over a branch its own acceptance gate rejected, and the event
 says which it is.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import DuplicateWorkRefError
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.gating import (
@@ -40,6 +43,8 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
 
 def _now() -> datetime:
@@ -70,10 +75,14 @@ class TrackerLifecycleWriter:
         *,
         tracker: TrackerPort,
         gate: OutboundContentGate,
+        marker_prefixes: Mapping[str, str],
+        surface_lease_seconds: float,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self._tracker: TrackerPort = tracker
         self._gate: OutboundContentGate = gate
+        self._marker_prefixes = dict(marker_prefixes)
+        self._surface_lease_seconds = surface_lease_seconds
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
 
@@ -222,16 +231,42 @@ class TrackerLifecycleWriter:
         # DERIVED: the body is a job id and a WorkflowOutcome member, both
         # readable off the job-status surface. A process that never held the
         # session recomputes this note exactly.
-        body = await gated_write(
-            gate=self._gate,
-            log=self._log,
-            content=f"job {job_id} reached outcome {outcome.value}",
-            visibility=visibility,
-            shape=WriterShape.PROSE,
-            destination=OutboundDestination.TRACKER_COMMENT,
-            content_class=ContentClass.DERIVED,
+        marker = compose_comment_marker(
+            prefixes=self._marker_prefixes,
+            purpose="run_outcome",
+            lane=issue_key,
+            occurrence_key=job_id,
         )
-        await self._tracker.post_comment(issue_key=issue_key, body=body)
+        surfaces = frozenset(
+            {
+                WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+                    marker=marker,
+                )
+            }
+        )
+        async with RunSurfaceLease(
+            tracker=self._tracker,
+            job_id=job_id,
+            surfaces=surfaces,
+            lease_seconds=self._surface_lease_seconds,
+        ) as lease:
+            body = await gated_write(
+                gate=self._gate,
+                log=self._log,
+                content=f"job {job_id} reached outcome {outcome.value}",
+                visibility=visibility,
+                shape=WriterShape.PROSE,
+                destination=OutboundDestination.TRACKER_COMMENT,
+                content_class=ContentClass.DERIVED,
+            )
+            await lease.renew()
+            await settle(
+                self._tracker.upsert_comment(
+                    target=issue_key, marker=marker, body=body, holder=job_id
+                )
+            )
         await self._log.ainfo(
             "lifecycle_outcome_comment",
             issue_key=issue_key,

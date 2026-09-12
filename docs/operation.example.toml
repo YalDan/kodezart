@@ -53,6 +53,8 @@ base_spec = "kodezart-basespec"
 repository = "kodezart-repo"
 issue_identity = "kodezart-issue"
 run_state = "run-state"
+# One idempotent terminal outcome comment per queued job.
+run_outcome = "run-outcome"
 decision = "decision"
 # Record-shaped issues carry history and are never scope fire candidates.
 tracker = "tracker"

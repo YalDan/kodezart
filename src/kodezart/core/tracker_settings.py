@@ -61,3 +61,12 @@ class TrackerSettings(BaseModel):
         le=30,
         description="Initial retry delay in seconds; later delays double.",
     )
+    surface_lease_seconds: float = Field(
+        default=900.0,
+        ge=60.0,
+        le=86400.0,
+        description=(
+            "Bound for write-surface leases held by a writing run's job id. "
+            "Renewal is explicit; no background task extends these leases."
+        ),
+    )
