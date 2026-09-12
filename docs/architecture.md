@@ -51,6 +51,7 @@ does not exist.
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
+| TrackerCriteriaReader | LinearMcpTracker | Complete current native criterion families, no authoring or execution |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
@@ -352,3 +353,18 @@ graph and split readers belong to their later Organize integration. This slice
 does not add scheduler consumers, state transitions, content-gate bypasses or
 backend fencing. Configured adoption of the shared verification bound and every
 lane's actual writer remains with those consumers.
+
+## Native criterion reads
+
+The operation's `issue_labels` map names semantic classifications in the tracker.
+Boot instates missing owned definitions through the existing mapping reconciler
+and adopts existing definitions unchanged. `TrackerCriteriaReader.read_criteria`
+reads complete current direct-child membership, including archived and completed
+criteria, with full body/state/parentage. Failed or incomplete reads raise
+`CriterionReadError`; a successful empty family is a distinct result.
+
+The ordinary issue reader retains its existing compatibility contract.
+`read_planning_issue` requires reported native labels and relations, and explicit
+classification capability methods reject absent or blank required mappings before
+I/O. These shared readers grant no authority to create, execute, grade or change
+criteria and add no scope-label or state-transition policy.

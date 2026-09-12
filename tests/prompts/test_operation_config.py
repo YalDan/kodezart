@@ -137,6 +137,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "issue_labels",
         "workflow_states",
         "marker_prefixes",
         "repos",
@@ -632,7 +633,10 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
 
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
-    assert set(mapped.values()) == set(OperationConfig.model_fields)
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    assert native == {"issue_labels": "composition/tracker.py::build_tracker"}
+    assert set(mapped).isdisjoint(native)
+    assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
 
 
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
@@ -643,7 +647,8 @@ def test_every_operation_config_field_is_reachable_from_a_pass_template() -> Non
     reach is a field the port did not actually port.
     """
     reachable = {name.split(".")[0] for name in template_placeholders()}
-    unreachable = set(OperationConfig.model_fields) - reachable
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    unreachable = set(OperationConfig.model_fields) - reachable - set(native)
     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 
 

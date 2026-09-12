@@ -439,6 +439,7 @@ class OperationConfig(OperationModel):
     agent_identities: list[str] = Field(default_factory=list)
     teams: dict[str, TeamEntry] = Field(default_factory=dict)
     queue_states: dict[str, str] = Field(default_factory=dict)
+    issue_labels: dict[str, str] = Field(default_factory=dict)
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     repos: list[RepoEntry] = Field(default_factory=list)
     documents: dict[str, DocumentEntry] = Field(default_factory=dict)
@@ -589,6 +590,18 @@ class OperationConfig(OperationModel):
             f"principals[{index}].handle {handle!r} collides with an agent identity"
             for index, handle in enumerate(handles)
             if handle in set(self.agent_identities)
+        )
+
+        label_names = list(self.issue_labels.values())
+        failures.extend(
+            f"issue_labels[{name!r}] must name a nonempty tracker label"
+            for name, label in self.issue_labels.items()
+            if not name.strip() or not label.strip()
+        )
+        failures.extend(
+            f"issue_labels[{name!r}] {label!r} is not unique"
+            for name, label in self.issue_labels.items()
+            if label_names.count(label) > 1
         )
 
         if failures:
@@ -768,6 +781,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "agent_identities": ConfigOwnership.EXTERNAL,
     "teams": ConfigOwnership.EXTERNAL,
     "queue_states": ConfigOwnership.OWNED,
+    "issue_labels": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,

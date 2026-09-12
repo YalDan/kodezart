@@ -412,3 +412,12 @@ class StaleCommentWriteError(Exception):
 
 class WriteBackReadError(ValueError):
     """An addressed artifact cannot be re-read completely for verification."""
+
+
+class CriterionReadError(Exception):
+    """A criterion membership read could not establish a complete answer."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")

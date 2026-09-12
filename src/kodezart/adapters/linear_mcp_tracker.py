@@ -23,9 +23,11 @@ from pydantic import ValidationError
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
+    LinearAddressedIssueWire,
     LinearCommentEntryWire,
     LinearCommentListWire,
     LinearCommentWire,
+    LinearCriterionIssueWire,
     LinearDiffListWire,
     LinearDocumentListWire,
     LinearDocumentSummaryWire,
@@ -45,6 +47,7 @@ from kodezart.adapters.linear_mcp_types import (
     LinearWireModel,
 )
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.adapters.linear_scope_types import LinearScopeIssuesWire
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -60,6 +63,7 @@ from kodezart.core.errors import (
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import (
+    CriterionReadError,
     DuplicateWorkRefError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
@@ -80,7 +84,11 @@ from kodezart.domain.tracker_writes import (
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.operation import (
+    LifecycleStage,
+    OperationMemberAbsentError,
+    QueueState,
+)
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import (
     CommentValues,
@@ -217,6 +225,8 @@ _RELATION_KIND_BY_ARM: Mapping[str, IssueRelationKind] = {
     "relatedTo": IssueRelationKind.RELATED,
     "duplicateOf": IssueRelationKind.DUPLICATE,
 }
+
+_ISSUE_IDENTITY_PAGE_SIZE = 250
 
 _MAPPING_TOOL_BY_KIND: Mapping[MappingKind, str] = {
     MappingKind.USER: _TOOL_LIST_USERS,
@@ -734,6 +744,7 @@ class LinearMcpTracker:
         *,
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
+        issue_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         team_identifiers: Mapping[str, str],
         marker_prefixes: Mapping[str, str],
@@ -742,6 +753,7 @@ class LinearMcpTracker:
         ledger: SelfWriteLedger,
     ) -> None:
         self._caller: McpToolCaller = caller
+        self._issue_labels = dict(issue_labels)
         self._markers = LinearMarkers(marker_prefixes)
         self._retry = retry
         self._clock: Callable[[], datetime] = clock
@@ -916,6 +928,118 @@ class LinearMcpTracker:
                 return _TOOL_LIST_ISSUES
             case _:
                 assert_never(signal)
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        return self._to_issue(
+            self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
+        )
+
+    def _classification_label(self, classification: str, *, stops: str) -> str:
+        label = self._issue_labels.get(classification)
+        if label is None or not label.strip():
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels[{classification!r}]", stops=stops
+            )
+        return label
+
+    def require_scope_plan_reads(self) -> None:
+        """A clean plan must be able to see both criteria and open decisions."""
+        for classification in ("criterion", "decision"):
+            self._classification_label(
+                classification, stops="scope plan barriers cannot be read"
+            )
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        self.require_scope_plan_reads()
+        for key in sorted({"criterion", "decision", "tracker", *additional_keys}):
+            self._classification_label(
+                key, stops="required issue classifications cannot be read"
+            )
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def _read_criterion_family(
+        self, *, issue_key: str, subject: TrackerIssue | None = None
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
+        self._classification_label(
+            "criterion", stops="criterion sub-issue membership cannot be read"
+        )
+        try:
+            if subject is None:
+                payload = await self._call(
+                    _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+                )
+                wire = self._validate(
+                    LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE
+                )
+                if not wire.matches_requested(issue_key):
+                    raise CriterionReadError(
+                        issue_key=issue_key, reason="parent identity changed"
+                    )
+                parent = self._to_issue(wire)
+            else:
+                if subject.issue_key != issue_key:
+                    raise CriterionReadError(
+                        issue_key=issue_key, reason="supplied parent identity changed"
+                    )
+                parent = subject
+            return parent, await self._read_criteria(parent=parent)
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="the tracker read failed or was incomplete"
+            ) from exc
+
+    async def _read_criteria(self, *, parent: TrackerIssue) -> tuple[TrackerIssue, ...]:
+        issue_key = parent.issue_key
+        arguments: dict[str, object] = {
+            "parentId": parent.issue_key,
+            "includeArchived": True,
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+            "fields": ["id"],
+        }
+        seen_keys: set[str] = set()
+        criteria: list[TrackerIssue] = []
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+            payload = await self._call(_TOOL_LIST_ISSUES, request)
+            page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            return page, page.has_next_page, page.cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: CriterionReadError(
+                issue_key=issue_key,
+                reason="child listing pagination cannot advance",
+            ),
+        ):
+            for entry in page.issues:
+                if entry.id in seen_keys:
+                    continue
+                seen_keys.add(entry.id)
+                detail = await self._call(
+                    _TOOL_GET_ISSUE, {"id": entry.id, "includeRelations": True}
+                )
+                child = self._to_issue(
+                    self._validate(LinearCriterionIssueWire, detail, _TOOL_GET_ISSUE)
+                )
+                if child.issue_key != entry.id or child.parent_key != parent.issue_key:
+                    raise CriterionReadError(
+                        issue_key=issue_key,
+                        reason="child differs from its current identity or parent",
+                    )
+                if "criterion" in child.issue_labels:
+                    criteria.append(child)
+        return tuple(sorted(criteria, key=lambda criterion: criterion.issue_key))
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         """The full issue — body, state, relations, parent, assignee."""
@@ -1716,7 +1840,7 @@ class LinearMcpTracker:
         match kind:
             case MappingKind.DOCUMENT:
                 return frozenset(await self._document_definitions())
-            case MappingKind.QUEUE_STATE:
+            case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
                 return (await self._label_definitions()).names()
             case MappingKind.USER:
                 return frozenset(
@@ -1927,6 +2051,11 @@ class LinearMcpTracker:
                 self._queue_state_by_label[label]
                 for label in wire.labels
                 if label in self._queue_state_by_label
+            ),
+            issue_labels=frozenset(
+                name
+                for name, label in self._issue_labels.items()
+                if label in wire.labels
             ),
             team_key=self._team_key_by_identifier.get(wire.team),
             project=wire.project,

@@ -80,6 +80,7 @@ def tracker_over(
     """The adapter over *server*, with per-test constructor overrides."""
     kwargs: dict[str, object] = {
         "caller": server,
+        "issue_labels": {},
         "marker_prefixes": MARKER_PREFIXES,
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,

@@ -79,6 +79,10 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         for name, identifier in sorted(config.queue_states.items())
     )
     refs.extend(
+        MappingRef(kind=MappingKind.ISSUE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+    refs.extend(
         MappingRef(
             kind=MappingKind.WORKFLOW_STATE,
             name=stage.value,
@@ -125,6 +129,23 @@ def _queue_state_refs(
     )
 
 
+def _issue_label_refs(
+    config: OperationConfig,
+    containers: tuple[str | None, ...],
+) -> tuple[MappingRef, ...]:
+    """Issue labels use the same native namespaces as the queue vocabulary."""
+    return tuple(
+        MappingRef(
+            kind=MappingKind.ISSUE_LABEL,
+            name=name,
+            identifier=identifier,
+            scope=container,
+        )
+        for container in containers
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+
+
 def _document_refs(
     config: OperationConfig,
     _containers: tuple[str | None, ...],
@@ -164,6 +185,7 @@ OWNED_REF_BUILDERS: dict[
 ] = {
     "documents": _document_refs,
     "queue_states": _queue_state_refs,
+    "issue_labels": _issue_label_refs,
 }
 
 

@@ -51,6 +51,7 @@ async def test_known_unissued_retry_revalidates_changed_expected_comment(
 ):
     server = fixture_server()
     tracker = LinearMcpTracker(
+        issue_labels={},
         marker_prefixes=fixture.MARKER_PREFIXES,
         caller=server,
         queue_state_labels=fixture.QUEUE_STATE_LABELS,
