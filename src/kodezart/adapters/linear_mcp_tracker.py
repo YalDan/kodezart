@@ -3132,6 +3132,8 @@ class LinearMcpTracker:
         self, kind: _GrantKind, *, targets: Sequence[_Target]
     ) -> tuple[_GrantMarker, ...]:
         """Every ownership marker of *kind* currently on these targets."""
+        # Refuse absent addressing configuration before any native read.
+        _ = self._markers.grant_pattern
         found: list[_GrantMarker] = []
         for target in targets:
             wires = await self._comment_wires(target.key, parent_field=target.field)
