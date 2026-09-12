@@ -43,7 +43,10 @@ async def read_tracker_artifact(
         split_keys: set[str] = set()
         identities: set[str] = set()
         split_rows: list[dict[str, object]] = []
-        for child in children:
+        for listed_child in children:
+            child = await tracker.read_planning_issue(issue_key=listed_child.issue_key)
+            if child != listed_child:
+                raise WriteBackReadError("split child changed during artifact read")
             identity = await tracker.read_issue_identity(issue_key=child.issue_key)
             if (
                 child.issue_key in split_keys
@@ -75,7 +78,7 @@ async def read_tracker_artifact(
             ),
         )
     if surface.kind is SurfaceKind.ISSUE_GRAPH:
-        issue = await tracker.read_issue(issue_key=surface.ref.key)
+        issue = await tracker.read_planning_issue(issue_key=surface.ref.key)
         if issue.issue_key != surface.ref.key:
             raise WriteBackReadError("graph artifact returned another identity")
         return TrackerArtifact(
@@ -88,7 +91,7 @@ async def read_tracker_artifact(
         SurfaceKind.CRITERION_CHILD_SET,
         SurfaceKind.ISSUE_LABEL_SET,
     }:
-        issue = await tracker.read_issue(issue_key=surface.ref.key)
+        issue = await tracker.read_planning_issue(issue_key=surface.ref.key)
         if issue.issue_key != surface.ref.key:
             raise WriteBackReadError("issue read returned another identity")
         members = (
