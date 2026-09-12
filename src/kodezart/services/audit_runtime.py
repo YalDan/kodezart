@@ -10,10 +10,7 @@ from kodezart.chains.audit_sweep import AuditReadObservation, AuditReadSweep
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, RepoCache, TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.errors import (
-    AuditClaimReadError,
-    AuditRunIncompleteError,
-)
+from kodezart.domain.errors import AuditClaimReadError
 from kodezart.domain.tracker_writes import marked_comment_body
 from kodezart.services.audit_coverage import AuditCoverage
 from kodezart.services.audit_escalation import AuditEscalations
@@ -64,6 +61,14 @@ from kodezart.types.domain.tracker import TrackerIssue
 from kodezart.types.domain.write_back import WriteBackFinding, WriteBackResult
 
 _INCOMPLETE = AUDIT_PUBLICATION_FAILURES
+
+
+class AuditRunIncompleteError(Exception):
+    """The scheduled audit retained its receipts without claiming full coverage."""
+
+    def __init__(self, *, report: AuditRunReport) -> None:
+        self.report = report
+        super().__init__(f"audit run {report.identity.title()!r} is incomplete")
 
 
 @dataclass

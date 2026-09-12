@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from kodezart.domain.errors import AuditRunIncompleteError
+from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA
 from kodezart.types.domain.audit_runtime import (
     AuditForgePublication,

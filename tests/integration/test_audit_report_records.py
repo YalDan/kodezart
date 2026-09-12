@@ -2,7 +2,7 @@
 
 import pytest
 
-from kodezart.domain.errors import AuditRunIncompleteError
+from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.agent import WRITE_BACK_SCHEMA
 from tests.integration.test_audit_runtime_native import (
     native_audit as native_audit,
