@@ -13,6 +13,7 @@ from kodezart.types.domain.organize import (
     RefusalKind,
     SpecFinding,
 )
+from kodezart.types.domain.organize_graph import GraphProposal, SplitProposal
 from kodezart.types.domain.write_back import WriteBackResult
 
 
@@ -121,15 +122,7 @@ class UnavailableProposal(CamelCaseModel):
         min_length=1,
         description="Exact native tracker key requiring the unavailable capability.",
     )
-    capability: Literal[
-        "parent",
-        "blockedBy",
-        "relatedTo",
-        "priority",
-        "milestone",
-        "split",
-        "criterion_edit",
-    ] = Field(
+    capability: Literal["criterion_edit",] = Field(
         description=(
             "Specific unavailable write capability; an implementation gap "
             "does not imply a human decision."
@@ -147,7 +140,12 @@ class UnavailableProposal(CamelCaseModel):
 class OrganizeProposal(
     RootModel[
         Annotated[
-            BodyProposal | CriteriaProposal | UnresolvedProposal | UnavailableProposal,
+            BodyProposal
+            | CriteriaProposal
+            | GraphProposal
+            | SplitProposal
+            | UnresolvedProposal
+            | UnavailableProposal,
             Field(discriminator="kind"),
         ]
     ]

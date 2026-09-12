@@ -535,7 +535,9 @@ async def test_full_scope_finding_exhausts_the_actual_convergence_bound(monkeypa
     assert "needs decision" in board.server.issues["untouched-child"].labels
 
 
-async def test_missing_graph_capability_is_not_invented_as_a_human_fork(monkeypatch):
+async def test_missing_criterion_edit_capability_is_not_invented_as_a_human_fork(
+    monkeypatch,
+):
     from kodezart.domain.errors import OrganizeWriteRefusalError
 
     owner, board, executor = factory()
@@ -548,7 +550,7 @@ async def test_missing_graph_capability_is_not_invented_as_a_human_fork(monkeypa
                     structured_output={
                         "kind": "unavailable",
                         "issue_id": CLAIMED_ISSUE,
-                        "capability": "blockedBy",
+                        "capability": "criterion_edit",
                         "evidence": (
                             "The verified dependency requires a graph edge write."
                         ),
@@ -558,7 +560,7 @@ async def test_missing_graph_capability_is_not_invented_as_a_human_fork(monkeypa
 
     monkeypatch.setattr(executor, "stream", unavailable)
     with pytest.raises(
-        OrganizeWriteRefusalError, match="unavailable capability blockedBy"
+        OrganizeWriteRefusalError, match="unavailable capability criterion_edit"
     ):
         await run_owner(owner)
     assert not [(name, args) for name, args in board.calls if name.startswith("save_")]

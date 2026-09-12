@@ -11,6 +11,7 @@ from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import is_admission_live
 from kodezart.domain.prompt_variables import organize_variables
 from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.types.domain.agent import ORGANIZE_ADMISSION_SCHEMA, RaiseSite
 from kodezart.types.domain.organize import (
@@ -35,11 +36,13 @@ class OrganizeAdmission:
         self,
         *,
         tracker: TrackerPort,
+        context: OrganizeContextReader,
         runner: AgentRunner,
         workspace: WorkspaceProvider,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
     ) -> None:
+        self._context = context
         self._tracker = tracker
         self._runner = runner
         self._workspace = workspace
@@ -69,6 +72,8 @@ class OrganizeAdmission:
         return is_admission_live(
             admitted_body_digest=result.admitted_body_digest,
             current_body_digest=revision.body_digest,
+        ) and await self._context.matches(
+            scope=result.admitted_scope, digest=result.admitted_context_digest
         )
 
     async def _judge(
@@ -78,23 +83,23 @@ class OrganizeAdmission:
         key: PromptKey,
         site: RaiseSite,
     ) -> AdmissionResult:
+        context = await self._context.read(scope=request.scope)
         revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
         subject = revision.issue
         if subject.issue_key != request.issue_key:
             raise OrganizeAdmissionIdentityError(
                 expected=request.issue_key, observed=subject.issue_key
             )
-        linked_keys = sorted(
-            {relation.issue_key for relation in subject.relations} - {subject.issue_key}
-        )
-        linked = [
-            await self._tracker.read_issue(issue_key=issue_key)
-            for issue_key in linked_keys
-        ]
+        self._context.require_revision(context, revision)
+        linked_keys = {relation.issue_key for relation in subject.relations} - {
+            subject.issue_key
+        }
+        linked = [issue for issue in context.issues if issue.issue_key in linked_keys]
         criteria = await self._tracker.read_criteria(issue_key=subject.issue_key)
         prompt = self._prompts.template_for(key).render(
             {
                 **organize_variables(
+                    graph_context=context.model_dump_json(),
                     mandate_rubric=request.mandate_rubric,
                     issue_body=subject.body,
                     linked_issue_bodies=[issue.body for issue in linked],
@@ -138,5 +143,10 @@ class OrganizeAdmission:
                     expected=subject.issue_key, observed=judgment.issue_id
                 )
             return AdmissionResult.model_validate(
-                {**judgment.model_dump(), "admitted_body_digest": revision.body_digest}
+                {
+                    **judgment.model_dump(),
+                    "admitted_body_digest": revision.body_digest,
+                    "admitted_scope": request.scope,
+                    "admitted_context_digest": self._context.digest(context),
+                }
             )

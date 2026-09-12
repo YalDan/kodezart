@@ -40,6 +40,7 @@ from kodezart.types.domain.operation import (
     RecordDestination,
     ScopeLabel,
 )
+from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
@@ -893,12 +894,54 @@ class TrackerPort(
         """
         ...
 
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        """Read all native project milestones without selection policy."""
+        ...
+
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         """The container's ref, name, description, optional url and parent.
 
         Milestone metadata carries no invented or containing-project URL.
         An issue-kind ref raises a typed domain error: an issue is read
         through ``read_issue``, never returned as an empty container.
+        """
+        ...
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> TrackerIssue:
+        """Apply explicit graph deltas under source and affected peer grants.
+
+        Re-read the supplied native snapshot after awaited ownership checks;
+        this is a refusal check, not an atomic backend compare-and-set.
+        """
+        ...
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        """Read ordinary children with the source's unique split identities."""
+        ...
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue:
+        """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
+
+        Return a unique matching child unchanged; refuse duplicate or misplaced
+        identities. A declared parent creation surface grants no existing child edit.
         """
         ...
 

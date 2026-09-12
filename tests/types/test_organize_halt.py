@@ -24,6 +24,8 @@ def bound(loop="admission"):
 def admission(kind="human_decision"):
     return {
         "issue_id": "native-child",
+        "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+        "admitted_context_digest": "fixture-context",
         "admitted_body_digest": "actual-body-digest",
         "verdict": "not_buildable",
         "invented_decision": "Which of the two sources is authoritative?",
@@ -73,6 +75,8 @@ def write_back():
             "admission_results": [
                 {
                     "issue_id": "native-child",
+                    "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+                    "admitted_context_digest": "fixture-context",
                     "admitted_body_digest": "actual-body-digest",
                     "verdict": "buildable",
                     "evidence": "The source is buildable.",

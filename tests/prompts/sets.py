@@ -45,6 +45,7 @@ AUDIT_DESTINATION = "a public code-hosting surface"
 #: rendered from the same kind of fixed fixtures, plus the operation the
 #: two pass keys and the knowledge map address.
 ORGANIZE_CASE: dict[str, object] = {
+    "organize_context": "Golden current native graph and recorded rulings",
     "mandate_rubric": "Golden mandate rubric",
     "issue_body": "Golden source issue body",
     "issue_key": "external/42",

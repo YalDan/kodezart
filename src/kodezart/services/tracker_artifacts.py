@@ -4,6 +4,7 @@ import json
 
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import WriteBackReadError
+from kodezart.domain.organize_graph import graph_snapshot
 from kodezart.domain.tracker_writes import comment_under_marker
 from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -11,6 +12,8 @@ from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 _SUPPORTED = frozenset(
     {
         SurfaceKind.ISSUE_DESCRIPTION,
+        SurfaceKind.ISSUE_GRAPH,
+        SurfaceKind.ISSUE_SPLIT_SET,
         SurfaceKind.MARKER_COMMENT,
         SurfaceKind.CONTAINER_DESCRIPTION,
         SurfaceKind.CRITERION_SUB_ISSUE,
@@ -32,6 +35,54 @@ async def read_tracker_artifact(
     *, tracker: TrackerPort, surface: WritableSurface
 ) -> TrackerArtifact:
     require_artifact_read(surface)
+    if surface.kind is SurfaceKind.ISSUE_SPLIT_SET:
+        source = await tracker.read_issue(issue_key=surface.ref.key)
+        if source.issue_key != surface.ref.key:
+            raise WriteBackReadError("split source returned another native identity")
+        children = await tracker.read_split_children(source_key=source.issue_key)
+        split_keys: set[str] = set()
+        identities: set[str] = set()
+        split_rows: list[dict[str, object]] = []
+        for child in children:
+            identity = await tracker.read_issue_identity(issue_key=child.issue_key)
+            if (
+                child.issue_key in split_keys
+                or child.parent_key != source.issue_key
+                or identity is None
+                or identity.scope_key != surface.ref
+                or identity.deliverable_key in identities
+                or {"criterion", "decision"} & child.issue_labels
+            ):
+                raise WriteBackReadError(
+                    "split artifact has duplicate, misplaced or missing native identity"
+                )
+            split_keys.add(child.issue_key)
+            identities.add(identity.deliverable_key)
+            split_rows.append(
+                {
+                    "identity": identity.model_dump(mode="json"),
+                    **child.model_dump(
+                        mode="json", exclude={"created_at", "updated_at"}
+                    ),
+                }
+            )
+        return TrackerArtifact(
+            surface=surface,
+            native_ref=source.issue_key,
+            content=json.dumps(
+                sorted(split_rows, key=lambda row: str(row["issue_key"])),
+                sort_keys=True,
+            ),
+        )
+    if surface.kind is SurfaceKind.ISSUE_GRAPH:
+        issue = await tracker.read_issue(issue_key=surface.ref.key)
+        if issue.issue_key != surface.ref.key:
+            raise WriteBackReadError("graph artifact returned another identity")
+        return TrackerArtifact(
+            surface=surface,
+            native_ref=issue.issue_key,
+            content=graph_snapshot(issue).model_dump_json(),
+        )
     if surface.kind in {
         SurfaceKind.CRITERION_SUB_ISSUE,
         SurfaceKind.CRITERION_CHILD_SET,

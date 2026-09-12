@@ -15,6 +15,7 @@ from kodezart.domain.errors import OrganizeAdmissionIdentityError
 from kodezart.domain.organize import organize_gap
 from kodezart.services.agent_service import AgentService
 from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.types.domain.agent import AgentEvent, RateLimitWarningEvent, ResultEvent
 from kodezart.types.domain.organize import (
     AdmissionJudgment,
@@ -27,6 +28,7 @@ from kodezart.types.domain.organize import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -52,6 +54,7 @@ from tests.fakes import (
     FakeWorkspaceProvider,
 )
 from tests.prompts.sets import OPUS_SET, V5_SET
+from tests.prompts.test_organize_mandate_bindings import declared_operation
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
@@ -120,6 +123,7 @@ def tracker() -> FakeTrackerPort:
 
 def request() -> OrganizeAdmissionRequest:
     return OrganizeAdmissionRequest(
+        scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
         issue_key=SUBJECT,
         mandate_rubric="Apply the selected rubric.",
         repo_url=REPO,
@@ -206,6 +210,7 @@ def consumer(source, executor, workspace, set_name=V5_SET):
     )
     return OrganizeAdmission(
         tracker=source,
+        context=OrganizeContextReader(tracker=source, operation=declared_operation()),
         runner=runner,
         workspace=workspace,
         prompts=load_registry(default_set=set_name),
@@ -244,6 +249,7 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
             "Second linked body.",
             "First criterion body.",
             "Second criterion body.",
+            "Unlabelled child is not a criterion.",
             "Apply the selected rubric.",
             "unsupported-claim",
             SUBJECT,
@@ -252,7 +258,6 @@ async def test_every_call_reads_full_tracker_sources_and_dispatches_fresh_at_bas
             assert body in prompt
         for excluded in (
             "Unrelated issue stays outside the prompt.",
-            "Unlabelled child is not a criterion.",
             "Author rationale must never be forwarded.",
             "previous-agent-session",
         ):
@@ -340,7 +345,7 @@ async def test_surface_liveness_reads_never_retest_or_restamp():
     original_body = source.issues["criterion/a"].body
     await source.update_issue(issue_key="criterion/a", body="An amended Check body.")
     for key in keys:
-        assert await admission.is_live(results[key]) is (key != "criterion/a")
+        assert await admission.is_live(results[key]) is False
     assert len(executor.calls) == calls
     assert workspace.arguments == acquired
     assert {
@@ -467,8 +472,9 @@ async def test_real_revision_reader_lapses_the_exact_admission_surface(issue_key
     recorded = judged.model_dump_json()
     assert await admission.is_live(judged) is True
     await source.post_comment(issue_key=issue_key, body="A later discussion.")
-    await source.update_issue(issue_key=issue_key, title="A later title")
     assert await admission.is_live(judged) is True
+    await source.update_issue(issue_key=issue_key, title="A later title")
+    assert await admission.is_live(judged) is False
     await source.update_issue(issue_key=issue_key, body="A later body")
     assert await admission.is_live(judged) is False
     assert judged.model_dump_json() == recorded
@@ -577,7 +583,12 @@ async def test_all_three_verdicts_return_without_coercion_or_phase_writes(
     ).assess(request())
     revision = await source.read_issue_revision(issue_key=SUBJECT)
     assert actual == AdmissionResult.model_validate(
-        {**output, "admitted_body_digest": revision.body_digest}
+        {
+            **output,
+            "admitted_body_digest": revision.body_digest,
+            "admitted_scope": actual.admitted_scope,
+            "admitted_context_digest": actual.admitted_context_digest,
+        }
     )
     assert source.workflow_writes == []
 
@@ -692,6 +703,8 @@ def gap_admission(revision):
         verdict=AdmissionVerdict.BUILDABLE,
         evidence="The body has a concrete implementation and verification story.",
         admitted_body_digest=revision.body_digest,
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT),
+        admitted_context_digest="fixture-context",
     )
 
 
@@ -959,7 +972,18 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
             )
         ]
         judged.append(
-            await admission.assess(request().model_copy(update={"issue_key": key}))
+            await admission.assess(
+                request().model_copy(
+                    update={
+                        "issue_key": key,
+                        "scope": ScopeRef(
+                            kind=ScopeKind.ISSUE,
+                            key=(await source.read_issue(issue_key=key)).parent_key
+                            or key,
+                        ),
+                    }
+                )
+            )
         )
     baseline = tuple(value.model_dump_json() for value in judged)
     assert gap_of(await read_gap_revisions(source, keys), admissions=judged) == ()
@@ -991,8 +1015,8 @@ async def test_port_criterion_changes_use_only_surface_digests_for_parent_gap(
     assert tuple(item.issue_key for item in gap) == (
         (SUBJECT,) if change == "amended_body" else ()
     )
-    assert await admission.is_live(judged[0]) is True
-    assert await admission.is_live(judged[1]) is (change != "amended_body")
+    assert await admission.is_live(judged[0]) is (change == "unchanged_body")
+    assert await admission.is_live(judged[1]) is (change == "unchanged_body")
     assert await admission.is_live(judged[2]) is True
     assert await admission.is_live(judged[3]) is True
     assert tuple(value.model_dump_json() for value in judged) == baseline

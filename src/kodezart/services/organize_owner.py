@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from kodezart.chains.organize import OrganizeAdmission
-from kodezart.chains.organize_author import OrganizeAuthor
+from kodezart.chains.organize_author import OrganizeAuthor, ProposedWrite
 from kodezart.chains.write_back_verifier import (
     WriteBackFinding,
     WriteBackJudge,
@@ -31,8 +31,14 @@ from kodezart.domain.errors import (
     WriteBackReadError,
 )
 from kodezart.domain.organize import admission_route, is_organize_subject, organize_gap
+from kodezart.domain.organize_graph import (
+    graph_peers,
+    graph_snapshot,
+    validate_graph_change,
+)
 from kodezart.domain.prompt_variables import organize_variables
 from kodezart.services.lane_escalation import LaneEscalationWriter
+from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.gating import (
@@ -54,6 +60,12 @@ from kodezart.types.domain.organize import (
     ResolvedMandateSpec,
     SpecFinding,
     split_label_key,
+)
+from kodezart.types.domain.organize_graph import (
+    GraphProposal,
+    MilestoneChange,
+    OrganizeContext,
+    SplitProposal,
 )
 from kodezart.types.domain.organize_owner import (
     BodyProposal,
@@ -87,6 +99,20 @@ class _WriteStep:
         await self.apply(finding)
 
 
+def _created_context(context: OrganizeContext, child: TrackerIssue) -> OrganizeContext:
+    if child.issue_key in context.member_keys:
+        return context
+    return OrganizeContext(
+        scope=context.scope,
+        member_keys=tuple(sorted((*context.member_keys, child.issue_key))),
+        issues=tuple(
+            sorted((*context.issues, child), key=lambda issue: issue.issue_key)
+        ),
+        ruling_comments=context.ruling_comments,
+        milestones=context.milestones,
+    )
+
+
 def _author_key(kind: MandateKind) -> PromptKey:
     # The single phase-role lookup. All phases use the same owner and loops.
     return {
@@ -101,6 +127,7 @@ class OrganizeOwner:
         self,
         *,
         tracker: TrackerPort,
+        context: OrganizeContextReader,
         admission: OrganizeAdmission,
         author: OrganizeAuthor,
         judge: WriteBackJudge,
@@ -111,6 +138,7 @@ class OrganizeOwner:
         write_back_max_rounds: int,
         lease_seconds: float,
     ) -> None:
+        self._context = context
         self._tracker, self._admission, self._author = tracker, admission, author
         self._gate, self._prompts, self._operation = gate, prompts, operation
         self._policy, self._lease_seconds = policy, lease_seconds
@@ -206,6 +234,7 @@ class OrganizeOwner:
         base_ref: str,
         job_id: str,
         classes: set[str],
+        scope: ScopeRef,
     ) -> OrganizeAdmissionRequest:
         linked = [
             await self._tracker.read_issue(issue_key=key)
@@ -217,6 +246,9 @@ class OrganizeOwner:
         rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
             {
                 **organize_variables(
+                    graph_context=(
+                        await self._context.read(scope=scope)
+                    ).model_dump_json(),
                     mandate_rubric="",
                     issue_body=issue.body,
                     linked_issue_bodies=[i.body for i in linked],
@@ -229,6 +261,7 @@ class OrganizeOwner:
             }
         )
         return OrganizeAdmissionRequest(
+            scope=scope,
             issue_key=issue.issue_key,
             mandate_rubric=rubric,
             repo_url=repo_url,
@@ -326,23 +359,57 @@ class OrganizeOwner:
         evidence: str | None,
         visibility: RepoVisibility,
     ) -> WriteBackResult:
+        initial = await self._author.propose(request, key=key, evidence=evidence)
+        initial_value = initial.proposal.root
+        declared_peers = (
+            graph_peers(initial.revision.issue, initial_value.changes)
+            if isinstance(initial_value, GraphProposal)
+            else frozenset()
+        )
         kind = (
             SurfaceKind.CRITERION_CHILD_SET
-            if key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+            if isinstance(initial_value, CriteriaProposal)
+            else SurfaceKind.ISSUE_GRAPH
+            if isinstance(initial_value, GraphProposal)
+            else SurfaceKind.ISSUE_SPLIT_SET
+            if isinstance(initial_value, SplitProposal)
             else SurfaceKind.ISSUE_DESCRIPTION
         )
         surface = WritableSurface(
             kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=request.issue_key)
         )
 
+        async def require_context(proposal: ProposedWrite) -> None:
+            await self._require_revision(proposal.revision)
+            if not await self._context.matches(
+                scope=scope, digest=self._context.digest(proposal.context)
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=request.issue_key,
+                    reason="the author's graph context changed before writing",
+                )
+
+        async def authorize(proposal: ProposedWrite, peers: frozenset[str]) -> None:
+            for peer in sorted(peers):
+                await self._may_write(peer, phase=phase, scope=scope)
+            await require_context(proposal)
+            if await self._tracker.execution_approved(issue_key=request.issue_key):
+                raise OrganizeWriteRefusalError(
+                    issue_key=request.issue_key, reason="scope approval ended Organize"
+                )
+
         async def apply(finding: WriteBackFinding | None) -> None:
-            proposal = await self._author.propose(
-                request,
-                key=key,
-                evidence=evidence if finding is None else finding.model_dump_json(),
+            proposal = (
+                initial
+                if finding is None
+                else await self._author.propose(
+                    request,
+                    key=key,
+                    evidence=finding.model_dump_json(),
+                )
             )
             value = proposal.proposal.root
-            await self._require_revision(proposal.revision)
+            await require_context(proposal)
             await self._may_write(request.issue_key, phase=phase, scope=scope)
             if isinstance(value, UnavailableProposal):
                 raise OrganizeWriteRefusalError(
@@ -357,13 +424,134 @@ class OrganizeOwner:
                     question=value.question,
                     evidence=value.evidence,
                 )
-            if (kind is SurfaceKind.CRITERION_CHILD_SET) != isinstance(
-                value, CriteriaProposal
+            expected_type = {
+                SurfaceKind.ISSUE_DESCRIPTION: BodyProposal,
+                SurfaceKind.CRITERION_CHILD_SET: CriteriaProposal,
+                SurfaceKind.ISSUE_GRAPH: GraphProposal,
+                SurfaceKind.ISSUE_SPLIT_SET: SplitProposal,
+            }[kind]
+            if (
+                not isinstance(value, expected_type)
+                or (
+                    key is PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    and not isinstance(value, CriteriaProposal)
+                )
+                or (
+                    key is not PromptKey.ORGANIZE_CRITERIA_AUTHOR
+                    and isinstance(value, CriteriaProposal)
+                )
             ):
                 raise OrganizeWriteRefusalError(
                     issue_key=request.issue_key,
                     reason="author returned another write surface",
                 )
+            if isinstance(value, GraphProposal):
+                for change in value.changes:
+                    if (
+                        isinstance(change, MilestoneChange)
+                        and change.milestone_id is not None
+                        and change.milestone_id
+                        not in {item.ref.key for item in proposal.context.milestones}
+                    ):
+                        raise OrganizeWriteRefusalError(
+                            issue_key=request.issue_key,
+                            reason=(
+                                "the milestone identity was not in the author's "
+                                "current context"
+                            ),
+                        )
+                _, peers = validate_graph_change(
+                    issue_key=request.issue_key,
+                    changes=value.changes,
+                    issues=proposal.context.issues,
+                    member_keys=frozenset(proposal.context.member_keys),
+                )
+                if peers != declared_peers:
+                    raise OrganizeWriteRefusalError(
+                        issue_key=request.issue_key,
+                        reason="graph repair returned another set of affected surfaces",
+                    )
+                surfaces = frozenset(
+                    WritableSurface(
+                        kind=SurfaceKind.ISSUE_GRAPH,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
+                    )
+                    for peer in peers
+                )
+                async with RunSurfaceLease(
+                    tracker=self._tracker,
+                    job_id=job_id,
+                    surfaces=surfaces,
+                    lease_seconds=self._lease_seconds,
+                ) as lease:
+                    await lease.renew()
+                    await authorize(proposal, peers)
+                    await settle(
+                        self._tracker.update_issue_graph(
+                            issue_key=request.issue_key,
+                            expected=tuple(
+                                graph_snapshot(issue)
+                                for issue in proposal.context.issues
+                            ),
+                            changes=value.changes,
+                            holder=job_id,
+                        )
+                    )
+                return
+            if isinstance(value, SplitProposal):
+                # Gate every proposed child before any creation; an existing identity
+                # is returned unchanged by the actual create-only port boundary.
+                for child in value.children:
+                    for content, destination in (
+                        (child.title, OutboundDestination.TRACKER_TITLE),
+                        (child.body, OutboundDestination.TRACKER_DESCRIPTION),
+                    ):
+                        gated = await gated_write(
+                            gate=self._gate,
+                            log=self._log,
+                            content=content,
+                            visibility=visibility,
+                            shape=WriterShape.PROSE,
+                            destination=destination,
+                            content_class=ContentClass.AUTHORED,
+                        )
+                        if gated != content:
+                            raise OrganizeWriteRefusalError(
+                                issue_key=request.issue_key,
+                                reason="outbound gate changed split specification",
+                            )
+                expected_context = proposal.context
+                async with RunSurfaceLease(
+                    tracker=self._tracker,
+                    job_id=job_id,
+                    surfaces=frozenset({surface}),
+                    lease_seconds=self._lease_seconds,
+                ) as lease:
+                    for child in value.children:
+                        await lease.renew()
+                        await authorize(
+                            ProposedWrite(
+                                context=expected_context,
+                                revision=proposal.revision,
+                                proposal=proposal.proposal,
+                            ),
+                            frozenset({request.issue_key}),
+                        )
+                        created = await settle(
+                            self._tracker.create_split_if_absent(
+                                source_key=request.issue_key,
+                                deliverable_key=child.deliverable_key,
+                                title=child.title,
+                                body=child.body,
+                                holder=job_id,
+                                expected=tuple(
+                                    graph_snapshot(issue)
+                                    for issue in expected_context.issues
+                                ),
+                            )
+                        )
+                        expected_context = _created_context(expected_context, created)
+                return
             if isinstance(value, BodyProposal):
                 content = await gated_write(
                     gate=self._gate,
@@ -383,8 +571,7 @@ class OrganizeOwner:
                     lease_seconds=self._lease_seconds,
                 ) as lease:
                     await lease.renew()
-                    await self._require_revision(proposal.revision)
-                    await self._may_write(request.issue_key, phase=phase, scope=scope)
+                    await authorize(proposal, frozenset({request.issue_key}))
                     await settle(
                         self._tracker.edit_description(
                             target=request.issue_key,
@@ -392,7 +579,7 @@ class OrganizeOwner:
                             replacement=content,
                         )
                     )
-            else:
+            elif isinstance(value, CriteriaProposal):
                 children = await self._tracker.read_criteria(
                     issue_key=request.issue_key
                 )
@@ -440,6 +627,7 @@ class OrganizeOwner:
                             issue_key=request.issue_key,
                             reason="outbound gate changed criterion specification",
                         )
+                expected_context = proposal.context
                 async with RunSurfaceLease(
                     tracker=self._tracker,
                     job_id=job_id,
@@ -448,11 +636,15 @@ class OrganizeOwner:
                 ) as lease:
                     for item in missing:
                         await lease.renew()
-                        await self._require_revision(proposal.revision)
-                        await self._may_write(
-                            request.issue_key, phase=phase, scope=scope
+                        await authorize(
+                            ProposedWrite(
+                                context=expected_context,
+                                revision=proposal.revision,
+                                proposal=proposal.proposal,
+                            ),
+                            frozenset({request.issue_key}),
                         )
-                        await settle(
+                        created = await settle(
                             self._tracker.create_criterion_if_absent(
                                 parent_key=request.issue_key,
                                 title=item.title,
@@ -461,10 +653,41 @@ class OrganizeOwner:
                                 holder=job_id,
                             )
                         )
+                        expected_context = _created_context(expected_context, created)
 
-        return await self._verifier.write_back(
+        result = await self._verifier.write_back(
             step=_WriteStep(surface, apply), ref=request.base_ref
         )
+        if result.verdict is not AuditVerdict.HOLDS or not isinstance(
+            initial_value, GraphProposal
+        ):
+            return result
+        _, peers = validate_graph_change(
+            issue_key=request.issue_key,
+            changes=initial_value.changes,
+            issues=initial.context.issues,
+            member_keys=frozenset(initial.context.member_keys),
+        )
+
+        # Removed peers remain addressed from the original actual closure. This
+        # confirmation step has no write or repair capability on those peers.
+        async def confirm_peer(_finding: WriteBackFinding | None) -> None:
+            return None
+
+        for peer in sorted(peers - {request.issue_key}):
+            peer_result = await self._verifier.write_back(
+                step=_WriteStep(
+                    WritableSurface(
+                        kind=SurfaceKind.ISSUE_GRAPH,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
+                    ),
+                    confirm_peer,
+                ),
+                ref=request.base_ref,
+            )
+            if peer_result.verdict is not AuditVerdict.HOLDS:
+                return peer_result
+        return result
 
     async def _mark(
         self,
@@ -741,7 +964,13 @@ class OrganizeOwner:
                     break
                 gap = organize_gap(
                     revisions=snapshot,
-                    admissions=tuple(admissions.values()),
+                    admissions=tuple(
+                        [
+                            result
+                            for result in admissions.values()
+                            if await self._admission.is_live(result)
+                        ]
+                    ),
                     open_findings=findings,
                     body_marker_key=self._body_marker,
                 )
@@ -756,6 +985,7 @@ class OrganizeOwner:
                         base_ref=base_ref,
                         job_id=job_id,
                         classes=classes,
+                        scope=scope,
                     )
                     result = await self._admission.assess(request)
                     pending_findings = tuple(
@@ -865,6 +1095,13 @@ class OrganizeOwner:
                             return OrganizeReport(
                                 completed_phases=tuple(completed), halt=halt
                             )
+                        # Parent edits may remove this subject; splits may add
+                        # newly minted members. Continue on the actual membership.
+                        refreshed = await self._snapshot(scope)
+                        members = {revision.issue.issue_key for revision in refreshed}
+                        if request.issue_key not in members:
+                            admissions.pop(request.issue_key, None)
+                            break
                         result = await self._admission.verify(request)
                         route = await self._route(
                             result, issue=issue, scope_issue_keys=frozenset(members)
@@ -924,6 +1161,7 @@ class OrganizeOwner:
                         base_ref=base_ref,
                         job_id=job_id,
                         classes=classes,
+                        scope=scope,
                     )
                     result = await self._admission.verify(request)
                     fresh.append(result)
@@ -951,7 +1189,23 @@ class OrganizeOwner:
                     and not findings
                     and all([await self._admission.is_live(result) for result in fresh])
                 ):
-                    for issue in subjects:
+                    # Newly prepared split children belong to this same phase;
+                    # removed members no longer receive its marker.
+                    current_labels = await self._tracker.read_scope_labels(ref=scope)
+                    marker_subjects = [
+                        revision.issue
+                        for revision in current
+                        if is_organize_subject(revision.issue)
+                        and not await self._tracker.execution_approved(
+                            issue_key=revision.issue.issue_key
+                        )
+                        and (
+                            ScopeLabel(gate) in current_labels
+                            if namespace.value == "scope_labels"
+                            else gate in revision.issue.issue_labels
+                        )
+                    ]
+                    for issue in marker_subjects:
                         request = await self._request(
                             issue,
                             phase,
@@ -959,6 +1213,7 @@ class OrganizeOwner:
                             base_ref=base_ref,
                             job_id=job_id,
                             classes=classes,
+                            scope=scope,
                         )
                         if not await self._mark(
                             request,

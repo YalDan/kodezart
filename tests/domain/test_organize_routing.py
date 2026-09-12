@@ -9,6 +9,7 @@ from kodezart.types.domain.organize import (
     AdmissionVerdict,
     RefusalKind,
 )
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind
 from tests.fakes import make_tracker_issue
 
@@ -21,6 +22,8 @@ def unverifiable_result(**overrides):
         {
             "issue_id": ISSUE,
             "verdict": AdmissionVerdict.UNVERIFIABLE,
+            "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+            "admitted_context_digest": "fixture-context",
             "admitted_body_digest": "revision:one",
             "missing_artifact": "The schema produced by the named blocker.",
             "pending_blocker_id": BLOCKER,
@@ -92,6 +95,8 @@ def test_unverifiable_prose_cannot_approve_or_escalate_without_an_edge(evidence)
 @pytest.mark.parametrize("verdict", list(AdmissionVerdict))
 def test_result_cannot_be_routed_using_another_issues_edges(verdict):
     result = AdmissionResult(
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key="fixture-scope"),
+        admitted_context_digest="fixture-context",
         admitted_body_digest="revision:one",
         issue_id=ISSUE,
         verdict=verdict,
@@ -119,6 +124,8 @@ def test_result_cannot_be_routed_using_another_issues_edges(verdict):
 @pytest.mark.parametrize("has_blocker", [False, True])
 def test_buildable_requires_no_pending_blocker_proof(has_blocker):
     result = AdmissionResult(
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key="fixture-scope"),
+        admitted_context_digest="fixture-context",
         admitted_body_digest="revision:one",
         issue_id=ISSUE,
         verdict=AdmissionVerdict.BUILDABLE,

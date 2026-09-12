@@ -3,6 +3,7 @@
 import pytest
 
 from kodezart.types.domain.organize import AdmissionVerdict
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
 
 
 def test_admission_verdict_is_exactly_three_distinct_states():
@@ -155,6 +156,8 @@ def test_admission_result_round_trips_without_changing_verdict(verdict, fields):
     from kodezart.types.domain.organize import AdmissionResult
 
     result = AdmissionResult(
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key="fixture-scope"),
+        admitted_context_digest="fixture-context",
         admitted_body_digest="revision:one",
         issue_id="ISSUE-1",
         verdict=AdmissionVerdict(verdict),
@@ -244,6 +247,8 @@ def test_admission_refusal_requires_actionable_fields(verdict, fields):
         fields = {**fields, "refusal_kind": "spec_gap"}
     with pytest.raises(ValidationError):
         AdmissionResult(
+            admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key="fixture-scope"),
+            admitted_context_digest="fixture-context",
             admitted_body_digest="revision:one",
             issue_id="ISSUE-1",
             verdict=AdmissionVerdict(verdict),
@@ -362,6 +367,8 @@ def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
             {
                 "issue_id": "ISSUE-1",
                 "verdict": "not_buildable",
+                "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+                "admitted_context_digest": "fixture-context",
                 "admitted_body_digest": "revision:one",
                 "invented_decision": "Choose the storage model.",
                 "evidence": "The specification leaves that choice open.",
@@ -382,6 +389,8 @@ def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
             {
                 "issue_id": "ISSUE-1",
                 "verdict": verdict,
+                "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+                "admitted_context_digest": "fixture-context",
                 "admitted_body_digest": "revision:one",
                 "missing_artifact": "schema",
                 "pending_blocker_id": "ISSUE-9",
@@ -399,6 +408,8 @@ def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
         {
             "issue_id": "ISSUE-1",
             "verdict": verdict,
+            "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+            "admitted_context_digest": "fixture-context",
             "admitted_body_digest": "revision:one",
             **(
                 {"missing_artifact": "schema", "pending_blocker_id": "ISSUE-9"}
@@ -434,6 +445,8 @@ def test_admission_refusal_route_uses_kind_without_reading_tone(
         {
             "issue_id": "ISSUE-1",
             "verdict": "not_buildable",
+            "admitted_scope": {"kind": "issue", "key": "fixture-scope"},
+            "admitted_context_digest": "fixture-context",
             "admitted_body_digest": "revision:one",
             "invented_decision": invented_decision,
             "evidence": "The same evidence is used for either classification.",
