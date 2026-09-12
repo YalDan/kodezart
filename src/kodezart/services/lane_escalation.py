@@ -136,7 +136,9 @@ class LaneEscalationWriter:
                 await before_write()
             await settle(
                 self._tracker.set_issue_classification(
-                    issue_key=escalation.issue_id, classification="decision"
+                    issue_key=escalation.issue_id,
+                    classification="decision",
+                    holder=job_id,
                 )
             )
             return comment
