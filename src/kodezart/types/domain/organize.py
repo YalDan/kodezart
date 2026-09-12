@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, RootModel, field_validator, model_valida
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.scope_address import ScopeRef
 
 
 class AdmissionVerdict(StrEnum):
@@ -217,6 +218,8 @@ class AdmissionJudgment(_AdmissionView[AdmissionDecision]):
 
 class _AdmittedRevision(CamelCaseModel):
     admitted_body_digest: str = Field(min_length=1, pattern=r"\S")
+    admitted_scope: ScopeRef
+    admitted_context_digest: str = Field(min_length=1, pattern=r"\S")
 
 
 class _BuildableResult(BuildableAdmission, _AdmittedRevision):
@@ -243,6 +246,14 @@ class AdmissionResult(_AdmissionView[BoundAdmissionDecision]):
     @property
     def admitted_body_digest(self) -> str:
         return self.root.admitted_body_digest
+
+    @property
+    def admitted_scope(self) -> ScopeRef:
+        return self.root.admitted_scope
+
+    @property
+    def admitted_context_digest(self) -> str:
+        return self.root.admitted_context_digest
 
 
 class MandateKind(StrEnum):
@@ -312,6 +323,7 @@ class OrganizeAdmissionRequest(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
 
     issue_key: str = Field(min_length=1)
+    scope: ScopeRef
     mandate_rubric: str = Field(min_length=1)
     repo_url: str = Field(min_length=1)
     base_ref: str = Field(min_length=1)

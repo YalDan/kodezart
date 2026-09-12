@@ -34,6 +34,7 @@ def changeset_variables(changeset: ChangesetDigest) -> dict[str, object]:
 
 def organize_variables(
     *,
+    graph_context: str,
     mandate_rubric: str,
     issue_body: str,
     linked_issue_bodies: Sequence[str],
@@ -49,6 +50,7 @@ def organize_variables(
     The selected repository base uses the existing caller-owned base_ref binding.
     """
     return {
+        "organize_context": graph_context,
         "mandate_rubric": mandate_rubric,
         "issue_body": issue_body,
         "linked_issue_bodies": tuple(linked_issue_bodies),

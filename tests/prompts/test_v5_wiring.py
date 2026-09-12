@@ -47,6 +47,7 @@ from tests.prompts.test_prompt_wiring import load_registry
 ORGANIZE_INPUT_TAGS = (
     "mandate_rubric",
     "issue_key",
+    "organize_context",
     "issue_body",
     "linked_issue_bodies",
     "linked_issue",

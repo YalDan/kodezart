@@ -24,10 +24,12 @@ from kodezart.types.domain.organize import (
     RefusalKind,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.scope_address import ScopeKind, ScopeRef
 from tests.prompts.sets import EXAMPLE_OPERATION, OPUS_SET, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
 
 ORGANIZE_BINDINGS = {
+    "organize_context",
     "mandate_rubric",
     "issue_body",
     "linked_issue_bodies",
@@ -41,6 +43,8 @@ AUTHOR_ROLES = [PromptKey.ORGANIZE_AUTHOR, PromptKey.ORGANIZE_CRITERIA_AUTHOR]
 
 def refusal() -> AdmissionResult:
     return AdmissionResult(
+        admitted_scope=ScopeRef(kind=ScopeKind.ISSUE, key="fixture-scope"),
+        admitted_context_digest="fixture-context",
         admitted_body_digest="revision:one",
         issue_id="external/42",
         verdict=AdmissionVerdict.NOT_BUILDABLE,
@@ -52,6 +56,7 @@ def refusal() -> AdmissionResult:
 
 def variables(rubric: str = "Selected rubric") -> dict[str, object]:
     return organize_variables(
+        graph_context="Current native graph and recorded ruling facts",
         mandate_rubric=rubric,
         issue_body="Current source body\nwith a second line.",
         linked_issue_bodies=["First linked body", "Second linked body"],
@@ -198,6 +203,7 @@ def test_an_empty_child_family_and_first_authoring_round_remain_explicit(
     set_name: str, key: PromptKey
 ) -> None:
     supplied = organize_variables(
+        graph_context="Current native graph and recorded ruling facts",
         mandate_rubric="First round rubric",
         issue_body="Source without children",
         linked_issue_bodies=(),
