@@ -26,6 +26,7 @@ from kodezart.core.redispatch import until_permutation
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
+from kodezart.domain.amendment import NativeWriteRefusalError, repeated_upheld
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import (
@@ -35,11 +36,14 @@ from kodezart.domain.prompt_variables import (
 )
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
+    CriterionResult,
+    NativeAmendmentEvent,
     ResultEvent,
     WorkflowIterationEvent,
 )
@@ -85,9 +89,11 @@ class RalphLoop:
         delay_floor_for: DelayFloor,
         fan_in_max_attempts: int,
         criteria_reader: FireCriteriaReader | None = None,
+        amendments: NativeAmendments | None = None,
     ) -> None:
         self._service = service
         self._criteria_reader = criteria_reader
+        self._amendments = amendments
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -240,6 +246,25 @@ class RalphLoop:
         if native_criteria is not None:
             prompt += "\n\n" + tracker_checks_section(native_criteria)
 
+        native_guard = None
+        reports = state.get("amendment_reports", [])
+        blocked = False
+        if ctx.tracker_spec is not None and native_criteria is not None:
+            if self._amendments is None:
+                raise NativeWriteRefusalError(
+                    "Native execution requires the precommit amendment owner"
+                )
+            native_guard = self._amendments.for_writer(
+                spec=ctx.tracker_spec,
+                criteria=native_criteria,
+                base_ref=ctx.base_branch,
+                repo_url=ctx.repo_url,
+            )
+            if reports:
+                prompt += "\n\nPrior independent amendment reports:\n" + "\n".join(
+                    report.model_dump_json() for report in reports
+                )
+
         commit_sha: str | None = None
         async for event in self._service.stream_workflow(
             prompt=prompt,
@@ -257,15 +282,26 @@ class RalphLoop:
             visibility=ctx.repo_visibility,
             create_branch=is_first,
             cache_key=ctx.cache_key,
+            native_guard=native_guard,
         ):
+            if isinstance(event, NativeAmendmentEvent):
+                reports = [*reports, event.report]
+                blocked = bool(event.report.upheld)
+                event = NativeAmendmentEvent(
+                    report=event.report,
+                    repeated=repeated_upheld(reports),
+                )
             writer(event)
             if isinstance(event, ResultEvent) and event.commit_sha:
                 commit_sha = event.commit_sha
 
-        return {
+        update: dict[str, object] = {
             "iteration": iteration,
             "iteration_commit_sha": commit_sha,
         }
+        if native_guard is not None:
+            update.update(amendment_reports=reports, amendment_blocked=blocked)
+        return update
 
     async def _evaluate_node(
         self,
@@ -302,6 +338,25 @@ class RalphLoop:
                     reader=self._criteria_reader,
                 )
                 criteria = list(snapshot.criteria)
+            if state.get("amendment_blocked", False):
+                return grade_iteration(
+                    criteria,
+                    AcceptanceCriteriaOutput(
+                        criteria_results=[
+                            CriterionResult(
+                                criterion_id=item.id,
+                                criterion=item.text,
+                                passed=False,
+                                reasoning=(
+                                    "The independent precommit gate upheld a subject; "
+                                    "this proposed departure was not committed "
+                                    "or evaluated."
+                                ),
+                            )
+                            for item in criteria
+                        ],
+                    ),
+                )
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
                 {
                     **execution_criteria_variables(criteria),

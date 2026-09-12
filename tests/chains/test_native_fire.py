@@ -29,6 +29,7 @@ from kodezart.domain.errors import (
 from kodezart.domain.thread_id import workflow_thread_id
 from kodezart.domain.workflow_state import validated_criteria
 from kodezart.services.agent_service import AgentService
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
     AcceptanceCriteriaOutput,
@@ -43,7 +44,7 @@ from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.operation import ScopeLabel
+from kodezart.types.domain.operation import OperationConfig, ScopeLabel
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -176,10 +177,11 @@ def engine(
     checkpointer=None,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage."""
+    workspace = FakeWorkspaceProvider()
     service = AgentService(
         git_base_url="https://github.com",
         executor=executor or FakeAgentExecutor(events=[]),
-        workspace=FakeWorkspaceProvider(),
+        workspace=workspace,
         persister=FakeChangePersister(),
     )
     prompts = make_prompt_provider()
@@ -187,6 +189,22 @@ def engine(
     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     if real_loop:
         quality_gate = RalphLoop(
+            amendments=(
+                NativeAmendments(
+                    tracker=criteria._tracker,
+                    operation=native_operation(),
+                    criteria=criteria,
+                    git=git,
+                    source=NativeSourceReader(),
+                    workspace=workspace,
+                    runner=service,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
+                    repositories=(),
+                )
+                if criteria is not None
+                else None
+            ),
             service=service,
             max_iterations=max_iterations,
             criteria_reader=criteria,
@@ -535,6 +553,31 @@ def native_evaluation(*, failed: bool = False, checks=None, reconciled=False):
     }
 
 
+def native_operation():
+    return OperationConfig(
+        operation_name="native-fixture",
+        workspace="fixture",
+        marker_prefixes={"ruling": "native-fixture-ruling"},
+    )
+
+
+class NativeSourceReader:
+    """The immutable Git-read double paired with these fake Git workspaces.
+
+    These freshness tests report no departure claims and open no semantic judge.
+    Actual source/citation behavior is exercised with real Git in amendment tests.
+    """
+
+    async def resolve_commit(self, *, cwd, ref):
+        return ref if len(ref) == 40 else "b" * 40
+
+    async def read_source(self, *, cwd, commit_sha, path):
+        raise AssertionError("A no-claim writer must not read semantic citations")
+
+    async def find_source(self, *, cwd, commit_sha, path):
+        raise AssertionError("A no-claim writer must not search semantic citations")
+
+
 class NativeExecutor(FakeAgentExecutor):
     """Only the agent boundary is scripted; all execution consumers are real."""
 
@@ -563,6 +606,9 @@ class NativeExecutor(FakeAgentExecutor):
             if self.on_remediation is not None:
                 self.on_remediation()
             output = {"instructions": "Repair only the observed failing behavior."}
+        elif "claims" in properties:
+            self.execution_prompts.append(kwargs["prompt"])
+            output = {"claims": []}
         elif output_format is None:
             self.execution_prompts.append(kwargs["prompt"])
             output = None
@@ -982,6 +1028,11 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     from kodezart.core.config import AppConfig
     from tests.fakes import FakeRefPublisher
 
+    monkeypatch.setattr(
+        "kodezart.composition.engine.SubprocessGitSourceReader",
+        NativeSourceReader,
+    )
+
     port = CountingTracker()
     source = TrackerCriteria(tracker=port)
     executor = NativeExecutor([native_evaluation(), native_evaluation()])
@@ -994,6 +1045,8 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
     )
     artifacts = FakeArtifactPersister()
     router = build_workflow_engine(
+        operation=native_operation(),
+        scope_tracker=port,
         config=AppConfig(
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=1,
@@ -1016,8 +1069,8 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
         criteria=source,
     )
     monkeypatch.setattr(TicketDraftOutput, "__init__", no_authored_ticket)
-    # Direct fire proves constructor capability only. The outer public scope
-    # router still refuses scoped jobs until its separate production slice.
+    # Direct fire proves constructor capability. The scope wrapper has its own
+    # production-route tests; only the immutable Git adapter is doubled here.
     fire = router.arm_for(None).fire
     events = await drive(fire, scope=ScopeRef(kind=ScopeKind.ISSUE, key=SUBJECT))
     terminal = next(

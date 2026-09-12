@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.amendment import AmendmentReport
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
@@ -205,6 +206,8 @@ class RalphLoopState(TypedDict):
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
+    amendment_reports: NotRequired[list[AmendmentReport]]
+    amendment_blocked: NotRequired[bool]
 
 
 class WorkflowState(TypedDict):

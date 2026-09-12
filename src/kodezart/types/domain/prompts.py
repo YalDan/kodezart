@@ -28,6 +28,8 @@ class PromptKey(StrEnum):
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
     CRITERIA_VALIDATION = "criteria_validation"
     IMPLEMENTATION = "implementation"
+    NATIVE_WRITER_CONTRACT = "native_writer_contract"
+    AMENDMENT_JUDGE = "amendment_judge"
     EVALUATION = "evaluation"
     ITERATION_FEEDBACK = "iteration_feedback"
     POST_MERGE_REVIEW = "post_merge_review"

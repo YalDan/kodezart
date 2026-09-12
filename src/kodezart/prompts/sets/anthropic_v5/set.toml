@@ -11,7 +11,7 @@ engines = ["opus-5", "fable-5", "sonnet-5"]
 # key at authoring time — the knowledge map is here because it is a
 # prelude, and a prelude carrying its own depth block would put a second
 # one inside the prompt it joins.
-utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record"]
+utility_keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract"]
 
 # Which fan-out primitive this set's generative roles are told to use. Set
 # from the harness enumeration's measured verdict, never model-judged: the
@@ -219,6 +219,7 @@ keys = [
     "content_audit",
     "organize_assess",
     "organize_verify",
+    "amendment_judge",
     "write_back_verify",
     "audit_claim",
     "audit_overclaim",
@@ -236,4 +237,4 @@ keys = ["implementation", "fix"]
 [session_roles.utility]
 effort = "low"
 skills = []
-keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record"]
+keys = ["branch_name", "commit_message", "pr_description", "knowledge_map", "fire_record", "native_writer_contract"]

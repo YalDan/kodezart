@@ -17,6 +17,8 @@ divergence-recovery path fails — in that case no state has been
 mutated (no reset, no commit-tree, no follow-up push).
 """
 
+from collections.abc import Awaitable, Callable
+
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
@@ -27,6 +29,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
 )
 from kodezart.core.stream_drain import drain
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.types.domain.agent import (
     COMMIT_MESSAGE_SCHEMA,
     CommitMessageOutput,
@@ -77,6 +80,7 @@ class GitChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection,
         visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Ensure ``<remote>/<branch>`` equals workspace HEAD.
 
@@ -91,6 +95,8 @@ class GitChangePersister:
           ``RuntimeError`` only if the pre-mutation backup push fails;
           no state is mutated in that case.
         """
+        if before_commit is not None:
+            await before_commit()
         if await self._git.has_changes(workspace_path):
             return await self._persist_dirty(
                 workspace_path=workspace_path,
@@ -98,6 +104,7 @@ class GitChangePersister:
                 executor=executor,
                 skills=skills,
                 visibility=visibility,
+                before_commit=before_commit,
             )
 
         head_sha = await self._git.current_sha(workspace_path)
@@ -116,6 +123,10 @@ class GitChangePersister:
             head_sha,
         )
         if not head_descends_from_remote:
+            if before_commit is not None:
+                raise NativeWriteRefusalError(
+                    "Guarded native persistence cannot recover a divergent branch"
+                )
             if remote_tip is None:
                 msg = (
                     f"Internal invariant violated: divergence branch entered "
@@ -132,6 +143,8 @@ class GitChangePersister:
             )
 
         head_message = await self._git.head_commit_message(workspace_path)
+        if before_commit is not None:
+            await before_commit()
         await self._git.push(workspace_path, branch)
         await self._log.ainfo(
             "agent_direct_commit_pushed",
@@ -153,6 +166,7 @@ class GitChangePersister:
         executor: AgentExecutor,
         skills: SkillsSelection,
         visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None,
     ) -> PersistResult:
         commit_msg = await self._generate_commit_message(
             executor,
@@ -171,6 +185,8 @@ class GitChangePersister:
             OutboundDestination.COMMIT_MESSAGE,
             ContentClass.AUTHORED,
         )
+        if before_commit is not None:
+            await before_commit()
         sha = await self._git.commit(
             cwd=workspace_path,
             message=full_message,

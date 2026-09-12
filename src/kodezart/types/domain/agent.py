@@ -1,7 +1,7 @@
 """Agent event domain models for SSE streaming."""
 
 from enum import StrEnum
-from typing import Annotated, Literal, NewType, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     ConfigDict,
@@ -12,6 +12,12 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.amendment import (
+    AmendmentJudgment,
+    AmendmentReport,
+    NativeWriterOutput,
+    RepeatedUpheld,
+)
 from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
@@ -42,6 +48,7 @@ from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+from kodezart.types.domain.ruling_id import RulingId as RulingId
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
@@ -52,8 +59,6 @@ from kodezart.types.job_acceptance import (
     AcceptedQueuePosition,
     JobLink,
 )
-
-RulingId = NewType("RulingId", str)
 
 
 class RulingAuthor(StrEnum):
@@ -81,6 +86,7 @@ RaiseSite = Literal[
     "organize_author",
     "organize_criteria_author",
     "organize_verify",
+    "amendment_judge",
     "write_back_verify",
     "audit_claim",
     "audit_overclaim",
@@ -1085,6 +1091,14 @@ class WorkflowTicketEvent(AgentEvent):
 # Terminal events are consumed by its caller; authored ticket/artifact events
 # belong to the authored composition. Reuse models so wire validation preserves
 # every field rather than deserializing the AgentEvent base alone.
+class NativeAmendmentEvent(AgentEvent):
+    """Independent precommit findings; upheld departures were not actioned."""
+
+    type: Literal["native_amendment"] = "native_amendment"
+    report: AmendmentReport
+    repeated: tuple[RepeatedUpheld, ...] = ()
+
+
 type NativeFireProgressEvent = Annotated[
     UserMessageEvent
     | AssistantTextEvent
@@ -1106,7 +1120,8 @@ type NativeFireProgressEvent = Annotated[
     | WorkflowReviewEvent
     | WorkflowRemediationEvent
     | WorkflowVisibilityEvent
-    | WorkflowScopeBaseEvent,
+    | WorkflowScopeBaseEvent
+    | NativeAmendmentEvent,
     Field(discriminator="type"),
 ]
 
@@ -1148,6 +1163,8 @@ DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_
 
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
+NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
+AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
 ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 
@@ -1155,6 +1172,8 @@ WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 #: wire-contract tests and the dispatch-site guard both read this rather
 #: than keeping their own list.
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+    "NATIVE_WRITER_SCHEMA": NATIVE_WRITER_SCHEMA,
+    "AMENDMENT_JUDGMENT_SCHEMA": AMENDMENT_JUDGMENT_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,

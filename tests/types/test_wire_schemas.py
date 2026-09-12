@@ -34,6 +34,7 @@ from kodezart.types.domain.agent import (
     TicketDraftOutput,
     TicketReviewOutput,
 )
+from kodezart.types.domain.amendment import AmendmentJudgment, NativeWriterOutput
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
@@ -72,6 +73,8 @@ CALLER_SUPPLIED_SCHEMA = "request.output_schema"
 #: parametrizes over ``WIRE_SCHEMAS`` and indexes this, so a roster entry
 #: with no model here fails rather than going unchecked.
 WIRE_MODELS: dict[str, type[BaseModel]] = {
+    "NATIVE_WRITER_SCHEMA": NativeWriterOutput,
+    "AMENDMENT_JUDGMENT_SCHEMA": AmendmentJudgment,
     "COMMIT_MESSAGE_SCHEMA": CommitMessageOutput,
     "ACCEPTANCE_CRITERIA_SCHEMA": AcceptanceCriteriaOutput,
     "BRANCH_NAME_SCHEMA": BranchNameOutput,
@@ -193,6 +196,12 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "services/native_amendments.py",
+        ("_NativeWriterGuard", "_judge_claim"),
+        "judge_in_workspace",
+        "AMENDMENT_JUDGMENT_SCHEMA",
+    ),
     (
         "chains/organize_author.py",
         ("OrganizeAuthor", "propose"),
