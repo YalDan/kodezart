@@ -156,12 +156,24 @@ class FreshWriteBackJudge:
         git: GitService,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
-        repo_url: str,
+        repo_url: str | None = None,
+        repo_path: str | None = None,
         session_type: SessionType,
     ) -> None:
+        if (repo_url is None) == (repo_path is None) or any(
+            value is not None and not value.strip() for value in (repo_url, repo_path)
+        ):
+            raise ValueError(
+                "write-back verification requires exactly one nonblank "
+                "repository source"
+            )
         self._runner, self._workspace, self._git = runner, workspace, git
         self._prompts, self._skills = prompts, skills
-        self._repo_url, self._session_type = repo_url, session_type
+        self._repo_url, self._repo_path, self._session_type = (
+            repo_url,
+            repo_path,
+            session_type,
+        )
 
     async def _require_head(self, workspace: str, ref: str) -> None:
         if await settle(
@@ -188,7 +200,7 @@ class FreshWriteBackJudge:
             }
         )
         async with owned_workspace(
-            self._workspace, repo_url=self._repo_url, ref=ref
+            self._workspace, repo_url=self._repo_url, repo_path=self._repo_path, ref=ref
         ) as workspace:
             await self._require_head(workspace, ref)
             structured = await judge_in_workspace(

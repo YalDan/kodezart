@@ -18,8 +18,8 @@ from kodezart.types.domain.amendment import (
     NativeWriterOutput,
     RepeatedUpheld,
 )
-from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.amendment_write import AmendmentTextOutput
+from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
