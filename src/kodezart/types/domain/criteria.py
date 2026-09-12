@@ -369,9 +369,15 @@ class Contradiction(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_ids: list[CriterionIdItem] = Field(
-        min_length=2,
-        description="The minimal subset of criterion ids that cannot all hold at once.",
+    # This validator only consumes minted authored criteria. Shared execution
+    # identity lists retain the native-key constraints on CriterionIdItem.
+    criterion_ids: list[Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]] = (
+        Field(
+            min_length=2,
+            description=(
+                "The minimal subset of criterion ids that cannot all hold at once."
+            ),
+        )
     )
     explanation: str = Field(
         min_length=1,

@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
@@ -41,7 +41,7 @@ from kodezart.types.domain.audit import (
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.criteria import (
-    CriterionIdItem,
+    CRITERION_ID_PATTERN,
 )
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.remediation import RemediationPlan
@@ -262,7 +262,7 @@ def test_a_dispatched_schema_carries_its_constraints() -> None:
     assert isinstance(criterion_ids, dict)
     item = criterion_ids["items"]
     assert isinstance(item, dict)
-    assert item == TypeAdapter(CriterionIdItem).json_schema()
+    assert item == {"pattern": CRITERION_ID_PATTERN, "type": "string"}
 
     explanation = properties["explanation"]
     assert isinstance(explanation, dict)
