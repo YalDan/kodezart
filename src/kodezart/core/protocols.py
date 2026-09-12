@@ -33,6 +33,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
 from kodezart.types.domain.operation import (
     CheckStep,
     LifecycleStage,
@@ -78,6 +79,7 @@ from kodezart.types.domain.tracker import (
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 
 
 @runtime_checkable
@@ -131,6 +133,12 @@ class GitService(Protocol):
     """Git operations port — SubprocessGitService satisfies this."""
 
     async def validate_repo(self, repo_path: str) -> None: ...
+
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        """Read actual Git/index/working content identity without mutating it."""
+        ...
 
     def is_repo(self, path: str) -> bool: ...
 
@@ -353,6 +361,22 @@ class WorkspaceProvider(Protocol):
 
     async def release(self, workspace_path: str) -> None:
         """Release and clean up a previously acquired workspace."""
+        ...
+
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        """Capture an owned acquisition and its actual current Git identity."""
+        ...
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        """Validate original ownership/current facts before adopting a worktree."""
         ...
 
 
@@ -1521,8 +1545,28 @@ class AgentRunner(Protocol):
 class NativeWriteGuard(Protocol):
     """A native session's live semantic and source authority before commit."""
 
+    @property
+    def holder(self) -> str:
+        """The actual parent job supplied when this native guard was composed."""
+        ...
+
     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
         """Read the actual starting HEAD and render the current ruling registry."""
+        ...
+
+    def snapshot(self) -> NativeAuthoritySnapshot:
+        """Capture original facts and only the writer's verified source changes."""
+        ...
+
+    async def restore(
+        self,
+        *,
+        snapshot: NativeAuthoritySnapshot,
+        workspace_path: str,
+        start: NativeWriterStart,
+        receipt: PersistResult | None = None,
+    ) -> None:
+        """Restore the same original authority and recheck its actual sources."""
         ...
 
     async def judge(

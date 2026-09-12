@@ -189,14 +189,16 @@ def engine(
     gate = PassThroughGate()
     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     if real_loop:
+        source = NativeSourceReader()
         quality_gate = RalphLoop(
+            source=source,
             amendments=(
                 NativeAmendments(
                     tracker=criteria._tracker,
                     operation=native_operation(),
                     criteria=criteria,
                     git=git,
-                    source=NativeSourceReader(),
+                    source=source,
                     workspace=workspace,
                     runner=service,
                     prompts=prompts,

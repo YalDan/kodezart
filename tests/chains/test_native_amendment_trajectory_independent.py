@@ -14,6 +14,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.ralph_outcome import NativeEvaluatedRalphOutcome
 from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.trajectory import IterationRecord
@@ -112,6 +113,18 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
         "verdict": previous_grade.verdict,
         "pending_failures": previous_grade.failures,
         "iteration_records": previous_records,
+        "outcome": NativeEvaluatedRalphOutcome(
+            event=WorkflowIterationEvent(
+                iteration=2,
+                branch="native-loop",
+                commit_sha=previous_record.commit_sha,
+                verdict=previous_grade.verdict,
+                evaluation=AcceptanceCriteriaOutput.model_validate(observed),
+                trajectory=fold_trajectory(previous_records, plateau_window=2),
+            ),
+            criteria=tuple(current.criteria),
+            head_sha=previous_record.commit_sha,
+        ),
     }
     events = []
     final = None

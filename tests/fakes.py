@@ -191,6 +191,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
@@ -503,6 +504,25 @@ class FakeGitService:
 
     async def validate_repo(self, repo_path: str) -> None:
         self.calls.append(("validate_repo", repo_path))
+
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        self.calls.append(("worktree_identity", cwd, repository_path))
+        return GitWorktreeIdentity(
+            root=cwd,
+            root_device=1,
+            root_inode=1,
+            common_dir="/fixture/repo/.git",
+            common_device=1,
+            common_inode=2,
+            git_dir="/fixture/repo/.git/worktrees/fixture",
+            git_device=1,
+            git_inode=3,
+            branch="fixture-branch",
+            head_sha=await self.current_sha(cwd),
+            content_digest=sha256(str(self.has_changes_result).encode()).hexdigest(),
+        )
 
     def is_repo(self, path: str) -> bool:
         self.calls.append(("is_repo", path))
@@ -990,6 +1010,9 @@ class FakeWorkspaceProvider:
         self._acquire_count = 0
         self._workspace_path = workspace_path
         self.calls: list[tuple[str, ...]] = []
+        self._snapshots: dict[str, WorkspaceSnapshot] = {}
+        self._branches: dict[str, str | None] = {}
+        self._repositories: dict[str, str] = {}
 
     async def acquire(
         self,
@@ -1005,10 +1028,50 @@ class FakeWorkspaceProvider:
         self._acquire_count += 1
         if self._fail_acquire and self._acquire_count > self._fail_after:
             raise WorkspaceError(self._fail_acquire)
+        self._branches[self._workspace_path] = branch_name
+        self._repositories[self._workspace_path] = repo_path or repo_url or ""
         return self._workspace_path
 
     async def release(self, workspace_path: str) -> None:
         self.calls.append(("release", workspace_path))
+
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        self.calls.append(("capture", workspace_path, holder))
+        branch = self._branches.get(workspace_path)
+        if branch is None:
+            raise WorkspaceError("The fixture has no acquired native branch")
+        identity = await FakeGitService().worktree_identity(
+            workspace_path, repository_path=self._repositories[workspace_path]
+        )
+        snapshot = WorkspaceSnapshot(
+            workspace_path=workspace_path,
+            workspace_id="fixture-workspace",
+            repository_path=self._repositories[workspace_path],
+            repository_device=1,
+            repository_inode=4,
+            holder=holder,
+            identity=GitWorktreeIdentity.model_validate(
+                {**identity.model_dump(), "branch": branch}
+            ),
+        )
+        self._snapshots[workspace_path] = snapshot
+        return snapshot
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        self.calls.append(("resume", snapshot.workspace_path, holder))
+        if snapshot.holder != holder:
+            raise WorkspaceError("The fixture workspace belongs to another holder")
+        self._snapshots[snapshot.workspace_path] = snapshot
+        self._branches[snapshot.workspace_path] = snapshot.identity.branch
+        self._repositories[snapshot.workspace_path] = snapshot.repository_path
 
 
 class FakeChangePersister:

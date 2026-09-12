@@ -425,16 +425,9 @@ class RalphWorkflowEngine:
                 msg = "The addressed issue and the run's issue key disagree"
                 raise ScopedExecutionUnavailableError(msg, ref=scope)
             issue_key = scope.key
-        # TODO(time-travel): E2E checkpoint resume still requires:
-        # 2. On resume: pass None (not initial_state) to astream()
-        #    so LangGraph loads from the outer checkpoint.
-        # 4. Sub-graphs are called imperatively (not LangGraph
-        #    subgraphs), so each has isolated checkpoints. On outer
-        #    resume the sub-graph nodes re-enter; inner loops must
-        #    also accept a resume signal (see ralph_loop.py and
-        #    ticket_generation.py TODOs).
-        # 5. WorkflowRequest and the handler need a resume signal to
-        #    plumb an existing job id back in from HTTP.
+        # Public HTTP resubmission still needs an explicit existing-job resume
+        # contract. Native parent None-resume preserves the nested loop/phase
+        # checkpoints; authored ticket-generation resume remains separate.
         # Refuses here, before any node: a stale baseline produces no
         # scope verdict at all rather than one graded against the wrong tree.
         scope_base(base_spec, implied_base)
