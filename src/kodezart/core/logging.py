@@ -40,7 +40,12 @@ def configure_logging(*, log_level: str = "INFO", pretty: bool = False) -> None:
         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
     ]
     if pretty:
-        renderer = structlog.dev.ConsoleRenderer(colors=True)
+        # Traceback locals can include entire live graphs and workspaces.
+        # Render the raising frames without executing their objects' reprs.
+        renderer = structlog.dev.ConsoleRenderer(
+            colors=True,
+            exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False),
+        )
     else:
         formatter_processors.append(structlog.processors.format_exc_info)
         renderer = structlog.processors.JSONRenderer()
