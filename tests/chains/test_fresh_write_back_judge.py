@@ -27,7 +27,7 @@ ARTIFACT = TrackerArtifact(
 )
 
 
-def build(payload, *, git=None, prompt_set="claude-opus"):
+def build(payload, *, git=None, prompt_set="claude-opus", source=None):
     executor = FakeAgentExecutor([result(structured_output=payload)])
     workspace = RecordingWorkspace()
     judge = FreshWriteBackJudge(
@@ -40,10 +40,35 @@ def build(payload, *, git=None, prompt_set="claude-opus"):
         git=git or FakeGitService(),
         prompts=load_registry(default_set=prompt_set),
         skills=SUPPRESS_ALL_SKILLS,
-        repo_url="https://example.invalid/repo",
+        **({"repo_url": "https://example.invalid/repo"} if source is None else source),
         session_type=SessionType.SCHEDULED_PASS,
     )
     return judge, executor, workspace
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {},
+        {"repo_url": ""},
+        {"repo_path": "  "},
+        {"repo_url": "url", "repo_path": "path"},
+        {"repo_url": "  ", "repo_path": None},
+    ],
+)
+def test_repository_source_is_exactly_one_nonblank_constructor_input(source):
+    with pytest.raises(ValueError, match="exactly one nonblank"):
+        build({}, source=source)
+
+
+async def test_local_repository_is_forwarded_without_inventing_a_url():
+    judge, _, workspace = build(
+        {"verdict": "holds", "evidence": "Actual local evidence"},
+        source={"repo_path": "/actual/writer/workspace"},
+    )
+    await judge.judge(artifact=ARTIFACT, ref=HEAD)
+    assert workspace.arguments[0]["repo_path"] == "/actual/writer/workspace"
+    assert workspace.arguments[0]["repo_url"] is None
 
 
 @pytest.mark.parametrize("prompt_set", ["claude-opus", "anthropic_v5"])

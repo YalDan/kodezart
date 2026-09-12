@@ -43,6 +43,7 @@ def adapter():
     )
     tracker = LinearMcpTracker(
         caller=server,
+        issue_labels={},
         marker_prefixes={**MARKER_PREFIXES, "evidence": "fixture-evidence"},
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -84,6 +85,9 @@ async def test_actual_adapter_rounds_reread_and_repair(repair):
             SurfaceKind.ISSUE_DESCRIPTION,
             SurfaceKind.MARKER_COMMENT,
             SurfaceKind.CONTAINER_DESCRIPTION,
+            SurfaceKind.ISSUE_LABEL_SET,
+            SurfaceKind.CRITERION_SUB_ISSUE,
+            SurfaceKind.CRITERION_CHILD_SET,
         }
     ],
 )

@@ -345,11 +345,12 @@ tool policy. It owns a detached workspace at a complete commit SHA, checks head,
 dirtiness and native Git replacement refs before and after judgment, and settles
 owned reads and workspace cleanup before propagating cancellation.
 
-The initial extracted artifact reader supports issue descriptions, exact
-marker-keyed comments and container descriptions. Other declared surfaces raise
-`WriteBackReadError` before the step writes. Label and criterion readback remain
-an explicit shared-reader increment after the native-read port prerequisites;
-graph and split readers belong to their later Organize integration. This slice
+The extracted artifact reader supports issue descriptions, exact marker-keyed
+comments, container descriptions, configured issue labels, individual native
+criteria and complete current criterion families. Structured native reads require
+reported fields instead of treating omissions as empty facts. Other declared
+surfaces raise `WriteBackReadError` before the step writes; graph and split readers
+belong to their later Organize integration. This slice
 does not add scheduler consumers, state transitions, content-gate bypasses or
 backend fencing. Configured adoption of the shared verification bound and every
 lane's actual writer remains with those consumers.
