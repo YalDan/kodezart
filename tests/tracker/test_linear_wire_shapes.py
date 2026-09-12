@@ -35,11 +35,7 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
-from kodezart.core.backoff import RetryPolicy
-from kodezart.core.errors import TrackerProtocolError
-from kodezart.core.protocols import McpToolResult
-from kodezart.types.domain.dispatch import SelfWriteLedger
-from kodezart.types.domain.linear_mcp import (
+from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,
@@ -52,6 +48,10 @@ from kodezart.types.domain.linear_mcp import (
     LinearTeamListWire,
     LinearUserListWire,
 )
+from kodezart.core.backoff import RetryPolicy
+from kodezart.core.errors import TrackerProtocolError
+from kodezart.core.protocols import McpToolResult
+from kodezart.types.domain.dispatch import SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker import (
     IssueQuery,

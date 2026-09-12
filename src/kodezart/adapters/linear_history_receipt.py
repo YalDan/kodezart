@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import ValidationError
 
-from kodezart.types.domain.linear_mcp import LinearStateHistoryEntryWire
+from kodezart.adapters.linear_mcp_types import LinearStateHistoryEntryWire
 from kodezart.types.domain.self_writes import OwnMutation, field_value, field_values
 
 

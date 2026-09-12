@@ -24,7 +24,38 @@ from pydantic import ValidationError
 from kodezart.adapters.linear_history_receipt import state_history_receipt
 from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
+from kodezart.adapters.linear_mcp_types import (
+    LINEAR_NAMED_ARRAY,
+    LinearAssetWire,
+    LinearCommentEntryWire,
+    LinearCommentListWire,
+    LinearCommentWire,
+    LinearCriterionIssueWire,
+    LinearDiffListWire,
+    LinearDocumentListWire,
+    LinearDocumentSummaryWire,
+    LinearDocumentWire,
+    LinearIssueDetailWire,
+    LinearIssueListWire,
+    LinearIssueStateHistoryWire,
+    LinearIssueWire,
+    LinearLabelListWire,
+    LinearLabelWire,
+    LinearNamedWire,
+    LinearPlanningIssueWire,
+    LinearProjectWire,
+    LinearTeamListWire,
+    LinearTeamWire,
+    LinearThreadCommentListWire,
+    LinearUserListWire,
+    LinearUserWire,
+    LinearWireModel,
+)
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.adapters.linear_scope_types import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -72,37 +103,6 @@ from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
-from kodezart.types.domain.linear_mcp import (
-    LINEAR_NAMED_ARRAY,
-    LinearAssetWire,
-    LinearCommentEntryWire,
-    LinearCommentListWire,
-    LinearCommentWire,
-    LinearCriterionIssueWire,
-    LinearDiffListWire,
-    LinearDocumentListWire,
-    LinearDocumentSummaryWire,
-    LinearDocumentWire,
-    LinearIssueDetailWire,
-    LinearIssueListWire,
-    LinearIssueStateHistoryWire,
-    LinearIssueWire,
-    LinearLabelListWire,
-    LinearLabelWire,
-    LinearNamedWire,
-    LinearPlanningIssueWire,
-    LinearProjectWire,
-    LinearTeamListWire,
-    LinearTeamWire,
-    LinearThreadCommentListWire,
-    LinearUserListWire,
-    LinearUserWire,
-    LinearWireModel,
-)
-from kodezart.types.domain.linear_scope import (
-    LinearApprovalIssueWire,
-    LinearScopeIssuesWire,
-)
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationMemberAbsentError,

@@ -1,9 +1,7 @@
 """Linear MCP wire shapes — Pydantic validation at the adapter boundary.
 
-Vendor vocabulary lives here and nowhere else, exactly as
-``types/domain/github.py`` holds the forge's.  Nothing in this module may
-be imported by a consumer: the tracker port speaks
-``types/domain/tracker.py`` only.
+Vendor vocabulary stays beside its adapter. Application consumers use
+the neutral tracker port and its domain values, never these wire models.
 
 ``extra="ignore"``: the vendor adds fields to its own payloads and that is
 not this process's business.  Every field the adapter reads is declared

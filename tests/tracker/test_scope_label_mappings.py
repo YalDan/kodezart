@@ -5,6 +5,7 @@ from itertools import product
 
 import pytest
 
+from kodezart.adapters.linear_mcp_types import LinearLabelListWire
 from kodezart.core.errors import (
     McpTransportError,
     TrackerEnsureConflictError,
@@ -16,7 +17,6 @@ from kodezart.services.tracker_boot import (
     owned_mappings,
     reconcile_tracker_mappings,
 )
-from kodezart.types.domain.linear_mcp import LinearLabelListWire
 from kodezart.types.domain.operation import TeamEntry
 from kodezart.types.domain.tracker import EnsureAction, MappingKind, MappingRef
 from tests.fakes import FakeLinearMcpServer
