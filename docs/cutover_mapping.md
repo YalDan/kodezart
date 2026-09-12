@@ -14,6 +14,7 @@ live with the cutover work itself.
 | Deciding which items a pass touches | `PromptKey.FIRE_PREP_PASS` template, resolved through `PromptProvider` |
 | Grooming open work into actionable shape | `PromptKey.GROOMING_PASS` template, resolved through `PromptProvider` |
 | Who may approve | `OperationConfig.principals` — the APPROVER role, never a name |
+| Scope admission labels | `OperationConfig.scope_labels`; native label reads and workspace bootstrap |
 | Queue and lifecycle vocabulary | `OperationConfig.queue_states` / `workflow_states` |
 | Which repositories a pass may act on, and how they are verified | `OperationConfig.repos` |
 | What counts as a mention of the operation | `OperationConfig.agent_identities` |

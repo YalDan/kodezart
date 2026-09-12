@@ -3,15 +3,38 @@
 import pytest
 
 from kodezart.domain.errors import ScopeReadError
+from kodezart.services.scope_resolution import resolve_scope
 from kodezart.types.domain.operation import ScopeLabel
 from tests.tracker.test_scope_approval import (
     APPROVAL_LABELS,
+    PARENT,
     ApprovalFixture,
     approval,
 )
-from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT
+from tests.tracker.test_scope_reads import MILESTONE, PROJECT, ROOT, _container
 
 __all__ = ["approval"]
+
+
+async def test_actual_milestone_scope_uses_current_project_approval(
+    approval: ApprovalFixture,
+) -> None:
+    approval.fake.scope_containers[MILESTONE] = _container(MILESTONE, PROJECT)
+    approval.fake.scope_memberships[MILESTONE] = (ROOT.key, PARENT.key)
+    resolved = await resolve_scope(ref=MILESTONE, tracker=approval.tracker)
+    assert resolved.ref == MILESTONE
+    assert {issue.issue_key for issue in resolved.issues} == {ROOT.key, PARENT.key}
+
+    approval.server.calls.clear()
+    for expected in (False, True, False):
+        approval.labels(PROJECT, *([ScopeLabel.APPROVED] if expected else []))
+        for issue in resolved.issues:
+            assert (
+                await approval.tracker.execution_approved(issue_key=issue.issue_key)
+                is expected
+            )
+    assert all("milestone" not in tool for tool, _ in approval.server.calls)
+    assert not approval.fake.issue_writes
 
 
 async def test_a_milestone_label_cannot_approve_its_project_or_members(

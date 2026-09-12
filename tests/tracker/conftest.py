@@ -240,8 +240,8 @@ def fixture_server(
 def linear_over_fake_mcp(
     server: FakeLinearMcpServer,
     *,
-    clock: Callable[[], datetime] = _frozen_now,
     scope_labels: Mapping[str, str] | None = None,
+    clock: Callable[[], datetime] = _frozen_now,
 ) -> TrackerPort:
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(

@@ -119,6 +119,7 @@ class MappingKind(StrEnum):
     USER = "user"
     TEAM = "team"
     QUEUE_STATE = "queue_state"
+    SCOPE_LABEL = "scope_label"
     ISSUE_LABEL = "issue_label"
     WORKFLOW_STATE = "workflow_state"
     DOCUMENT = "document"
@@ -131,7 +132,12 @@ class MappingKind(StrEnum):
 #: a ref outside this set is ``TrackerEnsureConflictError`` everywhere, which
 #: is what keeps an adapter and a test double from disagreeing about it.
 INSTATABLE_MAPPING_KINDS: frozenset[MappingKind] = frozenset(
-    {MappingKind.QUEUE_STATE, MappingKind.ISSUE_LABEL, MappingKind.DOCUMENT},
+    {
+        MappingKind.QUEUE_STATE,
+        MappingKind.SCOPE_LABEL,
+        MappingKind.ISSUE_LABEL,
+        MappingKind.DOCUMENT,
+    },
 )
 
 

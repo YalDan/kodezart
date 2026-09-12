@@ -164,6 +164,11 @@ class TestConfiguredMappings:
             {
                 **operation_config().model_dump(),
                 "issue_labels": {"criterion": "Configured Check"},
+                "scope_labels": {
+                    "triage": "scope:triage",
+                    "proposed": "scope:proposed",
+                    "approved": "scope:approved",
+                },
             }
         )
         refs = (*configured_mappings(config), *owned_mappings(config))
