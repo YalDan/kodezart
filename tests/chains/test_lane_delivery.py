@@ -317,3 +317,93 @@ async def test_delivery_refuses_incoherent_wire_outcome():
     wire["outcome"] = WorkflowOutcome.ci_failed_unclassified
     with pytest.raises(ValidationError, match="outcome must match"):
         LaneDelivery.model_validate(wire)
+
+
+@pytest.mark.parametrize("branch", [HEAD, BASE])
+async def test_ref_removed_while_pr_content_is_gated_refuses_publication(branch):
+    parts = await setup()
+    owner, _, _, creator, *_ = parts
+
+    class RefRemoved(PassThroughGate):
+        async def gate(self, **kwargs):
+            owner._git._remote_branch_shas[branch] = None
+            return await super().gate(**kwargs)
+
+    owner._gate = RefRemoved()
+    error = DeliveryHeadError if branch == HEAD else BaseResolutionError
+    with pytest.raises(error):
+        await deliver(parts)
+    assert creator.calls == []
+
+
+@pytest.mark.parametrize("bound", [1, 2, 3])
+async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
+    from kodezart.types.domain.criteria import TrackerCriterionSet
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class Overlapping(FakeCIMonitor):
+        def __init__(self):
+            super().__init__()
+            self.active = self.peak = 0
+
+        async def wait_for_checks(self, *, repo_url, ref):
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            if self.active == bound:
+                entered.set()
+            try:
+                await release.wait()
+                return await super().wait_for_checks(repo_url=repo_url, ref=ref)
+            finally:
+                self.active -= 1
+
+    monitor = Overlapping()
+    owner, initial, context, *_ = await setup(monitor=monitor, watches=bound)
+    snapshots = {}
+    states = []
+    for i in range(bound + 1):
+        key = f"lane/{i}"
+        criterion = (
+            initial["criterion_set"]
+            .criteria[0]
+            .model_copy(update={"id": f"{key}/criterion"})
+        )
+        snapshot = TrackerCriterionSet(criteria=[criterion])
+        snapshots[key] = snapshot
+        state = dict(initial)
+        state.update(
+            issue_key=key,
+            feature_branch=key,
+            fire_spec=initial["fire_spec"].model_copy(
+                update={"subject": key, "criteria": (criterion.id,)}
+            ),
+            criterion_set=snapshot,
+        )
+        owner._git._remote_branch_shas[key] = SHA
+        states.append(state)
+
+    class CurrentCriteria:
+        async def read_current(self, *, spec):
+            return snapshots[spec.subject]
+
+    owner._criteria_reader = CurrentCriteria()
+    tasks = [
+        asyncio.create_task(
+            owner.deliver(
+                state=state,
+                context=context,
+                stalled=False,
+                remediation_available=False,
+            )
+        )
+        for state in states
+    ]
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    assert monitor.peak == bound
+    release.set()
+    results = await asyncio.gather(*tasks)
+    assert {result.lane_key for result in results} == set(snapshots)
+    assert all(result.outcome is WorkflowOutcome.ci_passed for result in results)
+    assert monitor.peak == bound and monitor.active == 0
