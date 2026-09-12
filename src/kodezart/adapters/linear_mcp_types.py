@@ -235,24 +235,45 @@ class LinearCommentWire(LinearWireModel):
     author arrives as an object, and which issue a comment belongs to is
     known by the caller that asked for it, never read back off the entry.
 
-    That object can be ``null``, measured 2026-09-01 (KOD-172): a removed
+    That object can be ``null``, measured 2026-09-01: a removed
     user or an integration leaves the key in place carrying nothing, and
     the log a dispatch tick was reading held one at index 8.  The key
     itself stays REQUIRED — a payload that dropped it would be saying
     nothing about authorship rather than saying there is none — and an
     author that is present but malformed still refuses.
+
+    The native reply link is also required, including explicit null for a
+    top-level comment. A missing link cannot establish thread provenance.
     """
 
     id: str
     author: LinearCommentAuthorWire | None
     body: str
     created_at: datetime
+    parent_id: str | None
+
+
+class LinearCommentEntryWire(LinearCommentWire):
+    """A comment as a LISTING reports it, carrying the stamp an edit moves.
+
+    Measured: every entry a comment listing answers with carries
+    ``updatedAt`` beside ``createdAt``, and an update by comment id
+    replaces the body and moves ``updatedAt`` while leaving ``createdAt``
+    where it was.  That pair is the backend's own record of WHEN a body
+    changed, which is what decides whether a grant's extension was
+    published while the grant it extends was still live.  The write echo
+    is read for its identity alone and keeps the less demanding contract.
+    """
+
+    updated_at: datetime
 
 
 class LinearCommentListWire(LinearWireModel):
-    """The ``list_comments`` envelope."""
+    """Comment pages, including the connected-app cursor measured 2026-09-07."""
 
-    comments: list[LinearCommentWire]
+    comments: list[LinearCommentEntryWire]
+    has_next_page: bool
+    cursor: str | None = None
 
 
 class LinearNamedWire(LinearWireModel):
@@ -390,3 +411,10 @@ class LinearDocumentListWire(LinearWireModel):
     """The ``list_documents`` envelope."""
 
     documents: list[LinearDocumentSummaryWire]
+
+
+class LinearPlanningIssueWire(LinearIssueDetailWire):
+    """Planning cannot interpret unreported labels or relations as empty."""
+
+    labels: list[str]
+    relations: LinearIssueRelationsWire

@@ -416,7 +416,12 @@ async def _shutdown(
     watch = LifecycleWatcher(
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=321.5,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
@@ -588,14 +593,16 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
 
     def _config(self) -> AppConfig:
         return AppConfig(
-            tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
+            tracker={"sse_read_timeout_seconds": self.TRACKER_BOUND},
             knowledge_mcp_sse_read_timeout_seconds=self.KNOWLEDGE_BOUND,
             knowledge_mcp_server_url="https://knowledge.invalid/mcp",
             knowledge_mcp_token=SecretStr("ntn_" + "K" * 44),
         )
 
     def test_the_tracker_composition_passes_its_field(self) -> None:
-        caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
+        caller = make_mcp_tool_caller(
+            settings=self._config().tracker, token=self.FIXTURE_TOKEN
+        )
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._server._sse_read_timeout_seconds == self.TRACKER_BOUND

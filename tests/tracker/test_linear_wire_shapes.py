@@ -48,6 +48,7 @@ from kodezart.adapters.linear_mcp_types import (
     LinearTeamListWire,
     LinearUserListWire,
 )
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import TrackerProtocolError
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.dispatch import SelfWriteLedger
@@ -58,6 +59,7 @@ from kodezart.types.domain.tracker import (
     MappingKind,
     MappingRef,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 # --------------------------------------------------------------------------
 # Captures — vendor keys, synthesized values.
@@ -356,6 +358,7 @@ class CaptureCaller:
 
 def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
     return LinearMcpTracker(
+        marker_prefixes=MARKER_PREFIXES,
         caller=caller,
         queue_state_labels={
             QueueState.APPROVED.value: "queue:approved",
@@ -363,8 +366,7 @@ def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
         },
         workflow_state_names={LifecycleStage.DONE: "Done"},
         team_identifiers={"board": TEAM_NAME},
-        max_retries=0,
-        retry_backoff_factor=0.0,
+        retry=RetryPolicy(attempts=(0) + 1, initial_delay=0.0),
         ledger=SelfWriteLedger(),
     )
 

@@ -216,7 +216,7 @@ def test_a_declared_style_loads_verbatim(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 SSE_READ_FIELDS = (
-    "tracker_mcp_sse_read_timeout_seconds",
+    "tracker__sse_read_timeout_seconds",
     "knowledge_mcp_sse_read_timeout_seconds",
 )
 #: The bounds the sibling timeouts are declared with, and the default the
@@ -233,7 +233,11 @@ def test_the_stream_read_bound_defaults_to_what_the_session_ran_on(
     field: str,
 ) -> None:
     """Adopting the knob changes who owns the number, not the number."""
-    assert getattr(AppConfig(), field) == SSE_READ_DEFAULT
+    assert (
+        getattr(AppConfig().tracker, field.split("__", 1)[1])
+        if "__" in field
+        else getattr(AppConfig(), field)
+    ) == SSE_READ_DEFAULT
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -244,7 +248,11 @@ def test_the_stream_read_bound_is_read_from_the_prefixed_environment(
 ) -> None:
     monkeypatch.setenv(f"KODEZART_{field.upper()}", "450")
 
-    assert getattr(AppConfig(), field) == 450.0
+    assert (
+        getattr(AppConfig().tracker, field.split("__", 1)[1])
+        if "__" in field
+        else getattr(AppConfig(), field)
+    ) == 450.0
 
 
 @pytest.mark.usefixtures("_pristine_environment")
@@ -261,4 +269,4 @@ def test_a_stream_read_bound_outside_its_range_refuses_at_construction(
     with pytest.raises(ValidationError) as excinfo:
         AppConfig()
 
-    assert field in str(excinfo.value)
+    assert field.split("__")[-1] in str(excinfo.value)

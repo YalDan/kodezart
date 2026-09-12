@@ -23,6 +23,7 @@ from kodezart.core.errors import (
     McpTransportError,
     RateLimitedSoftFailureError,
     TrackerEnsureConflictError,
+    TrackerProtocolError,
 )
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
@@ -38,8 +39,16 @@ from kodezart.domain.errors import (
     MergeConflictError,
     RateLimitError,
     ScopeReadError,
+    SurfaceLeaseError,
+    SurfaceWriteAttributionError,
     TransientAPIError,
     WorkspaceError,
+)
+from kodezart.domain.surface_lease import live_conflict, surface_address
+from kodezart.domain.tracker_writes import (
+    comment_under_marker,
+    marked_comment_body,
+    require_expected_comment,
 )
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
@@ -93,6 +102,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
+from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import KnowledgeGrant, SessionType
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -101,6 +111,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -2220,6 +2231,10 @@ class FakeMcpComment:
     author: str | None
     body: str
     created_at: datetime
+    parent_id: str | None = None
+    #: The stamp an edit moves, ``None`` on an entry never edited — which
+    #: the listing still reports, carrying its creation instant.
+    updated_at: datetime | None = None
 
     def wire(self) -> dict[str, object]:
         return {
@@ -2231,11 +2246,15 @@ class FakeMcpComment:
             ),
             "body": self.body,
             "createdAt": self.created_at.isoformat(),
-            "parentId": None,
+            "updatedAt": (self.updated_at or self.created_at).isoformat(),
+            "parentId": self.parent_id,
             "resolvedAt": None,
             "quotedText": None,
             "onBehalfOf": None,
         }
+
+
+_CURRENT_USER = "me"
 
 
 class FakeLinearMcpServer:
@@ -2261,6 +2280,7 @@ class FakeLinearMcpServer:
         state_types: Mapping[str, str] | None = None,
         actor: str = "fixture-actor",
         comment_instants: Sequence[datetime] = (),
+        comment_clock: Callable[[], datetime] | None = None,
         projects: Mapping[str, Mapping[str, object]] | None = None,
         transient_failures: Mapping[str, int] | None = None,
         transport_failures: Mapping[str, int] | None = None,
@@ -2299,6 +2319,11 @@ class FakeLinearMcpServer:
         self.actor: str = actor
         self.calls: list[tuple[str, Mapping[str, object]]] = []
         self.comment_instants: list[datetime] = list(comment_instants)
+        self._comment_clock: Callable[[], datetime] = (
+            comment_clock if comment_clock is not None else lambda: FIXTURE_EPOCH
+        )
+        self._stamps: int = 0
+        self._stamped: datetime | None = None
         self._transient_failures: dict[str, int] = dict(transient_failures or {})
         self._transport_failures: dict[str, int] = dict(transport_failures or {})
         #: Tools that answer with an error RESULT, and the diagnosis each
@@ -2361,7 +2386,14 @@ class FakeLinearMcpServer:
         if handler is None:
             msg = f"fake MCP server exposes no tool named {name!r}"
             raise LookupError(msg)
-        result: McpToolResult = handler(arguments)
+        try:
+            result: McpToolResult = handler(arguments)
+        except LookupError as exc:
+            raise McpTransportError(
+                f"the MCP server reported a tool error: {exc}",
+                server_name="fake-linear",
+                tool_name=name,
+            ) from exc
         return result
 
     def tool_calls(self, name: str) -> list[Mapping[str, object]]:
@@ -2369,10 +2401,6 @@ class FakeLinearMcpServer:
         return [args for tool, args in self.calls if tool == name]
 
     def _next_instant(self) -> datetime:
-        if self.comment_instants:
-            return self.comment_instants[
-                min(self._sequence, len(self.comment_instants) - 1)
-            ]
         return FIXTURE_EPOCH + timedelta(seconds=self._sequence)
 
     def _issue(self, arguments: Mapping[str, object], key: str) -> FakeMcpIssue:
@@ -2467,6 +2495,10 @@ class FakeLinearMcpServer:
             assert isinstance(raw_labels, list)
             new_labels = [str(entry) for entry in raw_labels]
             issue.labels = new_labels
+        if "addLabels" in arguments:
+            additions = arguments["addLabels"]
+            assert isinstance(additions, list)
+            issue.labels = list(dict.fromkeys([*issue.labels, *map(str, additions)]))
         self._moved(issue.id)
         return issue.wire()
 
@@ -2482,17 +2514,29 @@ class FakeLinearMcpServer:
             comment_id = str(arguments["id"])
             for existing in self.comments:
                 if existing.id == comment_id:
-                    # ``created_at`` survives an edit, which is the whole
-                    # property the claim order depends on.
+                    # ``created_at`` survives an edit and ``updated_at``
+                    # moves: the order the claim depends on is the first
+                    # stamp, and when a body last changed is the second.
                     existing.body = str(arguments["body"])
+                    existing.updated_at = self._comment_stamp()
                     self._moved(existing.issue_id)
                     return existing.wire()
             raise KeyError(f"no comment {comment_id} to update")
-        created_at = self._next_instant()
+        parent_id = arguments.get("parentId")
+        if parent_id is not None:
+            assert isinstance(parent_id, str)
+            parent = next((c for c in self.comments if c.id == parent_id), None)
+            if parent is None:
+                raise KeyError(f"no parent comment {parent_id}")
+            issue_id = parent.issue_id
+        else:
+            issue_id = self._comment_parent(arguments)
+        created_at = self._comment_stamp()
         self._sequence += 1
         comment = FakeMcpComment(
             id=f"comment-{self._sequence:04d}",
-            issue_id=str(arguments["issueId"]),
+            issue_id=issue_id,
+            parent_id=parent_id,
             author=self.actor,
             body=str(arguments["body"]),
             created_at=created_at,
@@ -2516,12 +2560,12 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
-        issue_id = str(arguments["issueId"])
+        parent = self._comment_parent(arguments)
         return {
             "comments": [
                 comment.wire()
                 for comment in self.comments
-                if comment.issue_id == issue_id
+                if comment.issue_id == parent
             ],
             "hasNextPage": False,
         }
@@ -2739,6 +2783,66 @@ class FakeLinearMcpServer:
             for name in names
         ]
 
+    def _comment_stamp(self) -> datetime:
+        """The instant the backend puts on one comment write.
+
+        Stated instants, when a case states them, in the order the writes
+        land — a case that needs two writes to share an instant, or one to
+        land late, says so here.  Otherwise the backend's own clock, never
+        repeating: a listing the vendor orders by creation cannot answer
+        two creations with one place.
+        """
+        if self.comment_instants:
+            stamp = self.comment_instants[
+                min(self._stamps, len(self.comment_instants) - 1)
+            ]
+        else:
+            now = self._comment_clock()
+            stamp = (
+                now
+                if self._stamped is None
+                else max(now, self._stamped + FIXTURE_WRITE_STEP)
+            )
+        self._stamps += 1
+        self._stamped = stamp
+        return stamp
+
+    @staticmethod
+    def _comment_parent(arguments: Mapping[str, object]) -> str:
+        """The container a comment call addresses.
+
+        The vendor takes a comment under an issue, a project, an
+        initiative or a milestone, and answers each listing with that
+        parent's own log.  A fake that knew only the issue arm would let
+        an adapter parking a marker on a container pass here and fail
+        against the real server.
+        """
+        for parent in ("issueId", "projectId", "initiativeId", "milestoneId"):
+            if parent in arguments:
+                return str(arguments[parent])
+        raise LookupError(f"no comment parent among {sorted(arguments)}")
+
+    def _tool_get_user(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """One user, under BOTH identities, for the query the caller sends.
+
+        ``"me"`` answers the account this credential writes as, which is
+        the server's ``actor``; any other query is a lookup by name, and a
+        name the workspace does not hold is a tool error like any other.
+        """
+        query = str(arguments["query"])
+        name = self.actor if query == _CURRENT_USER else query
+        if name not in {self.actor, *self.users}:
+            msg = f"fake workspace has no user {query!r}"
+            raise LookupError(msg)
+        return {
+            "id": f"{name}-id",
+            "name": name,
+            "displayName": self.display_name(name),
+        }
+
 
 class ManagedFakeLinearMcpServer(FakeLinearMcpServer):
     """The fake MCP server plus the session lifetime the composition root drives.
@@ -2808,6 +2912,7 @@ class FakeTrackerPort:
         recorded_repositories: Mapping[str, str] | None = None,
         initiative_identifiers: Mapping[str, frozenset[str]] | None = None,
         scan_refusals: Mapping[PassSignal, str] | None = None,
+        writer_identities: frozenset[str] = frozenset({"kodezart"}),
         clock: Callable[[], datetime] = lambda: FIXTURE_EPOCH,
     ) -> None:
         self.issues: dict[str, TrackerIssue] = {
@@ -2833,6 +2938,10 @@ class FakeTrackerPort:
             initiative_identifiers or {},
         )
         self.claims: dict[str, ClaimResult] = {}
+        self.leases: dict[WritableSurface, SurfaceLease] = {}
+        self.lease_writes: list[SurfaceLease] = []
+        self.writer_identities = writer_identities
+        self.comment_writes: list[tuple[str, str]] = []
         #: Every renewal ATTEMPT, granted or refused, as (issue, holder).
         #: A heartbeat that has stopped is observed as a count that stopped
         #: growing, which a record of grants alone cannot tell from a
@@ -3066,11 +3175,12 @@ class FakeTrackerPort:
         comment = TrackerComment(
             comment_key=f"comment-{self._sequence:04d}",
             issue_key=issue_key,
-            author_key="kodezart",
+            author_key=min(self.writer_identities, default=None),
             body=body,
             created_at=self._clock(),
         )
         self.comments.append(comment)
+        self.comment_writes.append((comment.comment_key, body))
         self._wrote(issue_key)
         return comment
 
@@ -3088,14 +3198,28 @@ class FakeTrackerPort:
         # a fake whose claim is not genuinely atomic proves nothing about
         # exactly-once semantics.
         await asyncio.sleep(0)
-        expires_at = self._clock() + timedelta(seconds=lease_seconds)
+        now = self._clock()
+        expires_at = now + timedelta(seconds=lease_seconds)
         held = self.claims.get(issue_key)
-        if held is not None and held.expires_at > self._clock():
+        # Decided by the same function the lease side is decided by, so
+        # this registry and a backend that keeps ownership on a comment
+        # log answer a holder that meets ITSELF the same way: one identity
+        # is what the arbitration is over, and re-acquiring what it
+        # already holds carries that ownership forward.
+        conflict = live_conflict(
+            requested=frozenset({issue_key}),
+            held={} if held is None else {issue_key: held},
+            holder=holder,
+            now=now,
+            order=lambda key: (key,),
+        )
+        if conflict is not None:
             return ClaimResult(
                 issue_key=issue_key,
                 status=ClaimStatus.LOST,
                 holder=holder,
                 expires_at=expires_at,
+                current_holder=conflict[1],
             )
         granted = ClaimResult(
             issue_key=issue_key,
@@ -3386,6 +3510,201 @@ class FakeTrackerPort:
         if not container.url:
             raise ScopeReadError("container URL was not reported", ref=ref)
         return container
+
+    async def writer_identity(self) -> frozenset[str]:
+        await asyncio.sleep(0)
+        return self.writer_identities
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        issue = await self.read_issue(issue_key=issue_key)
+        comments = tuple(await self.list_comments(issue_key=issue_key))
+        repeated_comments = tuple(await self.list_comments(issue_key=issue_key))
+        final_issue = await self.read_issue(issue_key=issue_key)
+        if (
+            issue != final_issue
+            or comments != repeated_comments
+            or len({comment.comment_key for comment in comments}) != len(comments)
+        ):
+            raise TrackerProtocolError(
+                "issue movement changed or comments repeat",
+                tool="read_issue_movement",
+                detail=issue_key,
+            )
+        return IssueMovementSnapshot(
+            issue_key=issue_key,
+            updated_at=issue.updated_at,
+            fields=field_values(issue.model_dump(mode="json", exclude={"updated_at"})),
+            comments=tuple(
+                sorted(
+                    (comment.comment_key, field_values(comment.model_dump(mode="json")))
+                    for comment in comments
+                )
+            ),
+        )
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        # The scheduling point is BEFORE the check-and-set, never inside it:
+        # a fake whose acquisition is not genuinely atomic proves nothing
+        # about the all-or-nothing contract.
+        await asyncio.sleep(0)
+        now = self._clock()
+        conflict = live_conflict(
+            requested=surfaces,
+            held=self.leases,
+            holder=holder,
+            now=now,
+            order=surface_address,
+        )
+        if conflict is not None:
+            raise SurfaceLeaseError(
+                "surface set intersects a live lease",
+                surface=conflict[0],
+                current_holder=conflict[1],
+            )
+        granted = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=now + timedelta(seconds=lease_seconds),
+        )
+        for surface in surfaces:
+            self.leases[surface] = granted
+        self.lease_writes.append(granted)
+        return granted
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        await asyncio.sleep(0)
+        now = self._clock()
+        held = [self.leases.get(surface) for surface in surfaces]
+        if any(
+            lease is None or lease.holder != holder or lease.expires_at <= now
+            for lease in held
+        ):
+            return None
+        renewed = SurfaceLease(
+            holder=holder,
+            surfaces=surfaces,
+            expires_at=max(
+                now + timedelta(seconds=lease_seconds),
+                *(lease.expires_at for lease in held if lease is not None),
+            ),
+        )
+        for surface in surfaces:
+            self.leases[surface] = renewed
+        self.lease_writes.append(renewed)
+        return renewed
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        await asyncio.sleep(0)
+        for surface in surfaces:
+            lease = self.leases.get(surface)
+            if lease is not None and lease.holder == holder:
+                del self.leases[surface]
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment:
+        """Resolve the marker through the single attributed, leased writer."""
+        return await self._upsert_comment(
+            target=target, marker=marker, body=body, holder=holder, expected=expected
+        )
+
+    async def _upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None,
+        expected: TrackerComment | None = None,
+        validate_existing: Callable[[TrackerComment], None] | None = None,
+    ) -> TrackerComment:
+        """Validate the exact addressed snapshot before issuing its mutation.
+
+        The synchronous precondition sees the same comment used by this
+        writer, after attribution and ownership checks. The backend offers
+        no conditional update to fence changes unseen after that read.
+        """
+        content = marked_comment_body(marker=marker, body=body)
+        existing = comment_under_marker(
+            target=target,
+            marker=marker,
+            comments=await self.list_comments(issue_key=target),
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.MARKER_COMMENT,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
+            marker=marker,
+        )
+        authors = None
+        if existing is not None and existing.body != content:
+            authors = await self.writer_identity()
+            if existing.author_key not in authors:
+                raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
+        current_comments = await self.list_comments(issue_key=target)
+        lease = self.leases.get(surface)
+        owner = (
+            lease.holder
+            if lease is not None and lease.expires_at > self._clock()
+            else None
+        )
+        if holder is None or holder != owner:
+            raise SurfaceLeaseError(
+                "the writing job does not hold this live surface",
+                surface=surface,
+                current_holder=owner,
+            )
+        existing = comment_under_marker(
+            target=target, marker=marker, comments=current_comments
+        )
+        if expected is not None:
+            require_expected_comment(
+                target=target,
+                marker=marker,
+                expected=expected,
+                current=existing,
+                replacement=content,
+            )
+        if existing is not None and validate_existing is not None:
+            validate_existing(existing)
+        if existing is not None and existing.body != content:
+            if authors is None or existing.author_key not in authors:
+                raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
+        if existing is None:
+            return await self.post_comment(issue_key=target, body=content)
+        if existing.body == content:
+            return existing
+        updated = existing.model_copy(update={"body": content})
+        self.comments[self.comments.index(existing)] = updated
+        self.comment_writes.append((existing.comment_key, content))
+        self._wrote(target)
+        return updated
 
 
 class FakeDeliveryProbe:

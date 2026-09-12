@@ -3,8 +3,16 @@
 from typing import Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    EnvSettingsSource,
+    InitSettingsSource,
+    PydanticBaseSettingsSource,
+    SecretsSettingsSource,
+    SettingsConfigDict,
+)
 
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
@@ -23,7 +31,6 @@ from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
     TicketReviewMode,
 )
-from kodezart.types.domain.tracker import TrackerBackend
 
 
 class AppConfig(BaseSettings):
@@ -36,6 +43,7 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KODEZART_",
+        env_nested_delimiter="__",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -377,112 +385,7 @@ class AppConfig(BaseSettings):
         default="https://api.github.com",
         description="Base URL for code hosting platform REST API.",
     )
-    tracker: TrackerBackend = Field(
-        default=TrackerBackend.LINEAR,
-        description=(
-            "Which tracker adapter implements TrackerPort. Adding a backend "
-            "is a new adapter plus a member here — never a consumer change."
-        ),
-    )
-    tracker_mcp_server_name: str = Field(
-        default="linear",
-        description=(
-            "Identity of the vendor MCP server the tracker adapter dials. Two "
-            "consumers: the transport factory building the programmatic client "
-            "on the deterministic path, which stamps this name on every "
-            "transport log line and error, and the tracker-side record sink "
-            "(KOD-170), whose verification refusals carry the same name."
-        ),
-    )
-    tracker_mcp_server_url: str = Field(
-        default="https://mcp.linear.app/mcp",
-        description="Endpoint of the vendor MCP server the tracker adapter dials.",
-    )
-    tracker_mcp_auth_header: str = Field(
-        default="Authorization",
-        min_length=1,
-        description="Request header the tracker credential is presented in.",
-    )
-    tracker_mcp_auth_scheme: str = Field(
-        default="Bearer",
-        min_length=1,
-        description="Scheme prefixing the tracker credential in its auth header.",
-    )
-    tracker_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        description=(
-            "Tracker credential for the MCP server. Environment only, "
-            "excluded from serialization, and masked in repr: a dumped "
-            "config is copied into logs, fixtures and error payloads."
-        ),
-    )
-    tracker_timeout_seconds: float = Field(
-        default=30.0,
-        ge=5.0,
-        le=120.0,
-        description=(
-            "Timeout the tracker MCP transport gives one HTTP exchange with "
-            "the server, on every phase but the session stream's read: a "
-            "streamable-HTTP response stays open across quiet minutes, and "
-            "that phase is bounded by "
-            "KODEZART_TRACKER_MCP_SSE_READ_TIMEOUT_SECONDS instead."
-        ),
-    )
-    tracker_mcp_call_timeout_seconds: float = Field(
-        default=60.0,
-        ge=1.0,
-        le=120.0,
-        description=(
-            "Seconds one tracker MCP tool call may wait for its answer "
-            "before it is abandoned as the typed transport failure. A "
-            "session torn down mid-call — the shape a refused credential "
-            "arrives in, measured 2026-09-01 (KOD-171) — never sends the "
-            "close its reader is waiting for, so without this bound the "
-            "call in flight waits forever and the pass holding it never "
-            "returns. Separate from KODEZART_TRACKER_TIMEOUT_SECONDS: that "
-            "bound is the transport's, on the HTTP exchange; this one is the "
-            "session's, on the wait for one answer."
-        ),
-    )
-    tracker_mcp_sse_read_timeout_seconds: float = Field(
-        default=300.0,
-        ge=30.0,
-        le=3600.0,
-        description=(
-            "Seconds the tracker MCP session's event stream may go quiet "
-            "before its read is abandoned. The third bound on this "
-            "transport and the only one about the STREAM: "
-            "KODEZART_TRACKER_TIMEOUT_SECONDS bounds one HTTP exchange's "
-            "connect and write phases, KODEZART_TRACKER_MCP_CALL_TIMEOUT_"
-            "SECONDS bounds the wait for one answer, and this bounds how "
-            "long the long-lived streamable-HTTP response may say nothing "
-            "at all. The default is the value the session ran on while the "
-            "bound came from a private vendor constant."
-        ),
-    )
-    tracker_mcp_error_detail_limit: int = Field(
-        default=500,
-        ge=80,
-        le=8000,
-        description=(
-            "Characters of the server's OWN error text carried into a "
-            "tracker MCP transport failure. A refusal that drops the "
-            "vendor's diagnosis costs a whole boot cycle to recover it."
-        ),
-    )
-    tracker_max_retries: int = Field(
-        default=3,
-        ge=0,
-        le=10,
-        description="Maximum retry attempts for a transient tracker MCP failure.",
-    )
-    tracker_retry_backoff_factor: float = Field(
-        default=1.0,
-        ge=0.1,
-        le=30.0,
-        description="Base backoff multiplier in seconds for tracker MCP retries.",
-    )
+    tracker: TrackerSettings = Field(default_factory=TrackerSettings)
     tracker_claim_lease_seconds: float = Field(
         default=900.0,
         ge=60.0,
@@ -1309,3 +1212,60 @@ class AppConfig(BaseSettings):
     def from_env(cls) -> Self:
         """Construct AppConfig from the current environment and .env file."""
         return cls()
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep normal precedence; expose retired settings to extra-field refusal."""
+
+        def retired(key: str, prefix: str) -> bool:
+            key, prefix = key.casefold(), prefix.casefold()
+            if not key.startswith(prefix):
+                return False
+            name = key.removeprefix(prefix)
+            return name in {
+                "tracker_mcp_auth_header",
+                "tracker_timeout_seconds",
+                "tracker_mcp_server_url",
+                "tracker_mcp_call_timeout_seconds",
+                "tracker_max_retries",
+                "tracker_mcp_server_name",
+                "tracker_mcp_auth_scheme",
+                "tracker_mcp_sse_read_timeout_seconds",
+                "tracker_token",
+                "tracker_retry_backoff_factor",
+                "tracker_mcp_error_detail_limit",
+                "tracker_surface_lease_seconds",
+            }
+
+        def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
+            values = source()
+            if isinstance(source, EnvSettingsSource):
+                for key, value in source.env_vars.items():
+                    if retired(key, source.env_prefix):
+                        # Preserve retired names for extra=forbid; never expose values.
+                        values[key] = value
+            if (
+                isinstance(source, SecretsSettingsSource)
+                and source.secrets_dir is not None
+            ):
+                for directory in source.secrets_paths:
+                    for path in directory.iterdir():
+                        key = path.name
+                        if retired(key, source.env_prefix):
+                            # Reject the retired name without reading its secret value.
+                            values[key] = None
+            return InitSettingsSource(settings_cls, init_kwargs=values)
+
+        return (
+            init_settings,
+            checked(env_settings),
+            checked(dotenv_settings),
+            checked(file_secret_settings),
+        )
