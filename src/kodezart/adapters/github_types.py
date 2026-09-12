@@ -132,19 +132,19 @@ class WorkflowJobsResponse(BaseModel):
     jobs: list[WorkflowJob]
 
 
-class PullRequestHeadRepository(BaseModel):
-    """Native repository identity for the PR head, rather than its base."""
+class PullRequestBranchRepository(BaseModel):
+    """Native repository identity for an addressed PR branch."""
 
     model_config = ConfigDict(frozen=True, strict=True)
     html_url: str = Field(min_length=1)
     full_name: str = Field(min_length=1)
 
 
-class PullRequestHeadState(BaseModel):
+class PullRequestBranchState(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True)
     ref: str = Field(min_length=1)
     sha: str = Field(min_length=1)
-    repo: PullRequestHeadRepository | None
+    repo: PullRequestBranchRepository | None
 
 
 class PullRequestStateResponse(BaseModel):
@@ -155,7 +155,8 @@ class PullRequestStateResponse(BaseModel):
     html_url: str = Field(min_length=1)
     state: Literal["open", "closed"]
     merged: bool
-    head: PullRequestHeadState
+    head: PullRequestBranchState
+    base: PullRequestBranchState
 
     @model_validator(mode="after")
     def _merge_requires_closed(self) -> Self:

@@ -24,6 +24,11 @@ def payload(**changes):
             "sha": "a" * 40,
             "repo": {"html_url": REPO, "full_name": "example/project"},
         },
+        "base": {
+            "ref": "main",
+            "sha": "b" * 40,
+            "repo": {"html_url": REPO, "full_name": "example/project"},
+        },
         **changes,
     }
 
@@ -49,13 +54,16 @@ async def test_native_lifecycle_uses_one_read_only_endpoint(state, merged, expec
         observed = await client.read_pr_state(repo_url=REPO, pr_number=7)
         assert observed.lifecycle is expected
         assert observed.number == 7 and observed.head_sha == "a" * 40
-        assert observed.head_repo_url == REPO
+        assert observed.head_repo_url == observed.base_repo_url == REPO
+        assert observed.base_branch == "main"
     finally:
         await client.close()
     assert calls == [("GET", "/repos/example/project/pulls/7")]
 
 
-@pytest.mark.parametrize("field", ["number", "html_url", "state", "merged", "head"])
+@pytest.mark.parametrize(
+    "field", ["number", "html_url", "state", "merged", "head", "base"]
+)
 async def test_missing_native_fact_never_defaults(field):
     data = payload()
     del data[field]
@@ -119,10 +127,13 @@ async def test_failed_read_never_means_absent_or_open(status):
         await client.close()
 
 
+@pytest.mark.parametrize("role", ["head", "base"])
 @pytest.mark.parametrize("damage", ["foreign", "deleted", "missing", "missing-name"])
-async def test_native_head_repository_must_resolve_to_the_addressed_lane(damage):
+async def test_native_branch_repository_must_resolve_to_the_addressed_lane(
+    damage, role
+):
     data = payload()
-    head = data["head"]
+    head = data[role]
     head["repo"] = {"html_url": REPO, "full_name": "example/project"}
     if damage == "foreign":
         head["repo"] = {
@@ -173,9 +184,12 @@ async def test_fake_cannot_treat_same_name_and_sha_in_fork_as_lane_repository():
         },
     ],
 )
-async def test_head_repository_url_and_native_full_name_must_both_match(repository):
+@pytest.mark.parametrize("role", ["head", "base"])
+async def test_branch_repository_url_and_native_full_name_must_both_match(
+    repository, role
+):
     data = payload()
-    data["head"]["repo"] = repository
+    data[role]["repo"] = repository
     client = _make_client(lambda _: httpx.Response(200, json=data))
     try:
         with pytest.raises(PRStateReadError):
@@ -184,13 +198,14 @@ async def test_head_repository_url_and_native_full_name_must_both_match(reposito
         await client.close()
 
 
-@pytest.mark.parametrize("surface", ["pr", "head_repository"])
+@pytest.mark.parametrize("surface", ["pr", "head_repository", "base_repository"])
 async def test_malformed_native_url_is_a_typed_read_refusal(surface):
     data = payload()
     if surface == "pr":
         data["html_url"] = "https://[invalid/pull/7"
     else:
-        data["head"]["repo"]["html_url"] = "https://[invalid/example/project"
+        role = "head" if surface == "head_repository" else "base"
+        data[role]["repo"]["html_url"] = "https://[invalid/example/project"
     client = _make_client(lambda _: httpx.Response(200, json=data))
     try:
         with pytest.raises(PRStateReadError):
@@ -215,6 +230,7 @@ async def test_enterprise_repository_authority_includes_port():
     repo_url = "https://forge.example:8443/example/project"
     data = payload(html_url=f"{repo_url}/pull/7")
     data["head"]["repo"]["html_url"] = repo_url
+    data["base"]["repo"]["html_url"] = repo_url
     client = _make_client(lambda _: httpx.Response(200, json=data))
     try:
         state = await client.read_pr_state(repo_url=repo_url, pr_number=7)

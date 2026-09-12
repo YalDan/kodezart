@@ -9,7 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import FireSpecEntryError
+from kodezart.domain.errors import FireSpecEntryError, PRStateReadError
 from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
@@ -52,18 +52,56 @@ class ForgeWire:
         self.watches = []
         self.red_first = red_first
         self.pr = None
+        self.pr_reads = []
+        self.identity_damage = None
+        self.damage_after_watch = False
+        self.head = None
+        self.current_sha = lambda: SHA
 
     def __call__(self, request):
         self.requests.append(request)
+        if request.url.path.endswith("/pulls/17"):
+            self.pr_reads.append(request)
+            damage = (
+                self.identity_damage
+                if (not self.damage_after_watch or self.watches)
+                else None
+            )
+            sha = self.current_sha()
+            data = {
+                "number": 17,
+                "html_url": "https://github.com/owner/repo/pull/17",
+                "state": "closed" if damage == "closed" else "open",
+                "merged": False,
+                "head": {
+                    "ref": "different-head" if damage == "head" else self.head,
+                    "sha": "b" * 40 if damage == "sha" else sha,
+                    "repo": {
+                        "html_url": "https://github.com/owner/repo",
+                        "full_name": "owner/repo",
+                    },
+                },
+                "base": {
+                    "ref": "wrong-base" if damage == "base" else "main",
+                    "sha": "b" * 40,
+                    "repo": {
+                        "html_url": "https://github.com/owner/repo",
+                        "full_name": "owner/repo",
+                    },
+                },
+            }
+            return httpx.Response(200, json=data)
         if request.url.path.endswith("/pulls"):
             if request.method == "POST":
                 self.creates.append(json.loads(request.content))
+                self.head = self.creates[-1]["head"]
                 self.pr = {
                     "html_url": "https://github.com/owner/repo/pull/17",
                     "number": 17,
                     "title": "Native PR",
                 }
                 return httpx.Response(201, json=self.pr)
+            self.head = request.url.params["head"].split(":", 1)[1]
             return httpx.Response(200, json=[] if self.pr is None else [self.pr])
         if request.url.path.endswith("/check-runs"):
             self.watches.append(request.url.path)
@@ -122,6 +160,7 @@ def composed(*, red=False, rounds=0, saver=None, evaluations=None, forge_present
     )
     fire.consolidation._merger = merger
     wire = ForgeWire(red_first=red)
+    wire.current_sha = lambda: NEXT_SHA if len(merger.calls) > 1 else SHA
     forge = _make_client(wire) if forge_present else None
     lane = build_native_lane_workflow(
         fire=fire,
@@ -235,5 +274,25 @@ async def test_pre_delivery_resume_retains_identity_and_checks_current_criteria(
             assert len(resumed) == len(wire.creates) == 1
             assert final["delivery"].result.outcome is WorkflowOutcome.ci_passed
             assert len(executor.execution_prompts) == 1
+    finally:
+        await forge.close()
+
+
+@pytest.mark.parametrize("damage", ["base", "head", "sha", "closed"])
+@pytest.mark.parametrize("after_watch", [False, True])
+async def test_actual_pr_identity_refuses_reuse_or_drift(damage, after_watch):
+    lane, state, config, wire, forge, _, _ = composed()
+    wire.pr = {
+        "html_url": "https://github.com/owner/repo/pull/17",
+        "number": 17,
+        "title": "Existing native PR",
+    }
+    wire.identity_damage = damage
+    wire.damage_after_watch = after_watch
+    try:
+        with pytest.raises(PRStateReadError):
+            await run(lane, state, config)
+        assert wire.creates == wire.comments == []
+        assert len(wire.watches) == (1 if after_watch else 0)
     finally:
         await forge.close()

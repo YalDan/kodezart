@@ -40,6 +40,7 @@ def build_native_lane_workflow(
             service=service,
             git=git,
             pr_creator=forge,
+            pr_state_reader=forge,
             forge_query=forge,
             ci=forge,
             criteria_reader=fire.criteria,
