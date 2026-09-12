@@ -722,6 +722,20 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         """Set the semantic queue state, replacing any other member."""
         ...
 
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        """Add one configured semantic classification, reading before writing.
+
+        An already present value writes nothing. Unrelated classifications
+        and all workflow/queue state survive unchanged.
+        A supplied holder must retain the issue's actual classification surface:
+        CRITERION_SUB_ISSUE for criteria, ISSUE_LABEL_SET otherwise, after
+        internal reads and on every known-unsent retry. Re-read its
+        actual classification outside the mutation retry before returning.
+        """
+        ...
+
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
         ...

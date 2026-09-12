@@ -47,6 +47,7 @@ from kodezart.domain.errors import (
 )
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
+    classification_surface,
     comment_under_marker,
     marked_comment_body,
     require_expected_comment,
@@ -3021,6 +3022,7 @@ class FakeTrackerPort:
         #: records the stamp it left, so a consumer's gate can tell the
         #: operation's own churn from a principal's edit (KOD-175).
         self.self_writes: SelfWriteLedger = SelfWriteLedger()
+        self.classification_writes: list[tuple[str, str]] = []
 
     def _wrote(self, issue_key: str) -> None:
         """Stamp the issue as a backend would, and remember our own write.
@@ -3218,6 +3220,34 @@ class FakeTrackerPort:
         self.queue_writes.append((issue_key, state))
         issue = self.issues[issue_key]
         updated = issue.model_copy(update={"queue_states": frozenset({state})})
+        self.issues[issue_key] = updated
+        self._wrote(issue_key)
+        return updated
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        issue = await self.read_issue(issue_key=issue_key)
+        if holder is not None:
+            surface = classification_surface(issue)
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if not holder.strip() or holder != owner:
+                raise SurfaceLeaseError(
+                    "classification requires the actual issue surface holder",
+                    surface=surface,
+                    current_holder=owner,
+                )
+        if classification in issue.issue_labels:
+            return issue
+        self.classification_writes.append((issue_key, classification))
+        updated = TrackerIssue.model_validate(
+            {**issue.model_dump(), "issue_labels": issue.issue_labels | {classification}}
+        )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
         return updated
