@@ -213,6 +213,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             git=stack.git,
             cache=stack.cache,
             prompts=prompts,
+            workspace=stack.workspace,
             runner=agent_service,
             skills=skills,
             recorder=built_recorder.recorder,

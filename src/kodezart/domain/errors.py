@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
@@ -752,6 +753,20 @@ class OrganizeWriteRefusalError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
+
+class OrganizeHaltError(OrganizeWriteRefusalError):
+    """A completed Organize tick retains its exact addressed halt report."""
+
+    def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
+        if report.halt is None:
+            raise ValueError("an Organize halt requires a halted report")
+        self.scope = scope
+        self.report = report
+        super().__init__(
+            issue_key=scope.key,
+            reason=f"Organize halted: {report.halt.cause.value}",
+        )
 
 
 class OrganizeDecisionRequiredError(Exception):
