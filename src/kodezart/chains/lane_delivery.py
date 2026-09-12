@@ -210,7 +210,7 @@ class LaneDeliveryCoordinator:
                 destination=OutboundDestination.PR_COMMENT,
                 content_class=ContentClass.AUTHORED,
             )
-            await self._require_pr_identity(pr, state, context)
+            await self._require_current(state, context, pr)
             try:
                 await self._pr_creator.comment_on_pr(
                     repo_url=repo_url, pr_number=pr.number, body=body
@@ -221,8 +221,15 @@ class LaneDeliveryCoordinator:
                     error=str(exc),
                     error_kind=type(exc).__name__,
                 )
-        await self._require_pr_identity(pr, state, context)
+        await self._require_current(state, context, pr)
         return result
+
+    async def _require_current(
+        self, state: WorkflowState, context: ExecutionContext, pr: LanePR
+    ) -> None:
+        """Revalidate the evidence before a write or resumed terminal emission."""
+        await require_current_native_snapshot(state, reader=self._criteria_reader)
+        await self._require_pr_identity(pr, state, context)
 
     async def _require_pr_identity(
         self, pr: LanePR, state: WorkflowState, context: ExecutionContext
