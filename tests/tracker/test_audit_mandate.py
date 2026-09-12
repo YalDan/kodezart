@@ -242,8 +242,11 @@ async def test_non_refutation_needs_no_hunt_or_mandate(setup, verdict):
 
 
 def test_refutation_cannot_cross_completeness_boundary_without_mandate():
-    with pytest.raises(ValidationError, match="every refutation"):
+    with pytest.raises(ValidationError) as caught:
         AuditClaimReport(claim=CLAIM, mandate=None)
+    assert ("RefutedClaimReport", "mandate") in {
+        error["loc"] for error in caught.value.errors()
+    }
 
 
 @pytest.mark.parametrize("surfaces", [(), (SURFACES[0], SURFACES[0])])

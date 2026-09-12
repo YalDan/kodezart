@@ -1,9 +1,10 @@
 """Inputs and point-in-time coverage observations for the audit cadence."""
 
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Generic, Literal, Self
 
 from pydantic import AwareDatetime, ConfigDict, Field, RootModel, model_validator
+from typing_extensions import TypeVar
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.organize import DefectRole, SpecFinding
@@ -42,7 +43,12 @@ class AuditVerdict(StrEnum):
         raise TypeError("AuditVerdict requires an explicit three-state comparison")
 
 
-class AuditClaimJudgment(CamelCaseModel):
+ClaimVerdict = TypeVar(
+    "ClaimVerdict", bound=AuditVerdict, default=AuditVerdict, covariant=True
+)
+
+
+class AuditClaimJudgment(CamelCaseModel, Generic[ClaimVerdict]):
     """One fresh session's judgment, before mandate completion or publication."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -52,7 +58,7 @@ class AuditClaimJudgment(CamelCaseModel):
         pattern=r"\S",
         description="Criterion whose current Check was examined.",
     )
-    verdict: AuditVerdict = Field(
+    verdict: ClaimVerdict = Field(
         description="Holds, refuted or unverifiable from fresh repository evidence."
     )
     evidence: str = Field(
@@ -62,12 +68,12 @@ class AuditClaimJudgment(CamelCaseModel):
     )
 
 
-class AuditClaimObservation(CamelCaseModel):
+class AuditClaimObservation(CamelCaseModel, Generic[ClaimVerdict]):
     """Harness-owned identity of the exact source and head actually examined."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    judgment: AuditClaimJudgment
+    judgment: AuditClaimJudgment[ClaimVerdict]
     head_sha: str = Field(min_length=1)
     record_ref: str = Field(min_length=1)
     check: str = Field(min_length=1)
@@ -304,19 +310,36 @@ class AuditMandateObservation(RootModel[MandateObservation]):
         return self.root.evidence
 
 
-class AuditClaimReport(CamelCaseModel):
-    """Completeness boundary before later sanitization and report publication."""
+class RefutedClaimReport(CamelCaseModel):
+    """A refutation cannot leave the hunt without its mandate observation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    claim: AuditClaimObservation
-    mandate: AuditMandateObservation | None
+    claim: AuditClaimObservation[Literal[AuditVerdict.REFUTED]]
+    mandate: AuditMandateObservation
 
-    @model_validator(mode="after")
-    def _refutation_requires_mandate(self) -> Self:
-        if (self.claim.judgment.verdict is AuditVerdict.REFUTED) != (
-            self.mandate is not None
-        ):
-            raise ValueError(
-                "every refutation requires a mandate verdict, only refutations do"
-            )
-        return self
+
+class UnrefutedClaimReport(CamelCaseModel):
+    """A supported or unsettled claim carries no refutation mandate."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    claim: AuditClaimObservation[Literal[AuditVerdict.HOLDS, AuditVerdict.UNVERIFIABLE]]
+    mandate: None
+
+
+class AuditClaimReport(RootModel[RefutedClaimReport | UnrefutedClaimReport]):
+    """Flat report with disjoint nested verdicts and the corresponding payload.
+
+    The existing wire locates its discriminator inside claim.judgment. The
+    two literal specializations are disjoint without duplicating the verdict
+    at the report level; a mandate is required exactly for a refutation.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    @property
+    def claim(self) -> AuditClaimObservation:
+        return self.root.claim
+
+    @property
+    def mandate(self) -> AuditMandateObservation | None:
+        return self.root.mandate

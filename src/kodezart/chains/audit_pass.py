@@ -221,7 +221,9 @@ class AuditMandateHunt:
 
     async def complete(self, request: AuditMandateRequest) -> AuditClaimReport:
         if request.claim.judgment.verdict is not AuditVerdict.REFUTED:
-            return AuditClaimReport(claim=request.claim, mandate=None)
+            return AuditClaimReport.model_validate(
+                {"claim": request.claim, "mandate": None}
+            )
         mandate = await self.observe(
             AuditMandateContext(
                 defect_class=request.defect_class,
@@ -232,7 +234,9 @@ class AuditMandateHunt:
                 cache_key=request.cache_key,
             )
         )
-        return AuditClaimReport(claim=request.claim, mandate=mandate)
+        return AuditClaimReport.model_validate(
+            {"claim": request.claim, "mandate": mandate}
+        )
 
     async def observe(self, request: AuditMandateContext) -> AuditMandateObservation:
         """Hunt once over native text for a fresh, exactly addressed refutation."""
