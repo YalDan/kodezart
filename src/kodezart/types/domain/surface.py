@@ -13,6 +13,10 @@ class SurfaceKind(StrEnum):
     A criterion sub-issue is one surface covering its body, state and labels.
     Its parentage determines which fire declares it in its surface set; the
     address remains the criterion's own tracker-minted issue key.
+
+    Creating a criterion has no child key yet. The parent's criterion-child
+    set is the separate address for that membership-creation operation; it
+    does not authorize modifying any existing child's body, state or labels.
     """
 
     ISSUE_DESCRIPTION = "issue_description"
@@ -21,6 +25,7 @@ class SurfaceKind(StrEnum):
     CONTAINER_STATUS_UPDATE = "container_status_update"
     ISSUE_LABEL_SET = "issue_label_set"
     CRITERION_SUB_ISSUE = "criterion_sub_issue"
+    CRITERION_CHILD_SET = "criterion_child_set"
 
 
 _CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(
