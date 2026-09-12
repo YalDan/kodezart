@@ -207,7 +207,6 @@ async def test_native_branch_watch_retries_the_observed_cleanup_commit():
     try:
         workflow, fixes = engine(
             client,
-            observations=client,
             artifact_persister=cleanup,
             merger=FakeBranchMerger(merge_sha=SHA),
         )
@@ -361,7 +360,6 @@ def built_workflow(monkeypatch, ci, *, config, repositories=()):
     # The concrete forge client satisfies all these separate ports at composition.
     ci.create_pr = creator.create_pr
     ci.comment_on_pr = creator.comment_on_pr
-    ci.observed_checks = ci.observation_reader.observed_checks
 
     async def visibility(**kwargs):
         from kodezart.types.domain.gating import RepoVisibility

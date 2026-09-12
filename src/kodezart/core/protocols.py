@@ -9,7 +9,7 @@ from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
-from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.check_observation import CIWatchResult
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
@@ -522,28 +522,13 @@ class PRStateReader(Protocol):
 
 
 @runtime_checkable
-class CIObservationReader(Protocol):
-    """Read the completed watch's evidence without widening CIMonitor."""
-
-    async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
-        """Require this task's latest completed watch to name one commit.
-
-        The snapshot includes the completed check names from that same watch.
-        Missing, pending, failed or identity-incomplete watches raise
-        CheckObservationError. Reading never starts another forge observation.
-        A later watch clears the earlier result before it can fail or cancel.
-        """
-        ...
-
-
-@runtime_checkable
 class CIMonitor(Protocol):
     """Polls CI status for a commit ref."""
 
     async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
         """Request re-observation at the same SHA.
 
-        Subsequent waits and failed-name reads on this monitor must observe
+        Subsequent waits on this monitor must observe
         the requested attempt, never the completed checks preceding it.
         An unsupported or incomplete rerun raises a domain error.
         Each asynchronous task owns its rerun/read sequence; another task's
@@ -555,21 +540,18 @@ class CIMonitor(Protocol):
         """Read whether checks are declared; failed reads never mean absent."""
         ...
 
-    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
-        """The one failing-set reader, independent of log prose.
-
-        A task's completed watch pins the original ref's check set. A rerun
-        takes precedence and reads its requested attempt. Without either,
-        this reads a complete current terminal observation from the forge.
-        """
-        ...
-
     async def wait_for_checks(
         self,
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]: ...
+    ) -> CIWatchResult:
+        """Return one immutable observation, with no subsequent evidence reads.
+
+        Completed checks carry their commit, whole roster and failure subset.
+        Absent and incomplete watches are distinct from completed red checks.
+        """
+        ...
 
 
 @runtime_checkable

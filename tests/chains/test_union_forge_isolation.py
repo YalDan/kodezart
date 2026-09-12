@@ -35,8 +35,6 @@ FORGE_METHODS: frozenset[str] = frozenset(
         "wait_for_checks",
         "rerun_checks",
         "checks_declared",
-        "failed_check_names",
-        "observed_checks",
         "resolve_visibility",
     }
 )

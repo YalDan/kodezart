@@ -9,7 +9,7 @@ from kodezart.domain.errors import (
     AuditEvidenceReadError,
     CriterionResolutionError,
 )
-from tests.fakes import FakeCIMonitor, FakeCIObservationReader
+from tests.fakes import FakeCIMonitor
 from tests.services.test_audit_sources import reader
 from tests.tracker import test_audit_evidence as evidence
 from tests.tracker import test_audit_forge as forge
@@ -26,7 +26,7 @@ async def test_actual_audit_entry_preserves_typed_key_failure_without_side_effec
     setup, forge_setup, tracker, tracker_writes, monkeypatch, consumer, damage
 ):
     build, runner, git, source, cache, workspace, _, claims = setup
-    ci, observations = FakeCIMonitor(), FakeCIObservationReader()
+    ci = FakeCIMonitor()
     requested = "absent/二" if damage == "missing" else evidence.CHILD
     if damage != "missing":
         rows = list(await tracker.read_criteria(issue_key=evidence.ROOT))
@@ -49,7 +49,7 @@ async def test_actual_audit_entry_preserves_typed_key_failure_without_side_effec
         elif consumer == "source":
             await reader(setup, tracker).read(request)
         else:
-            await forge_setup(ci, observations).observe(
+            await forge_setup(ci).observe(
                 forge.REQUEST.model_copy(update={"criterion_key": requested})
             )
     cause = raised.value.__cause__
