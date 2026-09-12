@@ -1,20 +1,18 @@
-"""Compose a scope's ready lanes, in the order the planner ranked them.
+"""Observe a scope's retained lane heads independently of dispatch readiness.
 
-This is the union step's production constructor: it builds the scratch
-composition and its tick from configuration, reads the planner's ranked
-ready set, and hands that ranking to the composition unchanged.
-
-It holds the tracker, the git port and the check-chain runner, and no
-forge port of any kind. Composing a scope is a measurement: nothing here
-can push, open, merge or read the state of a pull request, so the order a
-scope composes in can only be the planner's, never the order the lanes'
-pull requests happen to have been opened in.
+Membership comes from the complete scope plan. The existing topology policy
+orders those participants; approval, criterion gaps and live blockers decide
+future dispatch, not whether a retained branch belongs in this measurement.
+The consumer holds tracker, Git and check-runner ports without forge or
+lane-delivery authority. Composition changes only a disposable scratch tree.
 """
 
-from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort
 from kodezart.domain.errors import UnionHeadReadError
+from kodezart.domain.issue_tree import RECORD_KINDS
+from kodezart.domain.topology import plan_topology
+from kodezart.services.scope_planning import read_scope_plan
 from kodezart.services.union_composition import UnionComposition
 from kodezart.services.union_tick import UnionTick
 from kodezart.types.domain.branch import WorkRefRole
@@ -23,8 +21,8 @@ from kodezart.types.domain.union import UnionCompositionResult
 from kodezart.types.domain.union_tick import UnionLaneBranch, UnionTickContext
 
 
-class DeliveryCoordinator:
-    """One scope's union observations, taken over the planner's own ranking.
+class ScopeUnionCoordinator:
+    """One scope's union observations, separate from individual lane delivery.
 
     The scope is named once, by the union context this consumer was
     configured with; the kind of container that key addresses is the only
@@ -58,24 +56,47 @@ class DeliveryCoordinator:
         )
 
     async def verify(self) -> UnionCompositionResult:
-        """Observe whether the planner's current ready lanes compose.
-
-        The roster is the ready set in the planner's own order. Nothing
-        here sorts, filters or reverses it, so a lane's position in the
-        composition is the position the planner's ranking gave it.
-        """
-        selection = await read_scope_ready(ref=self._scope, tracker=self._tracker)
-        if not selection.ready:
+        """Return an observation only while its participant roster remains current."""
+        roster = await self._roster()
+        result = await self._tick.verify(lane_branches=roster)
+        if await self._roster() != roster:
             raise UnionHeadReadError(
                 scope_key=self._scope.key,
                 branch=None,
-                reason="the planner ranked no ready lane to compose",
+                reason="the scope union roster changed during verification",
             )
+        return result
+
+    async def _roster(self) -> tuple[UnionLaneBranch, ...]:
+        """Rank complete ordinary membership without dispatch eligibility.
+
+        A retained lane still participates when it has no current work or
+        is blocked from another dispatch. Structural criterion and record
+        issues are facts for planning, not independent delivery branches.
+        """
+        plan = await read_scope_plan(ref=self._scope, tracker=self._tracker)
+        participants = frozenset(
+            issue.issue_key
+            for issue in plan.scope.issues
+            if "criterion" not in issue.issue_labels
+            and not issue.issue_labels & RECORD_KINDS
+        )
+        if not participants:
+            raise UnionHeadReadError(
+                scope_key=self._scope.key,
+                branch=None,
+                reason="the scope contains no participating lane to compose",
+            )
+        ranking = plan_topology(
+            issues=(*plan.scope.issues, *plan.dependencies),
+            candidate_keys=participants,
+            blocking_issue_keys=frozenset(),
+        )
         roster = [
             await self._lane_branch(issue_key=lane.issue.issue_key)
-            for lane in selection.ready
+            for lane in ranking.ready
         ]
-        return await self._tick.verify(lane_branches=roster)
+        return tuple(roster)
 
     async def _lane_branch(self, *, issue_key: str) -> UnionLaneBranch:
         """The one deliverable ref the lane recorded, or a typed refusal."""

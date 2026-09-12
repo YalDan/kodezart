@@ -7,13 +7,14 @@ production constructor, so an implementation that sorted the roster, or took
 the order the refs were recorded in, composes in the wrong order and fails.
 """
 
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from kodezart.adapters.subprocess_check_chain import SubprocessCheckChainRunner
-from kodezart.chains.delivery_coordinator import DeliveryCoordinator
+from kodezart.chains.delivery_coordinator import ScopeUnionCoordinator
 from kodezart.chains.scope_walker import read_scope_ready
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import CheckChainExecutionError, UnionHeadReadError
@@ -141,8 +142,8 @@ class Fixture:
         self.context = context
         self.tracker = scope.tracker()
 
-    def coordinator(self, runner: object = None) -> DeliveryCoordinator:
-        return DeliveryCoordinator(
+    def coordinator(self, runner: object = None) -> ScopeUnionCoordinator:
+        return ScopeUnionCoordinator(
             scope_kind=PROJECT.kind,
             tracker=self.tracker,
             git=self.git,
@@ -251,13 +252,147 @@ async def test_a_lane_with_two_recorded_deliverable_refs_refuses(delivery):
     assert delivery.git.created == []
 
 
-async def test_a_scope_the_planner_ranks_nothing_in_refuses_to_compose(delivery):
+async def test_completed_lanes_with_retained_heads_are_checked_together(
+    delivery, repository
+):
     delivery.scope.close_every_criterion()
     delivery.tracker = delivery.scope.tracker()
     assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()
+    command = (
+        f'{sys.executable} -c "from pathlib import Path; '
+        "assert not (Path('a.txt').exists() and Path('z.txt').exists())\""
+    )
+    checks = pinned.entry(command)
+    delivery.context = delivery.context.model_copy(
+        update={
+            "repo": delivery.context.repo.model_copy(update={"checks": checks.checks})
+        }
+    )
+    author, base, heads = repository
+    for head in heads:
+        alone = await pinned.service(pinned.ObservedGit()).verify(
+            scope_key=PROJECT.key,
+            repo_path=str(author),
+            repo=checks,
+            base_sha=base,
+            lane_heads=(head,),
+        )
+        assert alone.outcome is UnionOutcome.GREEN
+        assert not Path(alone.scratch_path).exists()
 
-    with pytest.raises(UnionHeadReadError) as raised:
+    result = await delivery.coordinator().verify()
+
+    assert result.composition_order == ("z", "a")
+    assert result.lane_heads == (
+        delivery.scope.by_lane["z"],
+        delivery.scope.by_lane["a"],
+    )
+    assert result.outcome is UnionOutcome.RED
+    assert result.checks.failed_step_names == frozenset({"gate"})
+    assert result.remediation.root_step_names == ("gate",)
+    assert delivery.git.merged == [delivery.sha("z"), delivery.sha("a")]
+    assert delivery.git.created == delivery.git.removed == [result.scratch_path]
+    assert not Path(result.scratch_path).exists()
+
+
+@pytest.mark.parametrize("completed", OPENED_ORDER)
+async def test_completed_and_unfinished_retained_lanes_each_participate_once(
+    delivery, completed
+):
+    key = f"{completed}-check"
+    delivery.tracker.issues[key] = delivery.tracker.issues[key].model_copy(
+        update={"state_name": "Done", "state_kind": WorkflowStateKind.COMPLETED}
+    )
+    ready = await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)
+    assert tuple(lane.issue.issue_key for lane in ready.ready) == tuple(
+        lane for lane in ("z", "a") if lane != completed
+    )
+
+    result = await delivery.coordinator().verify()
+
+    assert result.composition_order == ("z", "a")
+    assert result.outcome is UnionOutcome.GREEN
+    assert delivery.git.merged == [delivery.sha("z"), delivery.sha("a")]
+    assert delivery.git.created == delivery.git.removed == [result.scratch_path]
+    assert not Path(result.scratch_path).exists()
+
+
+@pytest.mark.parametrize("changed", ["membership", "reference"])
+async def test_roster_change_during_measurement_refuses_before_return(
+    delivery, changed
+):
+    class MovingRosterRunner(SubprocessCheckChainRunner):
+        async def run_chain(self, *, cwd, steps):
+            result = await super().run_chain(cwd=cwd, steps=steps)
+            if changed == "membership":
+                delivery.tracker.scope_memberships[PROJECT] = ("z",)
+            else:
+                delivery.tracker.recorded_work_refs["z"] = [
+                    work_ref("z", "work/a", delivery.sha("a"))
+                ]
+            return result
+
+    runner = MovingRosterRunner(timeout=AppConfig().union_check_step_timeout_seconds)
+    with pytest.raises(UnionHeadReadError, match="roster changed"):
+        await delivery.coordinator(runner).verify()
+    assert delivery.git.created == delivery.git.removed
+    assert all(not Path(path).exists() for path in delivery.git.created)
+
+
+async def test_retained_unapproved_lanes_still_participate(delivery):
+    delivery.tracker.scope_label_members.clear()
+    assert (await read_scope_ready(ref=PROJECT, tracker=delivery.tracker)).ready == ()
+    result = await delivery.coordinator().verify()
+    assert result.composition_order == ("z", "a")
+    assert result.outcome is UnionOutcome.GREEN
+
+
+async def test_only_structural_artifacts_is_a_genuinely_empty_roster(delivery):
+    delivery.tracker.scope_memberships[PROJECT] = ("a-check", "z-check")
+    with pytest.raises(UnionHeadReadError, match="no participating lane"):
         await delivery.coordinator().verify()
+    assert delivery.git.created == []
 
-    assert "no ready lane" in raised.value.reason
+
+async def test_cyclic_parentage_is_refused_before_any_union_work(delivery):
+    from kodezart.domain.errors import ScopeReadError
+
+    for lane, parent in (("a", "z"), ("z", "a")):
+        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(
+            update={"parent_key": parent}
+        )
+    with pytest.raises(ScopeReadError):
+        await delivery.coordinator().verify()
+    assert delivery.git.created == []
+
+
+async def test_dependency_cycle_is_refused_before_any_union_work(delivery):
+    from kodezart.domain.errors import ScopeCycleError
+    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind
+
+    for lane, blocker in (("a", "z"), ("z", "a")):
+        delivery.tracker.issues[lane] = delivery.tracker.issues[lane].model_copy(
+            update={
+                "relations": (
+                    IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key=blocker),
+                )
+            }
+        )
+    with pytest.raises(ScopeCycleError):
+        await delivery.coordinator().verify()
+    assert delivery.git.created == []
+
+
+async def test_missing_dependency_is_not_dropped_by_empty_blocking_predicate(delivery):
+    from kodezart.types.domain.tracker import IssueRelation, IssueRelationKind
+
+    delivery.tracker.issues["a"] = delivery.tracker.issues["a"].model_copy(
+        update={
+            "relations": (
+                IssueRelation(kind=IssueRelationKind.BLOCKED_BY, issue_key="absent"),
+            )
+        }
+    )
+    with pytest.raises(KeyError, match="absent"):
+        await delivery.coordinator().verify()
     assert delivery.git.created == []
