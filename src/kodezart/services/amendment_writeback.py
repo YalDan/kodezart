@@ -88,6 +88,10 @@ class AmendmentWriteAuthority(Protocol):
         """Re-read live criterion/ruling/HEAD/base facts before the next effect."""
         ...
 
+    async def observe_archive(self, *, artifact: TrackerArtifact) -> None:
+        """Keep the verified historical artifact current through publication."""
+        ...
+
     async def observe_criterion(
         self, *, previous: TrackerIssue, body: str, reset: bool
     ) -> TrackerIssue:
@@ -427,6 +431,7 @@ class AmendmentWriteBack:
                 base=judgment.base_sha,
                 authority=authority,
             )
+            await authority.observe_archive(artifact=archive_result.artifact)
             if reason is not None:
                 publication = RecordedRefusal(record=archive_result)
                 if reason is UpheldReason.COST_MEASURED_UNECONOMIC:

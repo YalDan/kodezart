@@ -29,8 +29,10 @@ from kodezart.domain.comment_markers import configured_marker_prefix
 from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.errors import (
     CriterionReadError,
+    DuplicateCommentMarkerError,
     RulingRecordReadError,
     ScopeReadError,
+    WriteBackReadError,
 )
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.amendment_writeback import (
@@ -43,6 +45,7 @@ from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.services.scope_membership import read_scope_members
+from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AMENDMENT_JUDGMENT_SCHEMA, Ruling
 from kodezart.types.domain.amendment import (
     AmendmentClaim,
@@ -53,6 +56,7 @@ from kodezart.types.domain.amendment import (
     NativeWriterOutput,
     NativeWriterStart,
 )
+from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.criteria import (
     CriterionId,
     TrackerCriterion,
@@ -231,6 +235,7 @@ class _NativeWriterGuard:
         self._rulings: tuple[Ruling, ...] | None = None
         self._criterion_issues: tuple[TrackerIssue, ...] | None = None
         self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
+        self._archives: tuple[TrackerArtifact, ...] = ()
         self._base_sha: str | None = None
         self._holder, self._visibility = holder, visibility
 
@@ -319,6 +324,28 @@ class _NativeWriterGuard:
             raise NativeWriteRefusalError(
                 "Current Checks changed during native writing"
             )
+        for expected_archive in self._archives:
+            try:
+                current_archive = await read_tracker_artifact(
+                    tracker=owner._tracker, surface=expected_archive.surface
+                )
+            except (
+                TrackerUnavailableError,
+                TrackerAccessDeniedError,
+                TrackerProtocolError,
+                ConnectionError,
+                TimeoutError,
+                ScopeReadError,
+                WriteBackReadError,
+                DuplicateCommentMarkerError,
+            ) as exc:
+                raise NativeWriteRefusalError(
+                    "The verified amendment archive could not be re-read"
+                ) from exc
+            if current_archive != expected_archive:
+                raise NativeWriteRefusalError(
+                    "The verified amendment archive changed during native writing"
+                )
         if await settle(owner._git.has_replace_refs(workspace_path)):
             raise NativeWriteRefusalError("Native writing cannot use replacement refs")
         if (
@@ -481,6 +508,10 @@ class _WriterActions:
         await self._guard.require_current(
             workspace_path=self._workspace_path, start=self._start
         )
+
+    async def observe_archive(self, *, artifact: TrackerArtifact) -> None:
+        self._guard._archives = (*self._guard._archives, artifact)
+        await self.require_current()
 
     async def judge_claim(self, claim: AmendmentClaim) -> AmendmentJudgment:
         return await self._guard._judge_claim(
