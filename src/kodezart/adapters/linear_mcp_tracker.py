@@ -10,7 +10,7 @@ the whole live set and keeps only what that read confirms.
 """
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -1969,6 +1969,30 @@ class LinearMcpTracker:
         expected: TrackerComment | None = None,
         validate_existing: Callable[[TrackerComment], None] | None = None,
     ) -> TrackerComment:
+        """Retry an unsent mutation only after repeating its complete precondition."""
+
+        async def attempt() -> TrackerComment:
+            return await self._upsert_comment_once(
+                target=target,
+                marker=marker,
+                body=body,
+                holder=holder,
+                expected=expected,
+                validate_existing=validate_existing,
+            )
+
+        return await self._retry_call(_TOOL_SAVE_COMMENT, attempt)
+
+    async def _upsert_comment_once(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None,
+        expected: TrackerComment | None,
+        validate_existing: Callable[[TrackerComment], None] | None,
+    ) -> TrackerComment:
         """Validate the exact addressed snapshot before issuing its mutation.
 
         The synchronous precondition sees the same comment used by this
@@ -2024,10 +2048,15 @@ class LinearMcpTracker:
                     surface=surface, author=existing.author_key
                 )
         if existing is None:
-            return await self.post_comment(issue_key=target, body=content)
+            payload = await self._send(
+                _TOOL_SAVE_COMMENT, {"issueId": target, "body": content}
+            )
+            return self._comment_written(
+                issue_key=target, payload=payload, created=True
+            )
         if existing.body == content:
             return existing
-        payload = await self._call(
+        payload = await self._send(
             _TOOL_SAVE_COMMENT, {"id": existing.comment_key, "body": content}
         )
         return self._comment_written(issue_key=target, payload=payload, created=False)
@@ -3749,14 +3778,32 @@ class LinearMcpTracker:
         tool: str,
         arguments: Mapping[str, object],
     ) -> McpToolResult:
+        async def attempt() -> McpToolResult:
+            return await self._send(tool, arguments)
+
+        return await self._retry_call(tool, attempt)
+
+    async def _send(self, tool: str, arguments: Mapping[str, object]) -> McpToolResult:
+        """Issue exactly one transport attempt; its owner supplies the retry scope."""
         if tool == _TOOL_SAVE_ISSUE:
             # Every issue write funnels through here, so the refusal is
             # stated once and no future write path can route around it.
             refuse_combined_issue_write(arguments)
+        return await self._caller.call_tool(name=tool, arguments=arguments)
+
+    async def _retry_call[ResultT](
+        self, tool: str, invoke: Callable[[], Awaitable[ResultT]]
+    ) -> ResultT:
+        """Use the existing policy around one complete, safe-to-repeat attempt.
+
+        Protected mutations include their fresh preconditions in ``invoke``.
+        They end at the write receipt; subsequent awaited readback belongs
+        outside this scope so a read failure cannot resend a completed write.
+        """
         attempt = 0
         while True:
             try:
-                return await self._caller.call_tool(name=tool, arguments=arguments)
+                return await invoke()
             except McpCredentialRefusedError as exc:
                 # Named once and raised, never retried: the refusal is the
                 # same on every attempt, so a budget spent on it buys the
