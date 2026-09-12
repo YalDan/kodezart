@@ -104,6 +104,10 @@ async def read_scope_ready(*, ref: ScopeRef, tracker: TrackerPort) -> ScopeReady
             for entry in topology.ready
         ),
         blocked=topology.blocked,
+        unapproved=tuple(key for key, value in approved.items() if not value),
+        criteria=tuple(
+            issue for issue in facts.values() if "criterion" in issue.issue_labels
+        ),
     )
 
 

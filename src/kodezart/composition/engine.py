@@ -21,6 +21,8 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.chains.ticket_generation import TicketGenerationLoop
+from kodezart.composition.delivery import build_native_lane_workflow
+from kodezart.composition.scope_runtime import build_scope_runtime
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import RateLimitedSoftFailureError
 from kodezart.core.logging import BoundLogger, get_logger
@@ -33,6 +35,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RefPublisher,
     RepoCache,
+    TrackerPort,
     WorkflowEngine,
     WorkspaceProvider,
 )
@@ -74,9 +77,11 @@ class OriginRoutedWorkflowEngine:
         *,
         forge_arm: WorkflowEngine,
         forge_less_arm: WorkflowEngine,
+        scoped_arm: WorkflowEngine | None = None,
     ) -> None:
         self._forge_arm: WorkflowEngine = forge_arm
         self._forge_less_arm: WorkflowEngine = forge_less_arm
+        self._scoped_arm = scoped_arm
         self._log: BoundLogger = get_logger(__name__)
 
     def arm_for(self, repo_url: str | None) -> WorkflowEngine:
@@ -106,12 +111,16 @@ class OriginRoutedWorkflowEngine:
         allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
-        """Refuse unsupported scopes before any I/O; run authored jobs normally."""
+        """Route an addressed job to its scope controller, preserving its identity."""
         if scope is not None:
-            raise ScopedExecutionUnavailableError(
-                "Scoped graph execution is not implemented", ref=scope
-            )
-        arm = self.arm_for(repo_url)
+            if self._scoped_arm is None:
+                raise ScopedExecutionUnavailableError(
+                    "Scoped graph execution is not implemented in this deployment",
+                    ref=scope,
+                )
+            arm = self._scoped_arm
+        else:
+            arm = self.arm_for(repo_url)
         await self._log.ainfo(
             "forge_capabilities_selected",
             repo_url=repo_url,
@@ -124,7 +133,7 @@ class OriginRoutedWorkflowEngine:
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=base_spec,
-            scope=None,
+            scope=scope,
             implied_base=implied_base,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
@@ -173,6 +182,7 @@ def build_workflow_engine(
     github_api: GitHubAPIClient | None,
     checkpointer: BaseCheckpointSaver[str] | None,
     criteria: FireCriteriaSource | None = None,
+    scope_tracker: TrackerPort | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
@@ -289,7 +299,44 @@ def build_workflow_engine(
             ),
         )
 
+    forge_arm = arm(github_api)
+    forge_less_arm = arm(None)
+    scoped_arm = None
+    if scope_tracker is not None:
+        if criteria is None:
+            raise ValueError("Scope execution requires a native criterion source")
+        scoped_arm = build_scope_runtime(
+            tracker=scope_tracker,
+            forge_lane=build_native_lane_workflow(
+                fire=forge_arm.fire,
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=github_api,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+            ),
+            forge_less_lane=build_native_lane_workflow(
+                fire=forge_less_arm.fire,
+                config=config,
+                service=agent_service,
+                git=git,
+                forge=None,
+                prompts=prompts,
+                skills=skills,
+                gate=gate,
+                repositories=repositories,
+            ),
+            forge_probe=github_api,
+            git=git,
+            cache=cache,
+            repositories=repositories,
+            config=config,
+        )
     return OriginRoutedWorkflowEngine(
-        forge_arm=arm(github_api),
-        forge_less_arm=arm(None),
+        forge_arm=forge_arm,
+        forge_less_arm=forge_less_arm,
+        scoped_arm=scoped_arm,
     )
