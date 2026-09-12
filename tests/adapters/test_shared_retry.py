@@ -12,7 +12,12 @@ from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.tracker import build_tracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import McpCallUnansweredError, McpCredentialRefusedError
+from kodezart.core.errors import (
+    McpCallUnansweredError,
+    McpCredentialRefusedError,
+    TrackerAccessDeniedError,
+    TrackerUnavailableError,
+)
 from kodezart.core.logging import get_logger
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
 from kodezart.types.domain.agent import RateLimitWarningEvent
@@ -190,8 +195,9 @@ async def test_linear_policy_counts_total_attempts_and_backoff(attempts, waits):
     tracker = tracker_over(
         server, retry=RetryPolicy(attempts=attempts, initial_delay=0.5, factor=3)
     )
-    with pytest.raises(TransientAPIError):
+    with pytest.raises(TrackerUnavailableError) as raised:
         await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    assert isinstance(raised.value.__cause__, TransientAPIError)
     assert len(server.tool_calls("get_issue")) == attempts
     assert waits == ([] if attempts == 1 else [0.5, 1.5])
 
@@ -209,11 +215,15 @@ async def test_linear_permanent_or_unsafe_retry_refuses_immediately(kind, waits)
             raise McpCallUnansweredError("lost", server_name="fixture")
 
     tracker = tracker_over(server, caller=RefusingCaller(), max_retries=4)
-    expected = (
+    expected_cause = (
         McpCredentialRefusedError if kind == "credential" else McpCallUnansweredError
     )
-    with pytest.raises(expected):
+    expected = (
+        TrackerAccessDeniedError if kind == "credential" else TrackerUnavailableError
+    )
+    with pytest.raises(expected) as raised:
         await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="one mutation")
+    assert isinstance(raised.value.__cause__, expected_cause)
     assert len(calls) == 1
     assert waits == []
 
@@ -392,8 +402,9 @@ async def test_composed_tracker_preserves_operator_retry_units(waits):
         operation=operation_config(),
         caller=server,
     )
-    with pytest.raises(TransientAPIError):
+    with pytest.raises(TrackerUnavailableError) as raised:
         await tracker.read_issue(issue_key=CLAIMED_ISSUE)
+    assert isinstance(raised.value.__cause__, TransientAPIError)
     assert len(server.tool_calls("get_issue")) == 3
     assert waits == [0.5, 1]
 
