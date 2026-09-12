@@ -278,11 +278,11 @@ class OrganizeOwner:
     async def _may_write(
         self, issue_key: str, *, phase: ResolvedMandateSpec, scope: ScopeRef
     ) -> None:
-        if await self._tracker.execution_approved(issue_key=issue_key):
+        members = await self._tracker.scope_issues(ref=scope)
+        if issue_key not in {member.issue_key for member in members}:
             raise OrganizeWriteRefusalError(
-                issue_key=issue_key, reason="scope approval ended Organize"
+                issue_key=issue_key, reason="the write target left the admitted scope"
             )
-
         namespace, key = split_label_key(phase.spec.gate_label_key)
         permitted = (
             ScopeLabel(key) in await self._tracker.read_scope_labels(ref=scope)
@@ -293,6 +293,23 @@ class OrganizeOwner:
         if not permitted:
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key, reason="configured phase gate is no longer present"
+            )
+        if await self._tracker.execution_approved(issue_key=issue_key):
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key, reason="scope approval ended Organize"
+            )
+
+    async def _require_revision(self, revision: TrackerIssueRevision) -> None:
+        current = await self._tracker.read_issue_revision(
+            issue_key=revision.issue.issue_key
+        )
+        if (
+            current.issue.issue_key != revision.issue.issue_key
+            or current.body_digest != revision.body_digest
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=revision.issue.issue_key,
+                reason="the author's source revision changed before writing",
             )
 
     async def _author_write(
@@ -322,6 +339,8 @@ class OrganizeOwner:
                 evidence=evidence if finding is None else finding.model_dump_json(),
             )
             value = proposal.proposal.root
+            await self._require_revision(proposal.revision)
+            await self._may_write(request.issue_key, phase=phase, scope=scope)
             if isinstance(value, UnavailableProposal):
                 raise OrganizeWriteRefusalError(
                     issue_key=value.issue_id,
@@ -342,7 +361,6 @@ class OrganizeOwner:
                     issue_key=request.issue_key,
                     reason="author returned another write surface",
                 )
-            await self._may_write(request.issue_key, phase=phase, scope=scope)
             if isinstance(value, BodyProposal):
                 content = await gated_write(
                     gate=self._gate,
@@ -362,6 +380,7 @@ class OrganizeOwner:
                     lease_seconds=self._lease_seconds,
                 ) as lease:
                     await lease.renew()
+                    await self._require_revision(proposal.revision)
                     await self._may_write(request.issue_key, phase=phase, scope=scope)
                     await settle(
                         self._tracker.edit_description(
@@ -426,6 +445,7 @@ class OrganizeOwner:
                 ) as lease:
                     for item in missing:
                         await lease.renew()
+                        await self._require_revision(proposal.revision)
                         await self._may_write(
                             request.issue_key, phase=phase, scope=scope
                         )
@@ -467,12 +487,12 @@ class OrganizeOwner:
                     issue_key=request.issue_key,
                     reason="phase marker readback was not verified",
                 )
-            await self._may_write(request.issue_key, phase=phase, scope=scope)
             if not await self._proof_live(scope, judgments):
                 raise OrganizeWriteRefusalError(
                     issue_key=request.issue_key,
                     reason="phase evidence changed before marker",
                 )
+            await self._may_write(request.issue_key, phase=phase, scope=scope)
             async with RunSurfaceLease(
                 tracker=self._tracker,
                 job_id=job_id,
@@ -480,12 +500,12 @@ class OrganizeOwner:
                 lease_seconds=self._lease_seconds,
             ) as lease:
                 await lease.renew()
-                await self._may_write(request.issue_key, phase=phase, scope=scope)
                 if not await self._proof_live(scope, judgments):
                     raise OrganizeWriteRefusalError(
                         issue_key=request.issue_key,
                         reason="phase evidence changed during lease acquisition",
                     )
+                await self._may_write(request.issue_key, phase=phase, scope=scope)
                 await settle(
                     self._tracker.set_issue_classification(
                         issue_key=request.issue_key, classification=marker
@@ -503,9 +523,11 @@ class OrganizeOwner:
         cause: StageHaltCause,
         questions: Sequence[UnresolvedProposal] = (),
         bound: OrganizeBoundEvidence | None = None,
+        write_back_results: Sequence[WriteBackResult] = (),
         results: Sequence[AdmissionResult],
         findings: Sequence[SpecFinding],
         phase: ResolvedMandateSpec,
+        scope: ScopeRef,
         job_id: str,
         base_ref: str,
         visibility: RepoVisibility,
@@ -524,7 +546,41 @@ class OrganizeOwner:
             }
         )
         records.update({q.issue_id: (q.question, q.evidence) for q in questions})
+        records.update(
+            {
+                result.artifact.surface.ref.key: (
+                    "The written artifact remains independently unverified.",
+                    result.model_dump_json(),
+                )
+                for result in write_back_results
+            }
+        )
         for issue_key, (question, evidence) in records.items():
+            revision = await self._tracker.read_issue_revision(issue_key=issue_key)
+            if revision.issue.issue_key != issue_key:
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key, reason="the escalation source identity changed"
+                )
+
+            async def before_write(
+                *, revision: TrackerIssueRevision = revision
+            ) -> None:
+                await self._require_revision(revision)
+                if not write_back_results and any(
+                    [
+                        not await self._admission.is_live(result)
+                        for result in results
+                        if result.issue_id == revision.issue.issue_key
+                    ]
+                ):
+                    raise OrganizeWriteRefusalError(
+                        issue_key=revision.issue.issue_key,
+                        reason="the escalation admission evidence is no longer current",
+                    )
+                await self._may_write(
+                    revision.issue.issue_key, phase=phase, scope=scope
+                )
+
             occurrence = sha256(
                 f"{phase.spec.kind.value}\n{question}".encode()
             ).hexdigest()
@@ -557,16 +613,19 @@ class OrganizeOwner:
                 *,
                 issue_key: str = issue_key,
                 escalation: LaneEscalation = escalation,
+                before_write: Callable[[], Awaitable[None]] = before_write,
             ) -> None:
                 if finding is not None:
                     raise WriteBackReadError(
                         "the escalation could not be independently confirmed"
                     )
+                await before_write()
                 await self._escalations.raise_escalation(
                     lane_key=issue_key,
                     job_id=job_id,
                     escalation=escalation,
                     visibility=visibility,
+                    before_write=before_write,
                 )
 
             try:
@@ -619,6 +678,7 @@ class OrganizeOwner:
                     admission_results=tuple(results),
                     questions=tuple(questions),
                     surviving_findings=tuple(findings),
+                    write_back_results=tuple(write_back_results),
                 )
         return StageHaltReport.model_validate(
             {
@@ -627,6 +687,7 @@ class OrganizeOwner:
                 "questions": questions,
                 "admission_results": results,
                 "surviving_findings": findings,
+                "write_back_results": write_back_results,
             }
         )
 
@@ -713,6 +774,7 @@ class OrganizeOwner:
                                 results=(result,),
                                 findings=(),
                                 phase=phase,
+                                scope=scope,
                                 job_id=job_id,
                                 base_ref=base_ref,
                                 visibility=visibility,
@@ -769,6 +831,7 @@ class OrganizeOwner:
                                     ),
                                 ),
                                 phase=phase,
+                                scope=scope,
                                 job_id=job_id,
                                 base_ref=base_ref,
                                 visibility=visibility,
@@ -785,9 +848,11 @@ class OrganizeOwner:
                                     rounds_used=len(verified_write.rounds),
                                     loop="write_back",
                                 ),
+                                write_back_results=(verified_write,),
                                 results=(result,),
                                 findings=(),
                                 phase=phase,
+                                scope=scope,
                                 job_id=job_id,
                                 base_ref=base_ref,
                                 visibility=visibility,
@@ -826,6 +891,7 @@ class OrganizeOwner:
                             results=(result,),
                             findings=(),
                             phase=phase,
+                            scope=scope,
                             job_id=job_id,
                             base_ref=base_ref,
                             visibility=visibility,
@@ -914,6 +980,7 @@ class OrganizeOwner:
                     results=refused,
                     findings=findings,
                     phase=phase,
+                    scope=scope,
                     job_id=job_id,
                     base_ref=base_ref,
                     visibility=visibility,
