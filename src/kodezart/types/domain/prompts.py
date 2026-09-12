@@ -41,6 +41,7 @@ class PromptKey(StrEnum):
     ORGANIZE_ASSESS = "organize_assess"
     ORGANIZE_AUTHOR = "organize_author"
     ORGANIZE_VERIFY = "organize_verify"
+    WRITE_BACK_VERIFY = "write_back_verify"
     AUDIT_CLAIM = "audit_claim"
     AUDIT_OVERCLAIM = "audit_overclaim"
     AUDIT_MANDATE = "audit_mandate"

@@ -95,12 +95,16 @@ def test_result_cannot_be_routed_using_another_issues_edges(verdict):
         admitted_body_digest="revision:one",
         issue_id=ISSUE,
         verdict=verdict,
-        invented_decision="Choose a storage model.",
-        refusal_kind=(
-            RefusalKind.SPEC_GAP if verdict is AdmissionVerdict.NOT_BUILDABLE else None
+        **(
+            {
+                "invented_decision": "Choose a storage model.",
+                "refusal_kind": RefusalKind.SPEC_GAP,
+            }
+            if verdict is AdmissionVerdict.NOT_BUILDABLE
+            else {"missing_artifact": "schema", "pending_blocker_id": BLOCKER}
+            if verdict is AdmissionVerdict.UNVERIFIABLE
+            else {}
         ),
-        missing_artifact="schema",
-        pending_blocker_id=BLOCKER,
         evidence="Observed on the issue body.",
     )
     other = make_tracker_issue("OTHER/7", blocked_by=[BLOCKER])

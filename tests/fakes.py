@@ -38,6 +38,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
+from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateIssueIdentityError,
@@ -2703,6 +2704,14 @@ class FakeLinearMcpServer:
                 description=str(arguments.get("description", "")),
                 team=str(arguments["team"]),
                 priority_raw=int(str(arguments.get("priority", 0))),
+                parent_id=str(arguments["parentId"])
+                if "parentId" in arguments
+                else None,
+                labels=list(arguments.get("labels", [])),
+                status=str(arguments.get("state", "Backlog")),
+                status_type=self.state_types[str(arguments["state"])]
+                if "state" in arguments
+                else "backlog",
             )
             self.issues[created.id] = created
             return created.wire()
@@ -3554,6 +3563,64 @@ class FakeTrackerPort:
             read_container=read_container,
         )
         return subject[0], approved
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            issue = await self.read_issue(issue_key=ref.key)
+            if issue.issue_key != ref.key:
+                raise ScopeReadError("scope label identity changed", ref=ref)
+        else:
+            await self.container_metadata(ref=ref)
+        return self.scope_label_members.get(ref, frozenset())
+
+    async def create_criterion_if_absent(
+        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+    ) -> TrackerIssue:
+        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        children = await self.read_criteria(issue_key=parent_key)
+        existing = existing_criterion(
+            parent_key=parent_key, check=check, children=children
+        )
+        if existing is not None:
+            return existing
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_CHILD_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
+        )
+        lease = self.leases.get(surface)
+        owner = (
+            lease.holder
+            if lease is not None and lease.expires_at > self._clock()
+            else None
+        )
+        if holder != owner:
+            raise SurfaceLeaseError(
+                "criterion creation requires its child-set grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        parent = await self.read_issue(issue_key=parent_key)
+        if parent.team_key is None or not title.strip():
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion creation requires title and declared team",
+            )
+        created = await self.create_issue(
+            title=title,
+            body=body,
+            team_key=parent.team_key,
+            priority=IssuePriority.NONE,
+        )
+        child = created.model_copy(
+            update={
+                "parent_key": parent_key,
+                "issue_labels": frozenset({"criterion"}),
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
+            }
+        )
+        self.issues[child.issue_key] = child
+        return child
 
     async def create_issue(
         self,

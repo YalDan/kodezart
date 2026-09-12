@@ -219,6 +219,7 @@ keys = [
     "content_audit",
     "organize_assess",
     "organize_verify",
+    "write_back_verify",
     "audit_claim",
     "audit_overclaim",
     "audit_detection_removal",

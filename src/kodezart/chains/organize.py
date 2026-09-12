@@ -50,7 +50,7 @@ class OrganizeAdmission:
     async def assess(self, request: OrganizeAdmissionRequest) -> AdmissionResult:
         """Assess the current tracker source in a fresh, read-only session."""
         return await self._judge(
-            request, key=PromptKey.ORGANIZE_ASSESS, site="organize_assess"
+            request, key=request.admission_prompt_key, site="organize_assess"
         )
 
     async def verify(self, request: OrganizeAdmissionRequest) -> AdmissionResult:
@@ -72,10 +72,18 @@ class OrganizeAdmission:
         )
 
     async def _judge(
-        self, request: OrganizeAdmissionRequest, *, key: PromptKey, site: RaiseSite
+        self,
+        request: OrganizeAdmissionRequest,
+        *,
+        key: PromptKey,
+        site: RaiseSite,
     ) -> AdmissionResult:
         revision = await self._tracker.read_issue_revision(issue_key=request.issue_key)
         subject = revision.issue
+        if subject.issue_key != request.issue_key:
+            raise OrganizeAdmissionIdentityError(
+                expected=request.issue_key, observed=subject.issue_key
+            )
         linked_keys = sorted(
             {relation.issue_key for relation in subject.relations} - {subject.issue_key}
         )
@@ -129,6 +137,6 @@ class OrganizeAdmission:
                 raise OrganizeAdmissionIdentityError(
                     expected=subject.issue_key, observed=judgment.issue_id
                 )
-            return AdmissionResult(
-                **judgment.model_dump(), admitted_body_digest=revision.body_digest
+            return AdmissionResult.model_validate(
+                {**judgment.model_dump(), "admitted_body_digest": revision.body_digest}
             )

@@ -26,6 +26,7 @@ from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
+    LINEAR_WORKFLOW_STATES,
     LinearAssetWire,
     LinearCommentEntryWire,
     LinearCommentListWire,
@@ -70,12 +71,14 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     EscalationReadError,
     IssueLabelReadError,
+    ScopeReadError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
@@ -728,6 +731,23 @@ def refuse_combined_issue_write(arguments: Mapping[str, object]) -> None:
     transition only after it — an edit that refused leaves the state
     exactly where its reader found it.
     """
+    creation_fields = {"title", "description", "team", "parentId", "labels", "state"}
+    if (
+        set(arguments) == creation_fields
+        and all(
+            isinstance(arguments[name], str) and bool(str(arguments[name]).strip())
+            for name in creation_fields - {"labels"}
+        )
+        and isinstance(arguments["labels"], list)
+        and bool(arguments["labels"])
+        and all(
+            isinstance(label, str) and bool(label.strip())
+            for label in arguments["labels"]
+        )
+    ):
+        # Complete native creation initializes state; it transitions no
+        # existing issue. Any id, patch or other locator keeps the guard.
+        return
     if _STATE_SAVE_ARGUMENT in arguments and not _BODY_SAVE_ARGUMENTS.isdisjoint(
         arguments
     ):
@@ -1091,6 +1111,39 @@ class LinearMcpTracker:
         _, approved = await self._read_execution_approval(issue_key=issue_key)
         return approved
 
+    def _scope_label_members(self, labels: Sequence[str]) -> frozenset[ScopeLabel]:
+        return frozenset(
+            member
+            for member in ScopeLabel
+            if self._scope_labels.get(member.value) in labels
+        )
+
+    async def _read_scope_issue(
+        self, issue_key: str
+    ) -> tuple[TrackerIssue, frozenset[ScopeLabel]]:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+        issue = self._to_issue(wire)
+        if issue.issue_key != issue_key:
+            raise ScopeReadError(
+                "scope label identity changed",
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            )
+        return issue, self._scope_label_members(wire.labels)
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            _, members = await self._read_scope_issue(ref.key)
+            return members
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        if ref.kind is ScopeKind.MILESTONE:
+            await reader.container_metadata(ref=ref)
+            return frozenset()
+        labels, _ = await reader.labels_parent(ref=ref)
+        return self._scope_label_members(tuple(labels))
+
     async def _read_execution_approval(
         self, *, issue_key: str
     ) -> tuple[TrackerIssue, bool]:
@@ -1103,11 +1156,8 @@ class LinearMcpTracker:
         reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
 
         async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
-            payload = await self._call(
-                _TOOL_GET_ISSUE, {"id": key, "includeRelations": True}
-            )
-            wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
-            return self._to_issue(wire), label in wire.labels
+            issue, members = await self._read_scope_issue(key)
+            return issue, ScopeLabel.APPROVED in members
 
         subject = await hydrate(issue_key)
 
@@ -1297,6 +1347,88 @@ class LinearMcpTracker:
                     )
                 comments[wire.id] = field_values(raw)
         return tuple(sorted(comments.items()))
+
+    async def create_criterion_if_absent(
+        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+    ) -> TrackerIssue:
+        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        if not title.strip():
+            raise CriterionReadError(
+                issue_key=parent_key, reason="criterion title is empty"
+            )
+        children = await self.read_criteria(issue_key=parent_key)
+        existing = existing_criterion(
+            parent_key=parent_key, check=check, children=children
+        )
+        if existing is not None:
+            return existing
+        parent = await self.read_issue(issue_key=parent_key)
+        if parent.issue_key != parent_key or parent.team_key is None:
+            raise CriterionReadError(
+                issue_key=parent_key, reason="criterion parent has no declared team"
+            )
+        label = self._issue_labels.get("criterion")
+        if not label:
+            raise OperationMemberAbsentError(
+                missing="issue_labels.criterion", stops="criterion creation"
+            )
+        if label == self._scope_labels.get("approved"):
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion classification aliases human approval",
+            )
+        team = self._team_identifier(parent.team_key)
+        payload = await self._call(_TOOL_LIST_ISSUE_STATUSES, {"team": team})
+        try:
+            states = LINEAR_WORKFLOW_STATES.validate_python(payload)
+        except ValidationError as exc:
+            raise TrackerProtocolError(
+                "invalid initial state vocabulary",
+                tool=_TOOL_LIST_ISSUE_STATUSES,
+                detail=str(exc),
+            ) from exc
+        unstarted = [
+            state.name
+            for state in states
+            if state.type == WorkflowStateKind.UNSTARTED.value
+        ]
+        if len(unstarted) != 1:
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion creation requires exactly one unstarted team state",
+            )
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_CHILD_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
+        )
+        await self._require_surface_holder(surface=surface, holder=holder)
+        created = self._saved_issue(
+            await self._call(
+                _TOOL_SAVE_ISSUE,
+                {
+                    "title": title,
+                    "description": body,
+                    "team": team,
+                    "parentId": parent_key,
+                    "labels": [label],
+                    "state": unstarted[0],
+                },
+            )
+        )
+        current = await self.read_issue(issue_key=created.issue_key)
+        if (
+            current.issue_key != created.issue_key
+            or current.parent_key != parent_key
+            or current.body != body
+            or current.title != title
+            or current.state_kind is not WorkflowStateKind.UNSTARTED
+            or "criterion" not in current.issue_labels
+        ):
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="created criterion did not retain its required shape",
+            )
+        return current
 
     async def create_issue(
         self,

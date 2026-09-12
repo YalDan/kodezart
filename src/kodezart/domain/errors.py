@@ -743,3 +743,22 @@ class WriteBackReadError(ValueError):
 
 class PRStateReadError(ValueError):
     """A native PR observation cannot establish the requested identity."""
+
+
+class OrganizeWriteRefusalError(Exception):
+    """A proposed or stale write is outside this operation's current authority."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
+
+class OrganizeDecisionRequiredError(Exception):
+    """An author found a human decision, before proposing any permitted write."""
+
+    def __init__(self, *, issue_key: str, question: str, evidence: str) -> None:
+        self.issue_key, self.question, self.evidence = issue_key, question, evidence
+        super().__init__(
+            f"organize author for {issue_key!r} needs a decision: {question}"
+        )

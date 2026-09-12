@@ -103,6 +103,8 @@ def test_every_real_writer_has_a_durability_classification() -> None:
         OutboundDestination.PR_BODY,
         OutboundDestination.ARTIFACT_TICKET_JSON,
         OutboundDestination.ARTIFACT_CRITERIA_JSON,
+        OutboundDestination.TRACKER_DESCRIPTION,
+        OutboundDestination.TRACKER_TITLE,
     ],
 )
 def test_current_descriptions_and_artifacts_are_durable(

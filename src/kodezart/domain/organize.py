@@ -8,7 +8,9 @@ from kodezart.types.domain.organize import (
     AdmissionRoute,
     AdmissionVerdict,
     RefusalKind,
+    RefusedAdmission,
     SpecFinding,
+    UnverifiableAdmission,
 )
 from kodezart.types.domain.tracker import (
     TrackerIssue,
@@ -52,12 +54,15 @@ def admission_route(
         )
     if result.verdict is AdmissionVerdict.BUILDABLE:
         return AdmissionRoute.MARK_COMPLETE
-    if result.verdict is AdmissionVerdict.UNVERIFIABLE:
-        blocker = result.pending_blocker_id
+    if isinstance(result.root, UnverifiableAdmission):
+        blocker = result.root.pending_blocker_id
         if blocker in scope_issue_keys and blocker in blocker_keys(issue):
             return AdmissionRoute.MARK_COMPLETE
         return AdmissionRoute.REAUTHOR
-    if result.refusal_kind is RefusalKind.HUMAN_DECISION:
+    if (
+        isinstance(result.root, RefusedAdmission)
+        and result.root.refusal_kind is RefusalKind.HUMAN_DECISION
+    ):
         return AdmissionRoute.ESCALATE
     return AdmissionRoute.REAUTHOR
 

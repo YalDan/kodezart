@@ -139,6 +139,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "scope_labels",
         "issue_labels",
         "organize_mandates",
+        "organize_scopes",
         "workflow_states",
         "run_event_states",
         "marker_prefixes",
@@ -632,7 +633,15 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
 
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
-    assert set(mapped.values()) == set(OperationConfig.model_fields)
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    assert native == {
+        "organize_scopes": "composition/organize.py::build_organize_tick",
+        "workflow_states.done": "adapters/linear_mcp_tracker.py::set_workflow_state",
+    }
+    assert set(mapped).isdisjoint(native)
+    assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
+        OperationConfig.model_fields
+    )
 
 
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
@@ -643,7 +652,12 @@ def test_every_operation_config_field_is_reachable_from_a_pass_template() -> Non
     reach is a field the port did not actually port.
     """
     reachable = {name.split(".")[0] for name in template_placeholders()}
-    unreachable = set(OperationConfig.model_fields) - reachable
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    unreachable = (
+        set(OperationConfig.model_fields)
+        - reachable
+        - {name.split(".")[0] for name in native}
+    )
     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 
 

@@ -38,6 +38,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
@@ -45,6 +46,7 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
+from kodezart.types.domain.write_back import WriteBackFinding
 from kodezart.types.job_acceptance import (
     AcceptanceHandle,
     AcceptedQueuePosition,
@@ -76,7 +78,10 @@ RaiseSite = Literal[
     "ticket_creator",
     "ticket_reviewer",
     "organize_assess",
+    "organize_author",
+    "organize_criteria_author",
     "organize_verify",
+    "write_back_verify",
     "audit_claim",
     "audit_overclaim",
     "audit_detection_removal",
@@ -1143,6 +1148,8 @@ DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_
 
 
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
+ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather
@@ -1160,6 +1167,8 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
+    "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,
+    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
     "AUDIT_CLAIM_SCHEMA": AUDIT_CLAIM_SCHEMA,
     "AUDIT_OVERCLAIM_SCHEMA": AUDIT_OVERCLAIM_SCHEMA,
     "DETECTOR_REMOVAL_SCHEMA": DETECTOR_REMOVAL_SCHEMA,

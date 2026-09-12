@@ -44,7 +44,9 @@ from kodezart.types.domain.criteria import (
     CRITERION_ID_PATTERN,
 )
 from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.remediation import RemediationPlan
+from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -82,6 +84,8 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
     "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
+    "ORGANIZE_PROPOSAL_SCHEMA": OrganizeProposal,
+    "WRITE_BACK_SCHEMA": WriteBackFinding,
     "AUDIT_CLAIM_SCHEMA": AuditClaimJudgment,
     "AUDIT_OVERCLAIM_SCHEMA": AuditOverclaimJudgment,
     "AUDIT_MANDATE_SCHEMA": AuditMandateJudgment,
@@ -189,6 +193,18 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "chains/organize_author.py",
+        ("OrganizeAuthor", "propose"),
+        "judge_in_workspace",
+        "ORGANIZE_PROPOSAL_SCHEMA",
+    ),
+    (
+        "chains/write_back_verifier.py",
+        ("FreshWriteBackJudge", "judge"),
+        "judge_in_workspace",
+        "WRITE_BACK_SCHEMA",
+    ),
     (
         "chains/organize.py",
         ("OrganizeAdmission", "_judge"),
@@ -479,8 +495,17 @@ def test_actual_schema_census_rejects_damaged_source(monkeypatch, damage, guard)
         path = "services/audit_sessions.py"
         old, new = '"schema": output_schema', '"schema": sanitize_schema(output_schema)'
     elif damage == "missing_schema":
-        path = "chains/authored_publication.py"
-        old, new = '"schema": PR_DESCRIPTION_SCHEMA', '"schema": COMMIT_MESSAGE_SCHEMA'
+        # The guard is global: remove every actual use, including independent
+        # native delivery and authored-publication consumers of the same schema.
+        assert any(
+            "PR_DESCRIPTION_SCHEMA" in SCHEMA_ARGUMENT.findall(source)
+            for source in sources.values()
+        )
+        sources = {
+            path: source.replace("PR_DESCRIPTION_SCHEMA", "COMMIT_MESSAGE_SCHEMA")
+            for path, source in sources.items()
+        }
+        old = None
     elif damage == "unrelated_forwarder":
         sources["chains/unrelated.py"] = (
             "async def judge_in_workspace():\n"

@@ -33,6 +33,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
@@ -870,6 +871,10 @@ class TrackerPort(
         """
         ...
 
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        """Read configured labels on this exact scope, without approval cascade."""
+        ...
+
     async def execution_approved(self, *, issue_key: str) -> bool:
         """Resolve the configured scope approval label from current ancestry.
 
@@ -886,6 +891,25 @@ class TrackerPort(
         Milestone metadata carries no invented or containing-project URL.
         An issue-kind ref raises a typed domain error: an issue is read
         through ``read_issue``, never returned as an empty container.
+        """
+        ...
+
+    async def create_criterion_if_absent(
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+    ) -> TrackerIssue:
+        """Mint one Todo criterion under a held CRITERION_CHILD_SET surface.
+
+        Exact parent + current Check identifies a replay. Duplicate matches
+        refuse; an existing child is returned without rewriting any field.
+        New content has Check, Do and empty Evidence, configured criterion
+        classification and the team's unique unstarted state. Existing
+        child edits require their own CRITERION_SUB_ISSUE authority.
         """
         ...
 
