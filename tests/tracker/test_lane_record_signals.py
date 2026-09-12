@@ -3,7 +3,6 @@
 import ast
 import asyncio
 import inspect
-import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +14,7 @@ from kodezart.domain.run_shape import commits_ahead_of_record
 from kodezart.services import lane_record_signals
 from kodezart.services.lane_record_signals import observe_commits_ahead_of_record
 from kodezart.types.domain.run_alarm import AlarmSignal, RunAlarm
-from kodezart.types.domain.run_state import LaneRunState
+from kodezart.types.domain.run_state import LaneCommit, LaneRunState
 from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
@@ -56,11 +55,11 @@ async def test_actual_record_count_and_rows_are_the_only_comparison(
     assert alarm.subject.lane_key == LANE
     assert alarm.raised_at_sha == "supervisor/head"
     assert alarm.raised_by == "supervisor/run"
-    assert [json.loads(reading.value) for reading in alarm.readings] == [
+    assert [reading.value.value for reading in alarm.readings] == [
         LANE,
         data["headSha"],
         count,
-        data["commits"],
+        tuple(LaneCommit.model_validate(row) for row in data["commits"]),
     ]
     assert {reading.source_ref for reading in alarm.readings} == {stored.comment_key}
     assert {reading.at_sha for reading in alarm.readings} == {data["headSha"]}

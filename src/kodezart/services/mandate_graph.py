@@ -14,7 +14,7 @@ from kodezart.domain.mandate_graph import (
     rulings_outpace_closures,
     structural_write_uncrosses_milestone,
 )
-from kodezart.domain.run_shape import _read_value
+from kodezart.domain.run_shape import read_alarm_value
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.mandate_graph import (
     IssueSupersession,
@@ -221,7 +221,7 @@ async def observe_ruling_growth(
     This service reads current criteria and uses the shared gap arithmetic.
     Recording the next window and publishing alarms belong to their writers.
     """
-    snapshot = _read_value(
+    snapshot = read_alarm_value(
         current_rulings, RulingsEvidence, AlarmSignal.RULINGS_OUTPACE_CLOSURES
     )
     criteria: list[TrackerIssue] = []

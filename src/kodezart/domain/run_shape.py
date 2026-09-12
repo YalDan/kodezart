@@ -40,9 +40,10 @@ def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeRe
     )
 
 
-def _read_value[T](
+def read_alarm_value[T](
     reading: AlarmReading, expected: type[Evidence[T]], signal: AlarmSignal
 ) -> T:
+    """Extract a typed projection or refuse with its observed source identity."""
     value = reading.value
     if not isinstance(value, expected):
         raise _unreadable(
@@ -52,7 +53,7 @@ def _read_value[T](
 
 
 def _identity(reading: AlarmReading, signal: AlarmSignal) -> str:
-    value = _read_value(reading, TextEvidence, signal)
+    value = read_alarm_value(reading, TextEvidence, signal)
     if not value.strip():
         raise _unreadable(signal, reading.source_ref, "recorded identity is empty")
     return value
@@ -83,9 +84,9 @@ def record_superseded(
         record, event, commits = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    recorded = _read_value(record, LaneFieldEvidence, signal)
-    asserted = _read_value(event, LaneFieldEvidence, signal)
-    order = _read_value(commits, ReferencesEvidence, signal)
+    recorded = read_alarm_value(record, LaneFieldEvidence, signal)
+    asserted = read_alarm_value(event, LaneFieldEvidence, signal)
+    order = read_alarm_value(commits, ReferencesEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != recorded.lane_key
@@ -151,7 +152,7 @@ def write_back_missing(
         event_target, record_presence = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    owed = _read_value(event_target, SurfaceEvidence, signal)
+    owed = read_alarm_value(event_target, SurfaceEvidence, signal)
     address = surface_alarm_member_id(owed)
     if subject.kind is not AlarmSubjectKind.SURFACE or subject.surface != owed:
         raise _unreadable(
@@ -163,7 +164,7 @@ def write_back_missing(
             record_presence.source_ref,
             "record lookup identifies another surface",
         )
-    present = _read_value(record_presence, PresenceEvidence, signal)
+    present = read_alarm_value(record_presence, PresenceEvidence, signal)
     if present:
         return None
     return RunAlarm(
@@ -201,8 +202,8 @@ def commits_ahead_of_record(
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
     lane_key = _identity(lane, signal)
     declared_head = _identity(head, signal)
-    declared_count = _read_value(count, CountEvidence, signal)
-    commits = _read_value(rows, CommitsEvidence, signal)
+    declared_count = read_alarm_value(count, CountEvidence, signal)
+    commits = read_alarm_value(rows, CommitsEvidence, signal)
     if subject.kind is not AlarmSubjectKind.LANE or subject.lane_key != lane_key:
         raise _unreadable(signal, lane.source_ref, "subject identifies another lane")
     for reading in readings:
@@ -259,8 +260,8 @@ def escalation_ageing(
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
 
-    record = _read_value(escalation, EscalationEvidence, signal)
-    answer = _read_value(resolution, ResolutionEvidence, signal)
+    record = read_alarm_value(escalation, EscalationEvidence, signal)
+    answer = read_alarm_value(resolution, ResolutionEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.ESCALATION
         or subject.member_id != record.escalation_key
@@ -282,10 +283,10 @@ def escalation_ageing(
             signal, subject.member_id, "age bounds do not name their AppConfig fields"
         )
 
-    commit_order = _read_value(commits, ReferencesEvidence, signal)
-    tick_age = _read_value(ticks, CountEvidence, signal)
-    commit_limit = _read_value(max_commits, CountEvidence, signal)
-    tick_limit = _read_value(max_ticks, CountEvidence, signal)
+    commit_order = read_alarm_value(commits, ReferencesEvidence, signal)
+    tick_age = read_alarm_value(ticks, CountEvidence, signal)
+    commit_limit = read_alarm_value(max_commits, CountEvidence, signal)
+    tick_limit = read_alarm_value(max_ticks, CountEvidence, signal)
     if len(set(commit_order)) != len(commit_order):
         raise _unreadable(
             signal, commits.source_ref, "recorded commit order repeats a SHA"
@@ -342,7 +343,7 @@ def surface_contended(
         surface, history, max_holders = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    address = _read_value(surface, SurfaceEvidence, signal)
+    address = read_alarm_value(surface, SurfaceEvidence, signal)
     if subject.kind is not AlarmSubjectKind.SURFACE or subject.surface != address:
         raise _unreadable(
             signal, surface.source_ref, "subject identifies another surface"
@@ -357,8 +358,8 @@ def surface_contended(
             max_holders.source_ref,
             "holder bound does not name its AppConfig field",
         )
-    holders = _read_value(history, ReferencesEvidence, signal)
-    configured = _read_value(max_holders, CountEvidence, signal)
+    holders = read_alarm_value(history, ReferencesEvidence, signal)
+    configured = read_alarm_value(max_holders, CountEvidence, signal)
     observed = len(set(holders))
     if observed > configured:
         return RunAlarm(
@@ -413,8 +414,8 @@ def barren_tick_with_diff_growth(
             subject.scope_key,
             "growth bounds do not name their AppConfig fields",
         )
-    previous_open = _read_value(previous, ReferencesEvidence, signal)
-    current_closed = _read_value(current, ReferencesEvidence, signal)
+    previous_open = read_alarm_value(previous, ReferencesEvidence, signal)
+    current_closed = read_alarm_value(current, ReferencesEvidence, signal)
     for reading, identities in ((previous, previous_open), (current, current_closed)):
         if len(set(identities)) != len(identities):
             raise _unreadable(
@@ -422,10 +423,10 @@ def barren_tick_with_diff_growth(
                 reading.source_ref,
                 "a reference identity appears more than once",
             )
-    files_changed = _read_value(files, CountEvidence, signal)
-    commits_ahead = _read_value(commits, CountEvidence, signal)
-    file_limit = _read_value(max_files, CountEvidence, signal)
-    commit_limit = _read_value(max_commits, CountEvidence, signal)
+    files_changed = read_alarm_value(files, CountEvidence, signal)
+    commits_ahead = read_alarm_value(commits, CountEvidence, signal)
+    file_limit = read_alarm_value(max_files, CountEvidence, signal)
+    commit_limit = read_alarm_value(max_commits, CountEvidence, signal)
     if set(previous_open) & set(current_closed):
         return None
     for reading, configured, observed in (
@@ -500,8 +501,8 @@ def tally_unmoved(
         raise _unreadable(
             signal, current.source_ref, "distinct issue phase markers required"
         )
-    scope = _read_value(scope_reading, ScopeEvidence, signal)
-    roster = _read_value(roster_reading, ReferencesEvidence, signal)
+    scope = read_alarm_value(scope_reading, ScopeEvidence, signal)
+    roster = read_alarm_value(roster_reading, ReferencesEvidence, signal)
     if (
         scope.key != subject.scope_key
         or scope_reading.source_ref != scope.key
@@ -516,7 +517,7 @@ def tally_unmoved(
             raise _unreadable(
                 signal, member.source_ref, "foreign or repeated member reading"
             )
-        labels[member.source_ref] = _read_value(member, LabelsEvidence, signal)
+        labels[member.source_ref] = read_alarm_value(member, LabelsEvidence, signal)
     carrying = sum(current_key in (labels.get(key) or ()) for key in roster)
     entered = any(next_key in (labels.get(key) or ()) for key in roster)
     if carrying == len(roster) or not entered:

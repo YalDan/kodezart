@@ -11,9 +11,9 @@ from kodezart.domain.run_shape import (
     ESCALATION_COMMITS_BOUND,
     ESCALATION_TICKS_BOUND,
     SURFACE_HOLDERS_BOUND,
-    _read_value,
     barren_tick_with_diff_growth,
     escalation_ageing,
+    read_alarm_value,
     surface_contended,
 )
 from kodezart.types.domain.escalation import EscalationResolution
@@ -109,7 +109,9 @@ async def read_escalation_ageing(
     commits from a repository or manufactures walker ticks. It returns an
     observation; persistence belongs to a supervisor holding its own lease.
     """
-    record = _read_value(escalation, EscalationEvidence, AlarmSignal.ESCALATION_AGEING)
+    record = read_alarm_value(
+        escalation, EscalationEvidence, AlarmSignal.ESCALATION_AGEING
+    )
     subject = EscalationSubject(
         scope_key=scope_key,
         lane_key=lane_key,

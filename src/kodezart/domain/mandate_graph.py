@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from kodezart.domain.run_shape import _read_value, _unreadable
+from kodezart.domain.run_shape import _unreadable, read_alarm_value
 from kodezart.types.domain.agent import RulingAuthor, RulingId
 from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
 from kodezart.types.domain.run_alarm import (
@@ -77,13 +77,13 @@ def rulings_outpace_closures(
         baseline, current, previous_open, current_closed, bound = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    before = _read_value(baseline, RulingsEvidence, signal)
-    after = _read_value(current, RulingsEvidence, signal)
-    open_refs = _read_value(previous_open, ReferencesEvidence, signal)
-    closed_refs = _read_value(current_closed, ReferencesEvidence, signal)
+    before = read_alarm_value(baseline, RulingsEvidence, signal)
+    after = read_alarm_value(current, RulingsEvidence, signal)
+    open_refs = read_alarm_value(previous_open, ReferencesEvidence, signal)
+    closed_refs = read_alarm_value(current_closed, ReferencesEvidence, signal)
     was_open = set(open_refs)
     now_closed = set(closed_refs)
-    limit = _read_value(bound, CountEvidence, signal)
+    limit = read_alarm_value(bound, CountEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != before.lane_key
@@ -198,8 +198,8 @@ def structural_write_uncrosses_milestone(
         previous, current = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    before = _read_value(previous, GraphEvidence, signal)
-    after = _read_value(current, GraphEvidence, signal)
+    before = read_alarm_value(previous, GraphEvidence, signal)
+    after = read_alarm_value(current, GraphEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != before.lane_key
