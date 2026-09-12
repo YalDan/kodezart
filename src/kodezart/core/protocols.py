@@ -31,6 +31,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -825,6 +826,24 @@ class TrackerPort(Protocol):
         never renamed, recoloured or repurposed; an ensure that would alter
         an existing definition raises ``TrackerEnsureConflictError`` and
         performs no write.  One outcome per ref, in the order given.
+        """
+        ...
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """All issues in the scope, with their relations and parent fields.
+
+        Container scopes resolve by membership; issue scopes resolve to
+        the issue and its descendant issues. No bounded scan substitutes
+        for the complete scope.
+        """
+        ...
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """The container's ref, name, description, optional url and parent.
+
+        Milestone metadata carries no invented or containing-project URL.
+        An issue-kind ref raises a typed domain error: an issue is read
+        through ``read_issue``, never returned as an empty container.
         """
         ...
 

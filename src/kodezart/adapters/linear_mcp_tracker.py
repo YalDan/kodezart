@@ -33,21 +33,7 @@ from typing import Final, assert_never
 
 from pydantic import ValidationError
 
-from kodezart.core.errors import (
-    McpCallUnansweredError,
-    McpCredentialRefusedError,
-    McpTransportError,
-    TrackerBootValidationError,
-    TrackerEnsureConflictError,
-    TrackerProtocolError,
-)
-from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import McpToolCaller, McpToolResult
-from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
-from kodezart.domain.git_url import extract_owner_repo
-from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
-from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.linear_mcp import (
+from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
     LinearCommentListWire,
     LinearCommentWire,
@@ -68,7 +54,25 @@ from kodezart.types.domain.linear_mcp import (
     LinearUserWire,
     LinearWireModel,
 )
+from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
+from kodezart.core.errors import (
+    McpCallUnansweredError,
+    McpCredentialRefusedError,
+    McpTransportError,
+    TrackerAccessDeniedError,
+    TrackerBootValidationError,
+    TrackerEnsureConflictError,
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.domain.errors import DuplicateWorkRefError, TransientAPIError
+from kodezart.domain.git_url import extract_owner_repo
+from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -112,6 +116,7 @@ _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
 #: (KOD-305): these are, and every other tool is a write.
 _READ_TOOLS: Final[frozenset[str]] = frozenset(
     {
+        *SCOPE_READ_TOOLS,
         _TOOL_LIST_ISSUES,
         _TOOL_LIST_DIFFS,
         _TOOL_GET_ISSUE,
@@ -601,7 +606,7 @@ class LinearMcpTracker:
         """
         try:
             await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
-        except McpTransportError as exc:
+        except TrackerUnavailableError as exc:
             diagnosis = str(exc)
             if _SCOPE_REFUSAL_MARKER in diagnosis:
                 return diagnosis
@@ -1607,10 +1612,10 @@ class LinearMcpTracker:
                     tool=tool,
                     server_name=exc.server_name,
                 )
-                raise
+                raise TrackerAccessDeniedError(str(exc)) from exc
             except (McpTransportError, TransientAPIError) as exc:
                 if attempt >= self._max_retries or not _may_resend(tool, exc):
-                    raise
+                    raise TrackerUnavailableError(str(exc)) from exc
                 delay = self._retry_backoff_factor * (_RETRY_BACKOFF_BASE**attempt)
                 await self._log.awarning(
                     "tracker_mcp_retry",
@@ -1718,6 +1723,11 @@ class LinearMcpTracker:
             team_key=self._team_key_by_identifier.get(wire.team),
             project=wire.project,
             project_id=wire.project_id,
+            milestone_key=(
+                wire.project_milestone.id
+                if wire.project_milestone is not None
+                else None
+            ),
             relations=tuple(relations),
             parent_key=wire.parent_id,
             assignee_key=wire.assignee,
@@ -1753,3 +1763,17 @@ class LinearMcpTracker:
             body=wire.body,
             created_at=wire.created_at,
         )
+
+    async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
+        """Resolve live container membership or an issue's whole subtree."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).scope_issues(ref=ref)
+
+    async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
+        """Read a container without fabricating a URL or choosing a parent."""
+        return await LinearScopeReader(
+            call=self._call,
+            read_issue=self.read_issue,
+        ).container_metadata(ref=ref)

@@ -201,6 +201,9 @@ class TrackerIssue(TrackerModel):
     #: without a per-issue read (KOD-169).
     project: str | None = None
     project_id: str | None = None
+    #: The milestone reported by the full issue read; omission means the
+    #: issue belongs to none. Adapters translate their membership field.
+    milestone_key: str | None = None
     relations: tuple[IssueRelation, ...] = ()
     parent_key: str | None = None
     assignee_key: str | None = None
