@@ -58,7 +58,7 @@ async def test_native_create_initializes_a_new_todo_criterion_then_replays_no_wr
         "team": "fixture-team",
         "parentId": CLAIMED_ISSUE,
         "labels": ["acceptance-condition"],
-        "state": "Todo",
+        "state": "fixture-team-Todo-id",
     }
     board.server.issues[
         created.issue_key
@@ -218,3 +218,52 @@ async def test_unknown_create_response_preserves_committed_child_without_resend(
     replay = await create(tracker)
     assert replay.issue_key == children[0].id
     assert len(sent) == 1
+
+
+@pytest.mark.parametrize("damage", ["missing", "empty", "blank"])
+async def test_initial_state_requires_actual_nonblank_native_id(monkeypatch, damage):
+    board = _Board()
+    tracker = board.tracker()
+    original = board.call_tool
+
+    async def damaged(*, name, arguments):
+        result = await original(name=name, arguments=arguments)
+        if name == "list_issue_statuses":
+            result = [dict(row) for row in result]
+            for row in result:
+                if row["type"] == "unstarted":
+                    if damage == "missing":
+                        del row["id"]
+                    else:
+                        row["id"] = "" if damage == "empty" else " \n"
+        return result
+
+    monkeypatch.setattr(board, "call_tool", damaged)
+    async with RunSurfaceLease(
+        tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+    ):
+        with pytest.raises(TrackerProtocolError, match="invalid initial state"):
+            await create(tracker)
+    assert saves(board) == []
+
+
+async def test_initial_state_uses_the_selected_team_id_not_shared_name(monkeypatch):
+    board = _Board()
+    tracker = board.tracker()
+    original = board.call_tool
+    selected = []
+
+    async def observed(*, name, arguments):
+        result = await original(name=name, arguments=arguments)
+        if name == "list_issue_statuses":
+            selected.append(arguments["team"])
+        return result
+
+    monkeypatch.setattr(board, "call_tool", observed)
+    async with RunSurfaceLease(
+        tracker=tracker, job_id=JOB, surfaces=frozenset({surface()}), lease_seconds=300
+    ):
+        child = await create(tracker)
+    assert selected == ["fixture-team"]
+    assert saves(board)[0]["state"] == "fixture-team-Todo-id"
+    assert child.state_kind is WorkflowStateKind.UNSTARTED
