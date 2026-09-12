@@ -251,6 +251,33 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
+| `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
+
+An addressed scope request uses one queue job. Each fresh walk reports current
+readiness and remaining obligations; approved lanes run through the native fire
+and delivery graphs. `scope_lane.event` preserves iteration, review and native
+session fields. An inner fire's `workflow_complete` is not a scope terminal event.
+When this controller invocation finishes, the job is `terminal` with a null
+outcome; this does not certify scope convergence. Unapproved and skipped lanes
+and unresolved criterion keys remain explicit in `scope_walk.observation`.
+
+The nested `lane_delivery` event carries `delivery.phase`: `completed` holds an
+actual typed delivery result, while `skipped` holds an existing workflow outcome
+and reason without inventing a PR. The completed result names the lane and issue,
+head/base branches, final commit SHA, PR, coherent check observation, red
+classification and outcome. Completed delivery can still report failed or
+unverifiable checks; it does not establish scope acceptance. Internal pending
+remediation never appears as a terminal delivery event. Consumers evaluating a
+later scope result must use these actual delivery records and current tracker
+obligations.
+
+This request route executes eligible lanes serially once per invocation. Scheduled
+configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
+scope terminal verdict are separate requirements. Same-job checkpoint replay
+validates the original scope, repository, resolved base and run identity, and
+checks current criterion authority before replaying a completed judgment. The
+HTTP API does not yet expose a request to resume an existing job.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.

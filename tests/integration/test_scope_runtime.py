@@ -1,6 +1,7 @@
 """Real request composition, controller and native graphs with external doubles."""
 
 import asyncio
+import json
 from dataclasses import dataclass
 
 import pytest
@@ -9,6 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.jobs import build_job_queue
+from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.job_queue_settings import JobQueueSettings
@@ -19,15 +21,26 @@ from kodezart.domain.errors import (
 )
 from kodezart.handlers.agent_handler import AgentHandler
 from kodezart.services.agent_service import AgentService
-from kodezart.types.domain.agent import WorkflowCompleteEvent, WorkflowIterationEvent
+from kodezart.services.scope_runtime import _lane_checkpoint_key
+from kodezart.types.domain.agent import (
+    NodeSessionStartedEvent,
+    ResultEvent,
+    SystemEvent,
+    WorkflowCompleteEvent,
+    WorkflowIterationEvent,
+)
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
 from kodezart.types.domain.job import JobState
+from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import RepoEntry, ScopeLabel
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent, ScopeWalkEvent
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
+from tests.api.v1.test_jobs import _build_app
 from tests.chains.test_native_fire import NativeExecutor, native_evaluation
 from tests.fakes import (
     FIXTURE_EPOCH,
@@ -87,6 +100,16 @@ class RemoteGit(FakeGitService):
         return ("b" if branch == "trunk" else "a") * 40
 
 
+class ObservedNativeExecutor(NativeExecutor):
+    """Script the SDK's real opening/result pair for attributed node sessions."""
+
+    async def stream(self, **kwargs):
+        async for event in super().stream(**kwargs):
+            if isinstance(event, ResultEvent):
+                yield SystemEvent(subtype="init", data={"session_id": event.session_id})
+            yield event
+
+
 @dataclass
 class Harness:
     engine: object
@@ -99,7 +122,7 @@ class Harness:
 
 def runtime(*, port=None, lanes=("A",), saver=None, evaluations=None, trunk="trunk"):
     port = port or board(lanes=lanes)
-    executor = NativeExecutor(
+    executor = ObservedNativeExecutor(
         evaluations
         or [
             native_evaluation(checks={f"{key}/check": f"{key} live Check  bytes"})
@@ -371,3 +394,212 @@ async def test_approval_removed_during_preparation_prevents_any_native_node(
     assert harness.executor.schema_calls == []
     assert events[-1].observation.unapproved_lanes == ("A",)
     assert events[-1].observation.unresolved_criteria == ("A/check",)
+
+
+def lane_of(harness):
+    return harness.engine._scoped_arm._lane_for(ORIGIN)
+
+
+def checkpoint_config():
+    return {"configurable": {"thread_id": _lane_checkpoint_key("scope-job", "A")}}
+
+
+async def pause_before_delivery(harness):
+    lane = lane_of(harness)
+    lane.graph.interrupt_before_nodes = ["deliver"]
+    events = []
+    with pytest.raises(ScopeReadError, match="no final delivery phase"):
+        async for event in drive(harness):
+            events.append(event)
+    snapshot = await lane.graph.aget_state(checkpoint_config())
+    assert snapshot.next == ("deliver",)
+    assert not any(
+        isinstance(event, ScopeLaneEvent) and isinstance(event.event, LaneDeliveryEvent)
+        for event in events
+    )
+    return snapshot, events
+
+
+async def test_resolved_checkpointer_round_trips_pause_identity_and_existing_branch():
+    async with make_checkpointer(":memory:") as saver:
+        harness = runtime(saver=saver)
+        paused, events = await pause_before_delivery(harness)
+        metadata = paused.metadata
+        assert isinstance(metadata["scope_lane_request"], str)
+        assert json.loads(metadata["scope_lane_request"])["job"] == "scope-job"
+        original = RunIdentity.model_validate_json(metadata["scope_lane_run_identity"])
+        observed = [
+            event.event.invocation.run
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, NodeSessionStartedEvent)
+        ]
+        assert observed and all(run == original for run in observed)
+        original_branch = paused.values["feature_branch"]
+        assert original_branch and paused.values["feature_tip_sha"]
+        fresh = runtime(port=harness.port, saver=saver)
+        replayed = [event async for event in drive(fresh)]
+        assert fresh.executor.schema_calls == []
+        final = await lane_of(fresh).graph.aget_state(checkpoint_config())
+        assert final.next == ()
+        assert final.values["feature_branch"] == original_branch
+        assert (
+            final.metadata["scope_lane_run_identity"]
+            == metadata["scope_lane_run_identity"]
+        )
+        assert any(
+            isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, LaneDeliveryEvent)
+            for event in replayed
+        )
+        assert replayed[-1].observation.skipped_lanes == ("A",)
+        assert replayed[-1].observation.unresolved_criteria == ("A/check",)
+
+
+@pytest.mark.parametrize("change", ["check", "membership", "owed-state", "outage"])
+async def test_fresh_engine_paused_resume_requires_current_native_obligations(
+    change, monkeypatch
+):
+    harness = runtime()
+    await pause_before_delivery(harness)
+    port = harness.port
+    if change == "check":
+        port.issues["A/check"] = port.issues["A/check"].model_copy(
+            update={"body": "**Check:** changed paused Check\n**Evidence:** —"}
+        )
+    elif change == "membership":
+        port.issues["A/new"] = make_tracker_issue(
+            "A/new",
+            parent_key="A",
+            issue_labels=frozenset({"criterion"}),
+            body="**Check:** new owed Check\n**Evidence:** —",
+        )
+    elif change == "owed-state":
+        # Another obligation keeps the lane eligible, while the judged roster changes.
+        port.issues["A/check"] = port.issues["A/check"].model_copy(
+            update={"state_kind": WorkflowStateKind.COMPLETED}
+        )
+        port.issues["A/new"] = make_tracker_issue(
+            "A/new",
+            parent_key="A",
+            issue_labels=frozenset({"criterion"}),
+            body="**Check:** remaining owed Check\n**Evidence:** —",
+        )
+    fresh = runtime(port=port, saver=harness.saver)
+    if change == "outage":
+        original = port.scope_issues
+
+        async def current_unavailable(*, ref):
+            if ref.kind is ScopeKind.ISSUE:
+                raise TrackerUnavailableError("current criterion authority unavailable")
+            return await original(ref=ref)
+
+        probe = fresh.engine._scoped_arm._probe_for(ORIGIN)
+        probes = 0
+
+        async def no_open_delivery(*, repo_url, issue_key):
+            nonlocal probes
+            probes += 1
+            if probes == 2:
+                # Outage starts after the last admission read, at the launch boundary.
+                monkeypatch.setattr(port, "scope_issues", current_unavailable)
+            return False
+
+        monkeypatch.setattr(probe, "open_delivery_exists", no_open_delivery)
+    with pytest.raises(FireSpecEntryError):
+        _ = [event async for event in drive(fresh)]
+    assert fresh.executor.schema_calls == []
+    assert (await lane_of(fresh).graph.aget_state(checkpoint_config())).next == (
+        "deliver",
+    )
+
+
+async def test_current_closed_blocker_unlocks_next_lane_using_its_actual_work_ref():
+    port = board(lanes=("A", "B"), blocked={"B": ("A",)})
+    harness = runtime(port=port, lanes=("A", "B"))
+    events = []
+    async for event in drive(harness):
+        events.append(event)
+        if isinstance(event, ScopeLaneEvent) and isinstance(
+            event.event, LaneDeliveryEvent
+        ):
+            if event.lane_key == "A":
+                port.issues["A/check"] = port.issues["A/check"].model_copy(
+                    update={"state_kind": WorkflowStateKind.COMPLETED}
+                )
+                port.recorded_work_refs["A"] = [
+                    WorkRef(
+                        issue_id="A",
+                        role=WorkRefRole.DELIVERABLE,
+                        branch="recorded-A",
+                        pushed_head_sha="a" * 40,
+                        recorded_at=FIXTURE_EPOCH,
+                    )
+                ]
+    iterations = [
+        event.lane_key
+        for event in events
+        if isinstance(event, ScopeLaneEvent)
+        and isinstance(event.event, WorkflowIterationEvent)
+    ]
+    assert iterations == ["A", "B"]
+    assert port.issues["A"].state_kind is WorkflowStateKind.UNSTARTED
+    final = events[-1].observation
+    assert final.unresolved_criteria == ("B/check",)
+    assert port.workflow_writes == []
+    b_checkpoint = await lane_of(harness).graph.aget_state(
+        {"configurable": {"thread_id": _lane_checkpoint_key("scope-job", "B")}}
+    )
+    binding = json.loads(b_checkpoint.metadata["scope_lane_request"])
+    assert json.loads(binding["base"])["base_branch"] == "recorded-A"
+
+
+async def test_actual_http_sse_preserves_nested_progress_and_delivery_discriminators():
+    harness = runtime()
+    async for app in _build_app(harness.engine, checkpointer=harness.saver):
+        fired = await app.client.post(
+            "/api/v1/agent/fire",
+            json={
+                "prompt": "scope request",
+                "repoUrl": ORIGIN,
+                "scope": SCOPE.model_dump(mode="json"),
+            },
+        )
+        assert fired.status_code == 202
+        job_id = fired.json()["jobId"]
+        stream = await app.client.get(f"/api/v1/jobs/{job_id}/stream")
+        assert stream.status_code == 200
+        assert stream.headers["content-type"].startswith("text/event-stream")
+        events = [
+            json.loads(line[6:])
+            for line in stream.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert not [event for event in events if event["type"] == "error"]
+        lane_events = [event for event in events if event["type"] == "scope_lane"]
+        assert lane_events and all(event["laneKey"] == "A" for event in lane_events)
+        iteration = next(
+            event["event"]
+            for event in lane_events
+            if event["event"]["type"] == "workflow_iteration"
+        )
+        assert iteration["evaluation"]["criteriaResults"][0]["criterionId"] == "A/check"
+        session = next(
+            event["event"]
+            for event in lane_events
+            if event["event"]["type"] == "node_session_started"
+        )
+        assert session["invocation"]["run"]["name"] == "A"
+        assert session["invocation"]["run"]["started_at"]
+        delivery = next(
+            event["event"]
+            for event in lane_events
+            if event["event"]["type"] == "lane_delivery"
+        )
+        assert delivery["delivery"]["phase"] == "skipped"
+        observation = events[-1]["observation"]
+        assert observation["skippedLanes"] == ["A"]
+        assert observation["unresolvedCriteria"] == ["A/check"]
+        assert all(event["type"] != "workflow_complete" for event in events)
+        status = (await app.client.get(f"/api/v1/jobs/{job_id}")).json()
+        assert status["state"] == "terminal" and status["outcome"] is None
