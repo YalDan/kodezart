@@ -520,6 +520,20 @@ class OperationConfig(OperationModel):
                         f"workflow_states is missing required stage {stage.value!r}",
                     )
 
+        prefixes = list(self.marker_prefixes.values())
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] must name one nonempty marker token"
+            for purpose, prefix in self.marker_prefixes.items()
+            if not purpose
+            or not prefix
+            or any(character.isspace() or character in '<>[]:"' for character in prefix)
+        )
+        failures.extend(
+            f"marker_prefixes[{purpose!r}] {prefix!r} is not unique"
+            for purpose, prefix in self.marker_prefixes.items()
+            if prefixes.count(prefix) > 1
+        )
+
         if self.documents and CHECKPOINT_DOCUMENT_KEY not in self.documents:
             failures.append(
                 f"documents is missing the stable checkpoint key "
@@ -719,6 +733,8 @@ class OperationConfig(OperationModel):
             return RepoVisibility.PRIVATE
         return RepoVisibility.PUBLIC
 
+    marker_prefixes: dict[str, str] = Field(default_factory=dict)
+
 
 #: Which class every declared field belongs to, and therefore what boot does
 #: with it.  A fixed partition in the MODEL rather than a per-field flag,
@@ -753,6 +769,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "teams": ConfigOwnership.EXTERNAL,
     "queue_states": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
+    "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,
     "documents": ConfigOwnership.OWNED,
     "records": ConfigOwnership.EXTERNAL,

@@ -1,0 +1,165 @@
+"""Nondefault prefixes reach the real adapter through production composition."""
+
+from datetime import UTC, datetime
+
+import pytest
+
+from kodezart.composition.tracker import build_tracker
+from kodezart.core.backoff import RetryPolicy
+from kodezart.core.config import AppConfig
+from kodezart.core.protocols import TrackerPort
+from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
+from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
+from kodezart.types.domain.tracker import ClaimStatus
+from tests.fakes import FakeMcpComment
+from tests.tracker.conftest import (
+    APPROVED_ISSUE,
+    CLAIMED_ISSUE,
+    FIXTURE_NOW,
+    FIXTURE_REPO_URL,
+    fixture_server,
+)
+from tests.tracker.lease_fixtures import leased_comment
+
+
+async def test_composed_prefixes_round_trip_through_every_adapter(tracker: TrackerPort):
+    operation = OperationConfig(
+        operation_name="fixture",
+        workspace="fixture",
+        marker_prefixes={"decision": "changed-prefix"},
+    )
+    marker = compose_comment_marker(
+        prefixes=operation.marker_prefixes,
+        purpose="decision",
+        lane="one",
+        occurrence_key="two",
+    )
+    written = await leased_comment(
+        tracker, target=APPROVED_ISSUE, marker=marker, body="decision"
+    )
+    assert written.body == "[changed-prefix:one:two]\ndecision"
+    assert (await tracker.list_comments(issue_key=APPROVED_ISSUE)) == (written,)
+
+
+async def test_all_existing_marker_carriers_use_the_injected_operation_mapping():
+    operation = OperationConfig(
+        operation_name="fixture",
+        workspace="fixture",
+        marker_prefixes={
+            "claim": "different.claim",
+            "work_ref": "different.ref",
+            "base_spec": "different.base",
+            "repository": "different.repository",
+        },
+    )
+    # Composition gives the adapter the deployment's own clock, so the
+    # backend this case dials has to be on one too: ownership is decided
+    # by the stamps it puts on writes.
+    server = fixture_server(clock=lambda: datetime.now(UTC))
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
+    granted = await tracker.claim_issue(
+        issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
+    )
+    assert granted.status is ClaimStatus.GRANTED
+    assert len(server.comments) == 1
+    assert server.comments[0].body.startswith("```different.claim\n")
+    claim = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+    assert claim is not None and claim.holder == "one-job"
+    renewed = await tracker.renew_claim(
+        issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=1200
+    )
+    assert renewed is not None
+    assert len(server.comments) == 1
+    await tracker.release_claim(issue_key=CLAIMED_ISSUE, holder="one-job")
+    assert server.comments == []
+
+    ref = WorkRef(
+        issue_id=CLAIMED_ISSUE,
+        role=WorkRefRole.DELIVERABLE,
+        branch="fixture-branch",
+        recorded_at=FIXTURE_NOW,
+    )
+    await tracker.record_work_ref(ref=ref)
+    assert server.comments[-1].body.startswith("<!-- different.ref ")
+    assert (await tracker.work_refs(issue_key=CLAIMED_ISSUE))[
+        0
+    ].identity() == ref.identity()
+
+    spec = trunk_base("main")
+    await tracker.record_base_spec(issue_key=CLAIMED_ISSUE, spec=spec)
+    assert server.comments[-1].body.startswith("<!-- different.base ")
+    assert await tracker.read_base_spec(issue_key=CLAIMED_ISSUE) == spec
+
+    await tracker.post_comment(
+        issue_key=CLAIMED_ISSUE,
+        body=f'<!-- different.repository url="{FIXTURE_REPO_URL}" -->',
+    )
+    assert (
+        await tracker.recorded_repository(issue_key=CLAIMED_ISSUE) == FIXTURE_REPO_URL
+    )
+    server.comments.append(
+        FakeMcpComment(
+            id="wrong-prefix",
+            issue_id=CLAIMED_ISSUE,
+            author="fixture",
+            body='<!-- differentXrepository url="https://wrong.invalid" -->',
+            created_at=FIXTURE_NOW,
+        )
+    )
+    assert (
+        await tracker.recorded_repository(issue_key=CLAIMED_ISSUE) == FIXTURE_REPO_URL
+    )
+
+
+async def test_unconfigured_marker_write_fails_before_any_backend_mutation():
+    operation = OperationConfig(operation_name="fixture", workspace="fixture")
+    server = fixture_server()
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
+    with pytest.raises(OperationMemberAbsentError):
+        await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE, holder="one-job", lease_seconds=600
+        )
+    assert server.tool_calls("save_comment") == []
+
+
+async def test_empty_log_does_not_disguise_an_unconfigured_marker_reader():
+    operation = OperationConfig(operation_name="fixture", workspace="fixture")
+    server = fixture_server()
+    config = AppConfig()
+    tracker, _ = build_tracker(
+        backend=config.tracker.backend,
+        retry=RetryPolicy(
+            attempts=config.tracker.max_retries + 1,
+            initial_delay=config.tracker.retry_backoff_factor,
+        ),
+        operation=operation,
+        caller=server,
+    )
+    for read in (
+        tracker.active_claim,
+        tracker.work_refs,
+        tracker.read_base_spec,
+        tracker.recorded_repository,
+    ):
+        with pytest.raises(OperationMemberAbsentError, match="marker_prefixes"):
+            await read(issue_key=CLAIMED_ISSUE)
+    assert server.calls == []

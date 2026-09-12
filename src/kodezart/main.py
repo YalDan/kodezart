@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # does not check adoption — the prompt passes are wired on the
     # operation's presence alone — and a reference the bound copy cannot
     # resolve is caught by their boot render (KOD-160).
-    dialled = await boot_tracker(config=config, operation=declared, log=log)
+    dialled = await boot_tracker(settings=config.tracker, operation=declared, log=log)
     operation = declared if dialled is None else dialled.operation
     tracker: TrackerPort | None = None if dialled is None else dialled.tracker
     mcp_caller: ManagedMcpToolCaller | None = (

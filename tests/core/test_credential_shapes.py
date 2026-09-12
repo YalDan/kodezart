@@ -30,6 +30,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.tracker import TrackerBackend
+from tests.docs.configuration import model_types
 
 # Each fixture is assembled by concatenation so no literal in this file has
 # the shape of a real credential, and each names the AppConfig field whose
@@ -111,7 +112,7 @@ def test_the_one_tracker_backend_has_a_credential_shape() -> None:
 #: Every credential-bearing field, mapped to a value in its live shape.
 _CREDENTIAL_FIELD_FIXTURES: Final[dict[str, str]] = {
     "github_token": _FORGE_TOKEN,
-    "tracker_token": _TRACKER_TOKEN,
+    "TrackerSettings.token": _TRACKER_TOKEN,
     "knowledge_mcp_token": _KNOWLEDGE_TOKEN,
 }
 
@@ -127,12 +128,12 @@ _SHAPELESS_TOKEN_FIELDS: Final[frozenset[str]] = frozenset(
 def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
     """The class, closed: a credential field the table does not know fails here.
 
-    The enumeration is derived from the configuration model — every field
-    whose name ends ``_token`` — so a new credential knob cannot ship
+    The enumeration follows the actual configuration models, including nested
+    sections and transport arms. Token and credential fields cannot ship
     without either a shape the scrubber recognises or a recorded shapeless
     exemption, and neither can this test go vacuous when one is renamed.
     """
-    token_fields = {name for name in AppConfig.model_fields if name.endswith("_token")}
+    token_fields = set(_credential_fields())
 
     assert token_fields == set(_CREDENTIAL_FIELD_FIXTURES) | _SHAPELESS_TOKEN_FIELDS
     for field, value in _CREDENTIAL_FIELD_FIXTURES.items():
@@ -144,7 +145,18 @@ def test_every_token_field_maps_into_the_table_or_names_its_exemption() -> None:
 def test_every_shapeless_token_field_is_a_secret_that_never_serializes() -> None:
     """The exemption's ground, asserted: shapeless means guarded another way."""
     for field in _SHAPELESS_TOKEN_FIELDS:
-        info = AppConfig.model_fields[field]
+        info = _credential_fields()[field]
 
         assert info.exclude is True, field
         assert "SecretStr" in str(info.annotation), field
+
+
+def _credential_fields(model=AppConfig):
+    fields = {}
+    for name, field in model.model_fields.items():
+        if name == "token" or name.endswith(("_token", "credential")):
+            key = name if model is AppConfig else f"{model.__name__}.{name}"
+            fields[key] = field
+        for nested in model_types(field.annotation):
+            fields.update(_credential_fields(nested))
+    return fields

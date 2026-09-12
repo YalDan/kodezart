@@ -118,7 +118,7 @@ async def build_run_recorder(
         else:
             sinks[DocumentSystem.TRACKER] = LinearRecordSink(
                 caller=tracker_caller,
-                server_name=config.tracker_mcp_server_name,
+                server_name=config.tracker.server_name,
             )
     if DocumentSystem.KNOWLEDGE in declared:
         knowledge_destinations = [

@@ -10,7 +10,6 @@ red until the document catches up.  That is the whole mechanism.
 """
 
 import ast
-import json
 import re
 import tomllib
 from pathlib import Path
@@ -20,6 +19,9 @@ from fastapi.routing import APIRoute
 from kodezart.core.config import AppConfig
 from kodezart.main import create_app
 from kodezart.types.domain.agent import AgentEvent
+from tests.docs.configuration import (
+    shipped_config_variables as _shipped_config_variables,
+)
 from tests.docs.test_api_event_reference import SECTION as API_EVENT_HEADING
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,10 +58,6 @@ def _declared_version() -> str:
     with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
         project: dict[str, str] = tomllib.load(handle)["project"]
     return project["version"]
-
-
-def _shipped_config_variables() -> set[str]:
-    return {f"{ENV_PREFIX}{name.upper()}" for name in AppConfig.model_fields}
 
 
 def _config_variables_named_in(path: Path) -> set[str]:
@@ -130,44 +128,20 @@ def test_env_example_assigns_only_real_variables() -> None:
     assert assigned <= _shipped_config_variables()
 
 
-def _env_example_assignments() -> dict[str, object]:
-    """Every uncommented assignment, keyed by field name and JSON-coerced."""
-    values: dict[str, str] = {}
-    for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
-        if "=" not in line or line.lstrip().startswith("#"):
-            continue
-        key, raw = line.split("=", 1)
-        values[key.strip().removeprefix(ENV_PREFIX).lower()] = raw.strip()
-    return {
-        name: json.loads(raw)
-        if AppConfig.model_fields[name].annotation not in (str, str | None)
-        and raw.startswith(("{", "["))
-        else raw
-        for name, raw in values.items()
-    }
-
-
 def test_env_example_values_load() -> None:
-    """Every assignment in the example is a value the field actually accepts."""
-    AppConfig(**_env_example_assignments())  # type: ignore[arg-type]
+    """Exercise the same dotenv source, nested decoding and validation as boot."""
+    AppConfig(_env_file=ENV_EXAMPLE)
 
 
 def test_every_env_example_value_is_the_fields_shipped_default() -> None:
-    """``README.md`` promises copying the file changes no behaviour.
-
-    Compared after validation rather than as text, so ``30`` against a float
-    default of ``30.0`` is equal — which is what "changes no behaviour"
-    means — while a genuinely drifted value is not.  Nothing here restates
-    a default: the expected side is the field's own, read off ``AppConfig()``.
-    """
-    defaults = AppConfig()
+    """Compare the fully validated example to the actual shipped defaults."""
+    loaded = AppConfig(_env_file=ENV_EXAMPLE)
+    defaults = AppConfig(_env_file=None)
     drifted = [
         name
-        for name, value in _env_example_assignments().items()
-        if getattr(AppConfig(**{name: value}), name)  # type: ignore[arg-type]
-        != getattr(defaults, name)
+        for name in AppConfig.model_fields
+        if getattr(loaded, name) != getattr(defaults, name)
     ]
-
     assert drifted == []
 
 
@@ -265,15 +239,39 @@ def test_the_sse_event_table_has_rows_at_all() -> None:
     assert len(_documented_event_types()) > 10
 
 
-def _attribute_reads_of(field_name: str) -> list[str]:
-    """Every module under ``src/`` that reads ``<something>.<field_name>``."""
+def _tracker_setting_reads_of(field_name: str) -> list[str]:
+    """Read the grouped field through AppConfig or a typed TrackerSettings input."""
     sites: list[str] = []
     for source in sorted((REPO_ROOT / "src").rglob("*.py")):
         tree = ast.parse(source.read_text(encoding="utf-8"))
-        if any(
-            isinstance(node, ast.Attribute) and node.attr == field_name
+        reads = any(
+            isinstance(node, ast.Attribute)
+            and node.attr == field_name
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "tracker"
             for node in ast.walk(tree)
-        ):
+        )
+        for function in ast.walk(tree):
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            settings = {
+                arg.arg
+                for arg in (
+                    *function.args.posonlyargs,
+                    *function.args.args,
+                    *function.args.kwonlyargs,
+                )
+                if isinstance(arg.annotation, ast.Name)
+                and arg.annotation.id == "TrackerSettings"
+            }
+            reads |= any(
+                isinstance(node, ast.Attribute)
+                and node.attr == field_name
+                and isinstance(node.value, ast.Name)
+                and node.value.id in settings
+                for node in ast.walk(function)
+            )
+        if reads:
             sites.append(source.relative_to(REPO_ROOT).as_posix())
     return sites
 
@@ -289,7 +287,7 @@ def test_the_tracker_server_name_has_exactly_the_consumers_its_description_claim
     it.  A reader appearing or vanishing makes this red until the
     description tells the truth again.
     """
-    assert _attribute_reads_of("tracker_mcp_server_name") == [
+    assert _tracker_setting_reads_of("server_name") == [
         "src/kodezart/composition/records.py",
         "src/kodezart/composition/tracker.py",
     ]
