@@ -165,6 +165,7 @@ from kodezart.types.domain.surface import (
     SurfaceKind,
     SurfaceLease,
     WritableSurface,
+    WriteRevalidation,
 )
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
@@ -3736,7 +3737,10 @@ class FakeTrackerPort:
         expected: tuple[IssueGraphSnapshot, ...],
         changes: tuple[GraphChange, ...],
         holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
         current = tuple(
             [await self.read_issue(issue_key=row.issue_key) for row in expected]
         )
@@ -3813,7 +3817,10 @@ class FakeTrackerPort:
         body: str,
         holder: str,
         expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
         identity = IssueIdentity(
             scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
             deliverable_key=deliverable_key,
@@ -3863,8 +3870,17 @@ class FakeTrackerPort:
         return child
 
     async def create_criterion_if_absent(
-        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
+        if revalidate is not None:
+            await revalidate()
         body = criterion_body(parent_key=parent_key, check=check, do=do)
         children = await self.read_criteria(issue_key=parent_key)
         existing = existing_criterion(
@@ -4090,6 +4106,8 @@ class FakeTrackerPort:
         replacement: str,
         authorization: DescriptionWriteAuthority | None = None,
     ) -> DescriptionEditResult:
+        if authorization is not None and authorization.revalidate is not None:
+            await authorization.revalidate()
         if authorization is not None and authorization.surface.ref.key != target:
             raise ValueError("description authority addresses another target")
         current = await self.read_issue(issue_key=target)

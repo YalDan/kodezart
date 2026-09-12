@@ -1,5 +1,6 @@
 """Vendor-neutral addresses for independently leased tracker write surfaces."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -69,12 +70,20 @@ class WritableSurface:
             raise ValueError("only a marker-keyed comment may carry a marker")
 
 
+type WriteRevalidation = Callable[[], Awaitable[None]]
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DescriptionWriteAuthority:
-    """The actual holder and explicit independently leased description surface."""
+    """An actual surface grant, with any caller-owned source authorization.
+
+    A caller writing from a judged source supplies its fresh revalidation;
+    the adapter still enforces identity and the surface grant itself.
+    """
 
     holder: str
     surface: WritableSurface
+    revalidate: WriteRevalidation | None = None
 
     def __post_init__(self) -> None:
         if not self.holder.strip():
