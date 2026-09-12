@@ -86,3 +86,10 @@ class WorkflowRequest(RepoSourceRequest):
             "Write",
         ],
     )
+
+    @model_validator(mode="after")
+    def _check_trunk_base(self) -> Self:
+        if self.base_spec is None and not self.base_branch:
+            msg = "baseBranch must not be empty when baseSpec is absent"
+            raise ValueError(msg)
+        return self
