@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
+from pydantic import TypeAdapter
+
 from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.native_delivery import NativeLaneWorkflow
 from kodezart.chains.scope_walker import read_scope_ready
@@ -20,8 +22,8 @@ from kodezart.types.domain.native_delivery import (
     PendingLaneDelivery,
     SkippedLaneDelivery,
 )
-from kodezart.types.domain.operation import RepoEntry
-from kodezart.types.domain.run_records import RunIdentity, RunKind
+from kodezart.types.domain.operation import RepoEntry, RunKind
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_runtime import (
@@ -34,6 +36,8 @@ from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.domain.workflow import ExecutionContext
 
 _REQUEST_METADATA = "scope_lane_request"
+_RUN_METADATA = "scope_lane_run_identity"
+_NATIVE_STATE = TypeAdapter(NativeDeliveryState)
 
 
 class ScopeWorkflowEngine:
@@ -194,7 +198,11 @@ class ScopeWorkflowEngine:
                 "repo_path": context.repo_path,
                 "base": spec.model_dump_json(),
             }
-            config["metadata"] = {_REQUEST_METADATA: address}
+            assert context.run_identity is not None
+            config["metadata"] = {
+                _REQUEST_METADATA: address,
+                _RUN_METADATA: context.run_identity.model_dump(mode="json"),
+            }
             initial: NativeDeliveryState | None = lane.prepare(fire_state)
             if lane.fire.checkpointer is not None:
                 saved = await lane.graph.aget_state(config)
@@ -204,10 +212,34 @@ class ScopeWorkflowEngine:
                             "native checkpoint belongs to a different scope request",
                             ref=scope,
                         )
+                    saved_state = _NATIVE_STATE.validate_python(saved.values)
+                    if (
+                        saved_state["issue_key"] != key
+                        or saved_state["repo_url"] != context.repo_url
+                    ):
+                        raise ScopeReadError(
+                            "native checkpoint state differs from its request identity",
+                            ref=scope,
+                        )
+                    original_run = RunIdentity.model_validate(
+                        (saved.metadata or {}).get(_RUN_METADATA)
+                    )
+                    if (
+                        original_run.kind is not RunKind.FIRE
+                        or original_run.name != key
+                    ):
+                        raise ScopeReadError(
+                            "native checkpoint run identity differs from its lane",
+                            ref=scope,
+                        )
+                    config["configurable"]["run_identity"] = original_run.model_dump()
+                    config["metadata"][_RUN_METADATA] = original_run.model_dump(
+                        mode="json"
+                    )
                     # Even a fully completed checkpoint must not replay a cached
                     # acceptance without asking today's criterion authority.
                     await require_current_native_snapshot(
-                        saved.values, reader=lane.fire.criteria
+                        saved_state, reader=lane.fire.criteria
                     )
                     initial = None
             if initial is not None:
@@ -227,7 +259,7 @@ class ScopeWorkflowEngine:
                 subgraphs=True,
             ):
                 if mode == "values" and not namespace:
-                    final = payload
+                    final = _NATIVE_STATE.validate_python(payload)
                 elif mode == "custom":
                     if not isinstance(payload, AgentEvent):
                         raise TypeError("Native lane emitted a non-AgentEvent")
