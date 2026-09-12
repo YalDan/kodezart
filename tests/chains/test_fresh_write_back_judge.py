@@ -6,11 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from kodezart.chains.write_back_verifier import FreshWriteBackJudge
-from kodezart.core.constants import EVAL_TOOLS
 from kodezart.domain.errors import WriteBackReadError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.audit import AuditVerdict, TrackerArtifact
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from tests.chains.test_write_back_verifier import SURFACE
 from tests.chains.write_back_fixtures import RecordingWorkspace, result
 from tests.chains.write_back_read_cancellation import (
@@ -89,7 +88,7 @@ async def test_actual_role_preserves_artifact_ref_and_fresh_session_boundaries(
     assert len(executor.calls) == 2
     for call in executor.calls:
         assert call["session_id"] is None
-        assert call["allowed_tools"] == EVAL_TOOLS
+        assert call["allowed_tools"] is ToolPreset.EVALUATION
         assert ARTIFACT.content in call["prompt"]
         assert f"<base_ref>{HEAD}</base_ref>" in call["prompt"]
         assert "citedRefs" in str(call["output_format"])

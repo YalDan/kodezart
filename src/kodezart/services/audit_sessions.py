@@ -1,12 +1,12 @@
 """Fresh structured judgment in an already owned workspace."""
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
 from kodezart.core.stream_drain import drain
 from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 
@@ -34,7 +34,7 @@ async def judge_in_workspace(
             prompt=prompt,
             workspace_path=workspace,
             permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=list(EVAL_TOOLS),
+            allowed_tools=ToolPreset.EVALUATION,
             skills=prompts.session_skills(key, skills),
             session_type=session_type,
             agents=NO_SUBAGENTS,
