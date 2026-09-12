@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
@@ -176,6 +177,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             github_api=github_api,
             checkpointer=checkpointer,
+            criteria=(
+                TrackerCriteria(tracker=dialled.tracker)
+                if dialled is not None
+                else None
+            ),
+            scope_tracker=dialled.tracker if dialled is not None else None,
         )
         app.state.workflow_engine = workflow_engine
 

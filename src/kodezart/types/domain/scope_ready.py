@@ -19,3 +19,5 @@ class ScopeReadySet:
     scope: ResolvedScope
     ready: tuple[ScopeReadyLane, ...]
     blocked: tuple[BlockedIssue, ...]
+    unapproved: tuple[str, ...] = ()
+    criteria: tuple[TrackerIssue, ...] = ()
