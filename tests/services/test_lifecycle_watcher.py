@@ -202,7 +202,7 @@ def watcher(
 class TestTheTransitionsAJobStreamProduces:
     """Each stage of a run reaches the issue, in the run's own order."""
 
-    async def test_a_full_run_walks_in_progress_then_in_review_then_done(
+    async def test_a_full_run_reviews_the_parent_and_retires_the_queue_entry(
         self,
     ) -> None:
         watch, tracker, _ = watcher(
@@ -220,7 +220,6 @@ class TestTheTransitionsAJobStreamProduces:
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
@@ -425,7 +424,11 @@ class TestFollowingInTheBackground:
         assert watch.following, "the task must be referenced, not left to the GC"
         await asyncio.gather(*watch.following)
 
-        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
+        assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
         assert not watch.following
 
 
@@ -539,8 +542,8 @@ class TestThePremiseAgainstTheShippedQueue:
 
             assert tracker.workflow_writes == [
                 (ISSUE, LifecycleStage.IN_PROGRESS),
-                (ISSUE, LifecycleStage.DONE),
             ]
+            assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
         finally:
             await queue.stop()
 
@@ -640,7 +643,10 @@ class TestGracefulShutdownHandsTheClaimBack:
         await asyncio.wait_for(watch.drain(), timeout=5.0)
 
         assert not watch.following
-        assert tracker.workflow_writes[-1] == (ISSUE, LifecycleStage.DONE)
+        assert tracker.workflow_writes == [
+            (ISSUE, LifecycleStage.IN_PROGRESS),
+            (ISSUE, LifecycleStage.IN_REVIEW),
+        ]
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
 
@@ -784,7 +790,6 @@ class TestTheFailureArm:
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
         assert [comment.body for comment in tracker.comments] == [
             f"[fixture-outcome:{ISSUE}:job-0001]\n"
