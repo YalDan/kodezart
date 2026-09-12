@@ -7,7 +7,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from tests.tracker.conftest import linear_over_fake_mcp
 from tests.tracker.test_scope_reads import ROOT, ScopeMcpServer
 
-UUID = "65211d3b-bb35-46f7-9ab4-a86577604bb7"
+UUID = "00000000-0000-4000-8000-000000000073"
 
 
 class _UuidLookup(ScopeMcpServer):
