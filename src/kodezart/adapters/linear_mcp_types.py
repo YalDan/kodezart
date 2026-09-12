@@ -19,6 +19,7 @@ without a fresh capture behind it is a guess wearing a type.
 
 from collections.abc import Sequence
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
@@ -222,6 +223,28 @@ class LinearCriterionIssueWire(LinearIssueDetailWire):
 
     labels: list[str]
     parent_id: str | None
+
+
+class LinearAddressedIssueWire(LinearIssueDetailWire):
+    """One addressed read, retaining the native UUID reported by ``get_issue``.
+
+    A display-key request needs no UUID. An opaque UUID request is accepted
+    only when that same native UUID is present in the returned payload.
+    """
+
+    uuid: UUID | None = None
+
+    def matches_requested(self, issue_key: str) -> bool:
+        """Accept the canonical key or the backend's attested UUID alias."""
+        if issue_key == self.id:
+            return True
+        if self.uuid is None:
+            return False
+        try:
+            requested_uuid = UUID(issue_key)
+        except ValueError:
+            return False
+        return requested_uuid == self.uuid
 
 
 class LinearIssueListWire(LinearWireModel):
