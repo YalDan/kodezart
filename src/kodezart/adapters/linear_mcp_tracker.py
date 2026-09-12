@@ -1983,9 +1983,18 @@ class LinearMcpTracker:
 
     async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
         self._issue_identity.require_prefix()
-        current = await self._read_issue_wire(issue_key)
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        current = self._validate(LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE)
+        if not current.matches_requested(issue_key):
+            raise TrackerProtocolError(
+                "issue identity read returned another native key",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
         return self._issue_identity.decode(
-            current.description or "", issue_key=issue_key
+            current.description or "", issue_key=current.id
         )
 
     async def upsert_issue(
