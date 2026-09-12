@@ -7,12 +7,14 @@ import asyncio
 import hashlib
 import os
 import re
+import signal
 import stat
 from contextlib import ExitStack
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import GitAuth
 from kodezart.domain.errors import (
     GitOperationError,
@@ -77,14 +79,31 @@ class SubprocessGitService:
             raise WorkspaceError("The native worktree identity cannot be read") from exc
 
     async def _identity_git(self, cwd: str, *args: str) -> bytes:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            *args,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
         )
-        stdout, _ = await proc.communicate()
+        communication: asyncio.Task[tuple[bytes, bytes]] | None = None
+        try:
+            proc = await asyncio.shield(spawning)
+            communication = asyncio.create_task(proc.communicate())
+            stdout, _ = await asyncio.shield(communication)
+        except BaseException:
+            proc, _ = await finish_owned(spawning)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            if communication is None:
+                communication = asyncio.create_task(proc.communicate())
+            await finish_owned(communication)
+            raise
         if proc.returncode != 0:
             raise WorkspaceError(
                 f"Native worktree identity read failed: git {args[0]} exited "
