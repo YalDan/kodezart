@@ -171,8 +171,6 @@ def test_actual_collector_declares_only_tracker_reads_and_pure_observation_calls
         "AlarmReading",
         "EscalationEvidence",
         "ReferencesEvidence",
-        "escalation_comment.body.partition",
-        "json.dumps",
     }
     for module in (escalation_records, escalation_signals):
         tree = ast.parse(inspect.getsource(module))
