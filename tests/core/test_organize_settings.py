@@ -71,11 +71,17 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
     assert config.organize.max_admission_rounds == 1
     assert config.organize.max_convergence_rounds == 7
     tick, board, executor = factory(tick=True, settings=config, refuse_forever=True)
-    from kodezart.domain.errors import OrganizeWriteRefusalError
+    from kodezart.domain.errors import OrganizeHaltError
 
     instant = datetime(2026, 9, 12, tzinfo=UTC)
-    with pytest.raises(OrganizeWriteRefusalError, match="admission_exhausted"):
+    with pytest.raises(OrganizeHaltError, match="admission_exhausted") as halted:
         await tick.run(instant)
+    assert halted.value.report.halt.bound.model_dump() == {
+        "setting": "organize.max_admission_rounds",
+        "value": 1,
+        "rounds_used": 1,
+        "loop": "admission",
+    }
     assert (
         len(
             [

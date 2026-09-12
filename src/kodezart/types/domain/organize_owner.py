@@ -18,37 +18,109 @@ from kodezart.types.domain.write_back import WriteBackResult
 
 class CriterionProposal(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    title: str = Field(min_length=1, pattern=r"\S")
-    check: str = Field(min_length=1, pattern=r"\S")
-    do: str = Field(min_length=1, pattern=r"\S")
+    title: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Short title for the criterion sub-issue to prepare.",
+    )
+    check: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Falsifiable criterion Check; its exact text identifies replay "
+            "under the parent."
+        ),
+    )
+    do: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Concrete work or verification instructions for this criterion; "
+            "preparation does not execute them."
+        ),
+    )
 
 
 class BodyProposal(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    kind: Literal["body"]
-    issue_id: str = Field(min_length=1)
-    body: str = Field(min_length=1, pattern=r"\S")
+    kind: Literal["body"] = Field(
+        description="Propose replacing only the addressed issue description."
+    )
+    issue_id: str = Field(
+        min_length=1,
+        description="Exact native tracker key supplied for the authoring subject.",
+    )
+    body: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Complete proposed issue description, grounded in the current "
+            "source and mandate."
+        ),
+    )
 
 
 class CriteriaProposal(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    kind: Literal["criteria"]
-    issue_id: str = Field(min_length=1)
-    criteria: tuple[CriterionProposal, ...] = Field(min_length=1)
+    kind: Literal["criteria"] = Field(
+        description=(
+            "Propose preparing missing criterion sub-issues under the addressed parent."
+        )
+    )
+    issue_id: str = Field(
+        min_length=1,
+        description=(
+            "Exact native tracker key of the parent whose criteria are being prepared."
+        ),
+    )
+    criteria: tuple[CriterionProposal, ...] = Field(
+        min_length=1,
+        description=(
+            "Criterion specifications to create if absent; existing criteria "
+            "are never overwritten by this proposal."
+        ),
+    )
 
 
 class UnresolvedProposal(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    kind: Literal["unresolved"]
-    issue_id: str = Field(min_length=1)
-    question: str = Field(min_length=1, pattern=r"\S")
-    evidence: str = Field(min_length=1, pattern=r"\S")
+    kind: Literal["unresolved"] = Field(
+        description=(
+            "Report a genuine unresolved human choice that current evidence "
+            "cannot settle."
+        )
+    )
+    issue_id: str = Field(
+        min_length=1,
+        description="Exact native tracker key owning the unresolved choice.",
+    )
+    question: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Concrete unresolved question requiring a human decision.",
+    )
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Current source evidence showing why the unresolved choice cannot "
+            "be settled."
+        ),
+    )
 
 
 class UnavailableProposal(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    kind: Literal["unavailable"]
-    issue_id: str = Field(min_length=1)
+    kind: Literal["unavailable"] = Field(
+        description=(
+            "Report a required write capability absent from the current owner "
+            "implementation."
+        )
+    )
+    issue_id: str = Field(
+        min_length=1,
+        description="Exact native tracker key requiring the unavailable capability.",
+    )
     capability: Literal[
         "parent",
         "blockedBy",
@@ -57,8 +129,19 @@ class UnavailableProposal(CamelCaseModel):
         "milestone",
         "split",
         "criterion_edit",
-    ]
-    evidence: str = Field(min_length=1, pattern=r"\S")
+    ] = Field(
+        description=(
+            "Specific unavailable write capability; an implementation gap "
+            "does not imply a human decision."
+        )
+    )
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Concrete evidence establishing why this unavailable operation is required."
+        ),
+    )
 
 
 class OrganizeProposal(

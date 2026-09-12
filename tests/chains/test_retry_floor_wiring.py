@@ -16,6 +16,7 @@ import pytest
 
 from kodezart.chains import (
     authored_delivery,
+    native_delivery,
     ralph_loop,
     ralph_workflow,
     ticket_generation,
@@ -26,6 +27,7 @@ _GRAPH_BINDINGS = (
     (ticket_generation, "self._floor", "self._retry"),
     (ralph_workflow, "self.floor", "self.retry"),
     (authored_delivery, "self.fire.floor", "self.fire.retry"),
+    (native_delivery, "fire.floor", "fire.retry"),
 )
 
 
