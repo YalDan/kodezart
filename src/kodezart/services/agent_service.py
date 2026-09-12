@@ -325,6 +325,9 @@ class AgentService:
 
             if persist_branch and self._persister and buffered_result:
                 backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
+                # A failed await cannot establish whether persistence committed.
+                # Preserve native evidence until the whole operation returns.
+                retain_workspace = native_guard is not None
                 persist_result = await self._persister.persist(
                     workspace_path=workspace_path,
                     branch=persist_branch,
