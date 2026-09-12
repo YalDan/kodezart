@@ -17,6 +17,7 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_terminal import TerminalDiscrepancy
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.pr_state import PRLifecycle
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_requests import PREFIXES
@@ -74,7 +75,7 @@ async def test_native_terminal_mandate_observes_current_head_without_criterion_c
             marker_prefixes=PREFIXES,
         )
         marker, _, body = rendered.partition("\n")
-        updated = await tracker.upsert_comment(target=ROOT, marker=marker, body=body)
+        updated = await leased_comment(tracker, target=ROOT, marker=marker, body=body)
         assert updated.comment_key == source.comment.comment_key
     paths, mandate_calls = [], []
     active = asyncio.Event()

@@ -12,6 +12,7 @@ from kodezart.types.domain.run_alarm import AlarmReading
 from kodezart.types.domain.run_state import LaneEscalation
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE
+from tests.tracker.lease_fixtures import leased_comment
 
 LANE = "lane:ageing"
 KEY = "question:ageing"
@@ -29,7 +30,8 @@ async def recorded_inputs(tracker):
         interim_basis="The recorded source.",
         raised_at_sha="raised",
     )
-    comment = await tracker.upsert_comment(
+    comment = await leased_comment(
+        tracker,
         target=APPROVED_ISSUE,
         marker=ESCALATION_MARKER,
         body=record.model_dump_json(by_alias=True),

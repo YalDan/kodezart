@@ -14,6 +14,7 @@ from kodezart.types.domain.audit_terminal import TerminalDiscrepancy
 from kodezart.types.domain.pr_state import PRLifecycle
 from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.tracker import WorkflowStateKind
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_requests import PREFIXES
 from tests.tracker.test_audit_sweep import CHILD, HEAD, REPO, ROOT, state
 from tests.tracker.test_audit_sweep import server as server
@@ -196,8 +197,8 @@ async def test_terminal_facts_changing_during_mandate_refuse_whole_sweep(
                 marker_prefixes=PREFIXES,
             )
             marker, _, body = rendered.partition("\n")
-            updated = await tracker.upsert_comment(
-                target=ROOT, marker=marker, body=body
+            updated = await leased_comment(
+                tracker, target=ROOT, marker=marker, body=body
             )
             assert updated.comment_key == source.comment.comment_key
             reparsed = await sweep._terminals._records.read(

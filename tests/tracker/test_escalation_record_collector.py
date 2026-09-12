@@ -20,6 +20,7 @@ from kodezart.types.domain.tracker import TrackerComment
 from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE, linear_over_fake_mcp
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.marker_config import MARKER_PREFIXES
 from tests.tracker.test_comment_pages import CommentPageServer, comment
 from tests.tracker.test_lane_records import LANE, seed
@@ -48,7 +49,8 @@ def escalation():
 
 
 async def seed_escalation(tracker, *, payload=None):
-    return await tracker.upsert_comment(
+    return await leased_comment(
+        tracker,
         target=APPROVED_ISSUE,
         marker=MARKER,
         body=escalation().model_dump_json(by_alias=True)

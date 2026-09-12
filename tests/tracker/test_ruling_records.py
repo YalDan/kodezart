@@ -15,6 +15,7 @@ from kodezart.types.domain.tracker import TrackerComment
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, linear_over_fake_mcp
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_comment_pages import CommentPageServer, comment
 
 OPERATION = OperationConfig(
@@ -27,8 +28,8 @@ async def seed(tracker, **changes):
     ruling = Ruling.model_validate(ruling_data(issue_ref=APPROVED_ISSUE, **changes))
     body = render_ruling(ruling=ruling, lane_key=LANE, marker_prefixes=PREFIXES)
     marker, content = body.split("\n", 1)
-    stored = await tracker.upsert_comment(
-        target=APPROVED_ISSUE, marker=marker, body=content
+    stored = await leased_comment(
+        tracker, target=APPROVED_ISSUE, marker=marker, body=content
     )
     return stored, ruling
 
@@ -148,7 +149,7 @@ async def test_owned_namespace_damage_cannot_become_an_empty_projection(tracker,
     else:
         body = first.body.split("\n")[0] + "\nmalformed"
     marker, content = body.split("\n", 1)
-    await tracker.upsert_comment(target=APPROVED_ISSUE, marker=marker, body=content)
+    await leased_comment(tracker, target=APPROVED_ISSUE, marker=marker, body=content)
     with pytest.raises(RulingRecordReadError, match="malformed") as raised:
         await reader(tracker).read_all(**ADDRESS)
     assert raised.value.__cause__ is not None

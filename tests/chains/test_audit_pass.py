@@ -26,6 +26,7 @@ from tests.tracker.conftest import WORKFLOW_STATE_NAMES, fixture_server
 from tests.tracker.conftest import clock as clock
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
+from tests.tracker.lease_fixtures import leased_comment
 
 ISSUE = "terminal/issue"
 CHILD = "terminal/criterion"
@@ -247,7 +248,8 @@ async def test_changing_terminal_never_returns_healthy_observation(
                 await tracker.update_issue(issue_key=CHILD, body="changed Check")
             elif damage == "record":
                 changed = record.model_copy(update={"head_sha": "new-recorded-head"})
-                await tracker.upsert_comment(
+                await leased_comment(
+                    tracker,
                     target=ISSUE,
                     marker=comment.body.splitlines()[0],
                     body=render_lane_record(
@@ -288,7 +290,8 @@ async def test_missing_recorded_pr_is_unresolved_without_forge_lookup(
 ):
     reader, _, record, comment = setup
     changed = record.model_copy(update={"pr": None})
-    await tracker.upsert_comment(
+    await leased_comment(
+        tracker,
         target=ISSUE,
         marker=comment.body.splitlines()[0],
         body=render_lane_record(record=changed, marker_prefixes=PREFIXES).partition(

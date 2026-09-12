@@ -37,6 +37,7 @@ from tests.services.test_assertion_drift import (
 )
 from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import linear_over_fake_mcp
+from tests.tracker.lease_fixtures import leased_comment
 
 claim_setup = fixtures.claim_setup
 server = fixtures.server
@@ -67,7 +68,7 @@ async def seed(
         ruling=ruling, lane_key=fixtures.REQUEST.lane_key, marker_prefixes=PREFIXES
     )
     marker, payload = body.split("\n", 1)
-    comment = await tracker.upsert_comment(target=owner, marker=marker, body=payload)
+    comment = await leased_comment(tracker, target=owner, marker=marker, body=payload)
     return comment, ruling
 
 
@@ -217,7 +218,7 @@ async def test_unreadable_designation_never_becomes_a_clean_result(
             payload = payload.replace(
                 f'"sourceRef": "{ruling.ruling_id}"', '"sourceRef": "another-ruling"'
             )
-        await tracker.upsert_comment(target=ROOT, marker=marker, body=payload)
+        await leased_comment(tracker, target=ROOT, marker=marker, body=payload)
     with pytest.raises(RulingRecordReadError):
         await build().compare(request)
 
@@ -247,7 +248,7 @@ async def test_changed_native_inputs_refuse_before_returning_claims(
                     ruling=amended, lane_key=request.lane_key, marker_prefixes=PREFIXES
                 )
                 marker, body = text.split("\n", 1)
-                await tracker.upsert_comment(target=ROOT, marker=marker, body=body)
+                await leased_comment(tracker, target=ROOT, marker=marker, body=body)
             elif change == "add-ruling":
                 await seed(tracker, question="A newly pinned question?")
             elif change == "family":
@@ -273,7 +274,7 @@ async def test_changed_native_inputs_refuse_before_returning_claims(
                 marker, body = record.body.split("\n", 1)
                 amended = body.replace('"commitsAhead": 2', '"commitsAhead": 3')
                 assert amended != body
-                await tracker.upsert_comment(target=ROOT, marker=marker, body=amended)
+                await leased_comment(tracker, target=ROOT, marker=marker, body=amended)
             else:
                 commit(repo, source_text(3))
         return value

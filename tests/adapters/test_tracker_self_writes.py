@@ -34,6 +34,7 @@ STAMP: Final[datetime] = datetime(2026, 9, 1, 17, 55, tzinfo=UTC)
 
 def _server() -> FakeLinearMcpServer:
     return FakeLinearMcpServer(
+        comment_clock=lambda: STAMP,
         issues=[
             FakeMcpIssue(
                 id=ISSUE,
@@ -74,6 +75,7 @@ def _tracker(server: McpToolCaller, ledger: SelfWriteLedger) -> LinearMcpTracker
         team_identifiers={TEAM_KEY: TEAM},
         retry=RetryPolicy(attempts=1, initial_delay=1.0),
         ledger=ledger,
+        clock=lambda: STAMP,
     )
 
 

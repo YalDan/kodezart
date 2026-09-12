@@ -204,7 +204,12 @@ async def watched(*, events: tuple[AgentEvent, ...]) -> FakeTrackerPort:
         recorder=RunRecorder(records={}, sinks={}),
         queue=FakeJobQueue(events=events),
         registry=FakeJobQueue(),
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=heartbeat(tracker, clock=clock),
         report=FakeFireReport(),
     )
@@ -511,7 +516,12 @@ class TestTheWatcherDrivesTheHeartbeat:
             recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),
         )
@@ -585,7 +595,12 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
             recorder=RunRecorder(records={}, sinks={}),
             queue=RaisingJobQueue(),
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),
         )
@@ -619,7 +634,12 @@ class TestTheClaimIsHandedBackWhenTheJobEnds:
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=(TERMINAL_EVENT,)),
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=heartbeat(tracker, clock=clock),
             report=FakeFireReport(),
         )

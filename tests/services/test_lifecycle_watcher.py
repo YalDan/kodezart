@@ -163,7 +163,12 @@ def watcher_over(
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
     )
@@ -180,7 +185,12 @@ def watcher(
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -226,6 +236,7 @@ class TestTheTransitionsAJobStreamProduces:
         )
 
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -250,6 +261,7 @@ class TestTheTransitionsAJobStreamProduces:
         assert tracker.queue_writes == []
         exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {exhausted.value}",
         ]
 
@@ -494,6 +506,8 @@ class TestThePremiseAgainstTheShippedQueue:
                 queue=queue,
                 registry=queue,
                 writer=TrackerLifecycleWriter(
+                    marker_prefixes={"run_outcome": "fixture-outcome"},
+                    surface_lease_seconds=900,
                     tracker=tracker,
                     gate=PassThroughGate(),
                 ),
@@ -568,7 +582,12 @@ class TestGracefulShutdownHandsTheClaimBack:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
@@ -644,7 +663,12 @@ class TestTheWatcherIsUnknownJobSafe:
             recorder=RunRecorder(records={}, sinks={}),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
@@ -763,6 +787,7 @@ class TestTheFailureArm:
             (ISSUE, LifecycleStage.DONE),
         ]
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -788,6 +813,7 @@ class TestTheFailureArm:
 
         assert tracker.restored_states == []
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
         ]
 
@@ -827,7 +853,12 @@ def watcher_recording(
             recorder=recorder,
             queue=FakeJobQueue(events=events),
             registry=registry_holding(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -905,7 +936,12 @@ def watcher_over_sink(
         ),
         queue=FakeJobQueue(events=events),
         registry=registry_holding(),
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=claim_heartbeat(tracker),
         report=FakeFireReport(),
     )
@@ -1030,7 +1066,12 @@ def watcher_reporting(
             recorder=RunRecorder(records={}, sinks={}),
             queue=FakeJobQueue(events=events),
             registry=registry_holding(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=report,
         ),
@@ -1170,7 +1211,12 @@ def recording_watcher(
             ),
             queue=queue,
             registry=queue,
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         ),
@@ -1324,7 +1370,12 @@ class TestTheShutdownRecordSweep:
             ),
             queue=queue,
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )
@@ -1365,7 +1416,12 @@ class TestTheShutdownRecordSweep:
             ),
             queue=queue,
             registry=FakeJobQueue(),
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=claim_heartbeat(tracker),
             report=FakeFireReport(),
         )

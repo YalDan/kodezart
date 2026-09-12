@@ -13,6 +13,7 @@ from kodezart.types.domain.escalation import (
 )
 from tests.fakes import FakeLinearMcpServer, FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE
+from tests.tracker.lease_fixtures import leased_comment
 
 LANE = "lane:one"
 KEY = "criterion:answer"
@@ -43,7 +44,8 @@ def reply(
 
 
 async def raise_question(tracker: TrackerPort) -> str:
-    comment = await tracker.upsert_comment(
+    comment = await leased_comment(
+        tracker,
         target=APPROVED_ISSUE,
         marker=ESCALATION,
         body="Historical prose is a readable record; no JSON migration is required.",

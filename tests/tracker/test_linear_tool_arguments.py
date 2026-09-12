@@ -48,6 +48,7 @@ from tests.tracker.connected_app_label_contract import (
     CONNECTED_APP_LABEL_ARGUMENTS,
     CONNECTED_APP_LABEL_REQUIRED,
 )
+from tests.tracker.lease_fixtures import leased_comment
 
 
 @dataclass(frozen=True)
@@ -363,11 +364,11 @@ async def sent_arguments() -> Mapping[str, set[str]]:
     )
     await tracker.set_queue_state(issue_key=CLAIMED_ISSUE, state=QueueState.DONE)
     await tracker.post_comment(issue_key=CLAIMED_ISSUE, body="hi")
-    await tracker.upsert_comment(
-        target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="first"
+    await leased_comment(
+        tracker, target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="first"
     )
-    await tracker.upsert_comment(
-        target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
+    await leased_comment(
+        tracker, target=CLAIMED_ISSUE, marker="[fixture:upsert]", body="changed"
     )
     await tracker.list_comments(issue_key=CLAIMED_ISSUE)
     await tracker.claim_issue(

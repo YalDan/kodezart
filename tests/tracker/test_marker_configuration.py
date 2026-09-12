@@ -20,6 +20,7 @@ from tests.tracker.conftest import (
     FIXTURE_REPO_URL,
     fixture_server,
 )
+from tests.tracker.lease_fixtures import leased_comment
 
 
 async def test_composed_prefixes_round_trip_through_every_adapter(tracker: TrackerPort):
@@ -34,8 +35,8 @@ async def test_composed_prefixes_round_trip_through_every_adapter(tracker: Track
         lane="one",
         occurrence_key="two",
     )
-    written = await tracker.upsert_comment(
-        target=APPROVED_ISSUE, marker=marker, body="decision"
+    written = await leased_comment(
+        tracker, target=APPROVED_ISSUE, marker=marker, body="decision"
     )
     assert written.body == "[changed-prefix:one:two]\ndecision"
     assert (await tracker.list_comments(issue_key=APPROVED_ISSUE)) == (written,)

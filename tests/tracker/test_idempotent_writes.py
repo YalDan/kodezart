@@ -9,6 +9,7 @@ from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE
+from tests.tracker.lease_fixtures import lease_for_comment, leased_comment
 
 MARKER = "[fixture:lane:decision-1]"
 
@@ -21,18 +22,18 @@ class TestCommentUpsert:
         original = await tracker.post_comment(
             issue_key=APPROVED_ISSUE, body=f"{MARKER}{newline}old"
         )
-        updated = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="new"
+        updated = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="new"
         )
         assert updated.comment_key == original.comment_key
         assert await tracker.list_comments(issue_key=APPROVED_ISSUE) == (updated,)
 
     async def test_changed_body_edits_existing_comment(self, tracker: TrackerPort):
-        original = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="first body"
+        original = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="first body"
         )
-        updated = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="changed body"
+        updated = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="changed body"
         )
         assert updated.comment_key == original.comment_key
         assert updated.created_at == original.created_at
@@ -43,18 +44,21 @@ class TestCommentUpsert:
     async def test_identical_replay_is_byte_identical_and_writes_nothing(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
     ):
-        first = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="first body"
-        )
-        issue = await tracker.read_issue(issue_key=APPROVED_ISSUE)
-        calls = tracker_writes()
-        replay = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="first body"
-        )
-        assert replay.model_dump_json() == first.model_dump_json()
-        assert await tracker.read_issue(issue_key=APPROVED_ISSUE) == issue
+        async with lease_for_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER
+        ) as holder:
+            first = await tracker.upsert_comment(
+                target=APPROVED_ISSUE, marker=MARKER, body="first body", holder=holder
+            )
+            issue = await tracker.read_issue(issue_key=APPROVED_ISSUE)
+            calls = tracker_writes()
+            replay = await tracker.upsert_comment(
+                target=APPROVED_ISSUE, marker=MARKER, body="first body", holder=holder
+            )
+            assert replay.model_dump_json() == first.model_dump_json()
+            assert await tracker.read_issue(issue_key=APPROVED_ISSUE) == issue
+            assert tracker_writes() == calls
         assert await tracker.list_comments(issue_key=APPROVED_ISSUE) == (first,)
-        assert tracker_writes() == calls
 
     async def test_two_matches_refuse_without_a_write(
         self, tracker: TrackerPort, tracker_writes: Callable[[], tuple[object, ...]]
@@ -83,11 +87,11 @@ class TestCommentUpsert:
             await tracker.post_comment(issue_key=APPROVED_ISSUE, body=body)
             for body in (f"intro\n{MARKER}", f"{MARKER} suffix", "")
         ]
-        other = await tracker.upsert_comment(
-            target=CLAIMED_ISSUE, marker=MARKER, body="other issue"
+        other = await leased_comment(
+            tracker, target=CLAIMED_ISSUE, marker=MARKER, body="other issue"
         )
-        created = await tracker.upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="new comment"
+        created = await leased_comment(
+            tracker, target=APPROVED_ISSUE, marker=MARKER, body="new comment"
         )
         assert await tracker.list_comments(issue_key=APPROVED_ISSUE) == (
             *neighbours,

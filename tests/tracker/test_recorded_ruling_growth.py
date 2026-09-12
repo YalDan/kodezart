@@ -19,6 +19,7 @@ from kodezart.types.domain.run_alarm import AlarmReading, AlarmSubject, AlarmSub
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
 from tests.fakes import FakeMcpIssue
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, fixture_server
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_ruling_records import OPERATION, seed
 
 KEYS = (APPROVED_ISSUE, CLAIMED_ISSUE)
@@ -71,7 +72,7 @@ async def write_on_second_issue(tracker, *, author="machine"):
     )
     body = render_ruling(ruling=ruling, lane_key=LANE, marker_prefixes=PREFIXES)
     marker, content = body.split("\n", 1)
-    await tracker.upsert_comment(target=CLAIMED_ISSUE, marker=marker, body=content)
+    await leased_comment(tracker, target=CLAIMED_ISSUE, marker=marker, body=content)
     return ruling
 
 
@@ -142,7 +143,7 @@ async def test_missing_record_authorship_never_borrows_transport_account(tracker
     first, _ = await seed(tracker)
     body = first.body.replace(',\n  "authoredBy": "machine"', "")
     marker, content = body.split("\n", 1)
-    await tracker.upsert_comment(target=APPROVED_ISSUE, marker=marker, body=content)
+    await leased_comment(tracker, target=APPROVED_ISSUE, marker=marker, body=content)
     with pytest.raises(RulingRecordReadError, match="malformed"):
         await observe(tracker, baseline)
 

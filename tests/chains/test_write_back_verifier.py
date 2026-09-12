@@ -31,6 +31,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from tests.fakes import FakeTrackerPort
+from tests.tracker.lease_fixtures import leased_comment
 
 ISSUE = "FIX-77"
 MARKER = "[fixture-evidence:lane-alpha]"
@@ -124,8 +125,8 @@ class EvidenceWriteBack:
         if finding is not None:
             for cited in finding.cited_refs:
                 self._latest = self._latest.replace(cited, self._correction)
-        await self._tracker.upsert_comment(
-            target=ISSUE, marker=MARKER, body=self._latest
+        await leased_comment(
+            self._tracker, target=ISSUE, marker=MARKER, body=self._latest
         )
 
 
@@ -134,8 +135,8 @@ class StubbornWriteBack(EvidenceWriteBack):
 
     async def write(self, *, finding: WriteBackFinding | None) -> None:
         self.findings.append(finding)
-        await self._tracker.upsert_comment(
-            target=ISSUE, marker=MARKER, body=self._first_output
+        await leased_comment(
+            self._tracker, target=ISSUE, marker=MARKER, body=self._first_output
         )
 
 

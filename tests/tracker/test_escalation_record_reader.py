@@ -31,9 +31,15 @@ async def test_actual_gated_writer_round_trips_through_cold_record_reader(port):
     gate = PassThroughGate()
     original = question()
     stored = await LaneEscalationWriter(
-        tracker=tracker, gate=gate, operation=WRITER_OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=gate,
+        operation=WRITER_OPERATION,
     ).raise_escalation(
-        lane_key="lane:1", escalation=original, visibility=RepoVisibility.PUBLIC
+        job_id="fixture-job",
+        lane_key="lane:1",
+        escalation=original,
+        visibility=RepoVisibility.PUBLIC,
     )
     before = writes()
     comment, record = await EscalationRecordReader(

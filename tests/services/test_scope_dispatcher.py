@@ -375,7 +375,12 @@ async def test_the_gated_pass_runs_the_scope_dispatcher_and_follows_the_fire():
         recorder=RunRecorder(records={}, sinks={}),
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
