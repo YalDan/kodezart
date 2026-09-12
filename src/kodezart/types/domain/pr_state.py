@@ -14,7 +14,7 @@ class PRLifecycle(StrEnum):
 
 
 class PRState(CamelCaseModel):
-    """Native identity, head and lifecycle, independent of editable PR prose."""
+    """Native identity, head, base and lifecycle, independent of editable PR prose."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     url: str = Field(min_length=1)
@@ -22,4 +22,6 @@ class PRState(CamelCaseModel):
     head_repo_url: str = Field(min_length=1)
     head_branch: str = Field(min_length=1)
     head_sha: str = Field(min_length=1)
+    base_repo_url: str = Field(min_length=1)
+    base_branch: str = Field(min_length=1)
     lifecycle: PRLifecycle

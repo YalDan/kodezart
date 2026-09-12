@@ -4764,4 +4764,9 @@ class FakePRStateReader:
             != repo_url.rstrip("/").removesuffix(".git").casefold()
         ):
             raise PRStateReadError("native PR head belongs to another repository")
+        if (
+            result.base_repo_url.casefold()
+            != repo_url.rstrip("/").removesuffix(".git").casefold()
+        ):
+            raise PRStateReadError("native PR base belongs to another repository")
         return result

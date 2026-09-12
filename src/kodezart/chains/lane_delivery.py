@@ -17,6 +17,7 @@ from kodezart.core.protocols import (
     OutboundContentGate,
     PRCreator,
     PromptSetProvider,
+    PRStateReader,
 )
 from kodezart.core.stream_drain import drain
 from kodezart.domain.errors import (
@@ -24,6 +25,7 @@ from kodezart.domain.errors import (
     CheckObservationError,
     DeliveryHeadError,
     ForgeAPIError,
+    PRStateReadError,
     TransientAPIError,
 )
 from kodezart.domain.git_url import resolve_repo_url
@@ -49,6 +51,7 @@ from kodezart.types.domain.delivery import (
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import ContentClass, OutboundDestination, WriterShape
 from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.pr_state import PRLifecycle
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LanePR
 from kodezart.types.domain.session import SessionType
@@ -59,7 +62,7 @@ from kodezart.types.domain.workflow import ExecutionContext, WorkflowState
 class LaneDeliveryCoordinator:
     """The lane's existing head/base, open PR and coherent check observation.
 
-    Capabilities are narrow: no tracker port and no PR merge/state reader.
+    No tracker port or PR mutation beyond creation and comments.
     NativeLaneWorkflow owns the existing fire remediation transition.
     """
 
@@ -72,6 +75,7 @@ class LaneDeliveryCoordinator:
         forge_query: ForgeQuery,
         ci: CIMonitor,
         criteria_reader: FireCriteriaReader,
+        pr_state_reader: PRStateReader,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         gate: OutboundContentGate,
@@ -85,6 +89,7 @@ class LaneDeliveryCoordinator:
                 "delivery needs a positive watch bound and nonnegative rerun bound"
             )
         self._criteria_reader = criteria_reader
+        self._pr_state_reader = pr_state_reader
         self._service, self._git = service, git
         self._pr_creator, self._forge_query, self._ci = pr_creator, forge_query, ci
         self._prompts, self._skills, self._gate = prompts, skills, gate
@@ -133,6 +138,7 @@ class LaneDeliveryCoordinator:
             pr = await self._open_pr(state, context)
         else:
             pr = LanePR(url=existing[0], number=existing[1], state="open")
+        await self._require_pr_identity(pr, state, context)
         red_class = None
         async with self._watch_slots:
             observed = await self._ci.wait_for_checks(repo_url=repo_url, ref=head)
@@ -214,7 +220,32 @@ class LaneDeliveryCoordinator:
                     error=str(exc),
                     error_kind=type(exc).__name__,
                 )
+        await self._require_pr_identity(pr, state, context)
         return result
+
+    async def _require_pr_identity(
+        self, pr: LanePR, state: WorkflowState, context: ExecutionContext
+    ) -> None:
+        repo_url = context.repo_url
+        if repo_url is None:
+            raise ValueError("PR identity requires its repository")
+        observed = await self._pr_state_reader.read_pr_state(
+            repo_url=repo_url, pr_number=pr.number
+        )
+        canonical = resolve_repo_url(repo_url, self._git_base_url)
+        if (
+            observed.number != pr.number
+            or observed.url != pr.url
+            or resolve_repo_url(observed.head_repo_url, self._git_base_url) != canonical
+            or resolve_repo_url(observed.base_repo_url, self._git_base_url) != canonical
+            or observed.head_branch != state["feature_branch"]
+            or observed.head_sha != state["feature_tip_sha"]
+            or observed.base_branch != context.base_branch
+            or observed.lifecycle is not PRLifecycle.OPEN
+        ):
+            raise PRStateReadError(
+                "The native PR differs from the lane's open head, SHA or dispatch base"
+            )
 
     async def _require_remote_refs(
         self, state: WorkflowState, context: ExecutionContext

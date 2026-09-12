@@ -48,6 +48,8 @@ def pr_state(**changes):
         url=f"{REPO}/pull/7",
         number=7,
         head_repo_url=REPO,
+        base_repo_url=REPO,
+        base_branch="main",
         head_branch=BRANCH,
         head_sha=HEAD,
         lifecycle=PRLifecycle.OPEN,
@@ -61,6 +63,14 @@ def wire(value):
         "number": value.number,
         "state": "open" if value.lifecycle is PRLifecycle.OPEN else "closed",
         "merged": value.lifecycle is PRLifecycle.MERGED,
+        "base": {
+            "ref": value.base_branch,
+            "sha": "b" * 40,
+            "repo": {
+                "html_url": value.base_repo_url,
+                "full_name": urlsplit(value.base_repo_url).path.removeprefix("/"),
+            },
+        },
         "head": {
             "ref": value.head_branch,
             "sha": value.head_sha,
