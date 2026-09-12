@@ -10,6 +10,28 @@ for configuration. All settings are loaded from environment variables with the
 - **Extra fields forbidden**: a `KODEZART_` variable whose suffix names no
   field below raises a validation error at startup rather than being ignored
 
+## Git settings migration
+
+The six Git choices now belong to `AppConfig.git`. `build_git_stack` receives
+that section and the separate existing GitHub credential. The current workspace
+and commit persister constructors retain the configured name and email.
+
+| Retired flat field | Nested field / environment suffix |
+| --- | --- |
+| `git_remote` | `git.remote` / `GIT__REMOTE` |
+| `git_base_url` | `git.base_url` / `GIT__BASE_URL` |
+| `clone_cache_dir` | `git.clone_cache_dir` / `GIT__CLONE_CACHE_DIR` |
+| `integration_workspace_dir` | `git.integration_workspace_dir` / `GIT__INTEGRATION_WORKSPACE_DIR` |
+| `git_committer_name` | `git.committer_name` / `GIT__COMMITTER_NAME` |
+| `git_committer_email` | `git.committer_email` / `GIT__COMMITTER_EMAIL` |
+
+Prefix each suffix with `KODEZART_`. Replace the old initializer keys and
+uppercase environment, dotenv or file-secret names; these exact retired names
+are refused. File-secret sources use one JSON object in `KODEZART_GIT`, for
+example `{"remote":"upstream"}`. Initializer, environment, dotenv and file-secret
+precedence stays unchanged. All six choices retain their defaults and native
+behavior; grouping them does not claim to remove six operator choices.
+
 ## Settings Reference
 
 | Variable                          | Type         | Default                  | Constraints | Description                                              |
@@ -20,12 +42,12 @@ for configuration. All settings are loaded from environment variables with the
 | `KODEZART_LOG_PRETTY`             | `bool`       | `false`                  |             | `true` for colorized console output, `false` for JSON lines |
 | `KODEZART_API_V1_PREFIX`          | `str`        | `/api/v1`                |             | URL prefix for all v1 API routes                         |
 | `KODEZART_GITHUB_TOKEN`           | `str\|None`  | `None`                   | min length 1 | GitHub PAT for cloning private repositories and reaching the forge. Unset means no forge credential: the clone path attaches no auth and no dispatch pass is scheduled. An empty assignment is refused at startup rather than resolving to "unset" on one code path and "empty credential" on the next |
-| `KODEZART_CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
-| `KODEZART_INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
-| `KODEZART_GIT_BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
-| `KODEZART_GIT_REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
-| `KODEZART_GIT_COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
-| `KODEZART_GIT_COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
+| `KODEZART_GIT__CLONE_CACHE_DIR`        | `str`        | `/tmp/kodezart-clones`   |             | Local directory for bare repository cache                |
+| `KODEZART_GIT__INTEGRATION_WORKSPACE_DIR` | `str`     | `/tmp/kodezart-integration` |          | Local directory the base resolver builds integration refs in |
+| `KODEZART_GIT__BASE_URL`           | `str`        | `https://github.com`     |             | Base URL for resolving `owner/repo` shorthand            |
+| `KODEZART_GIT__REMOTE`             | `str`        | `origin`                 |             | Git remote name for fetch/push operations and remote-ref probes |
+| `KODEZART_GIT__COMMITTER_NAME`     | `str`        | `kodezart`               |             | Git committer name for auto-generated commits            |
+| `KODEZART_GIT__COMMITTER_EMAIL`    | `str`        | `kodezart@noreply.dev`   |             | Git committer email for auto-generated commits           |
 | `KODEZART_MAX_ITERATIONS`         | `int`        | `5`                      | 1-20        | Maximum Ralph loop iterations before stopping            |
 | `KODEZART_MAX_REVIEWS`            | `int`        | `2`                      | 1-10        | Maximum ticket review rounds before accepting            |
 | `KODEZART_TICKET_REVIEW_MODE`     | `str`        | `create_only`            | `reviewed`, `create_only` | Whether the ticket loop compiles a reviewer session or one creator session whose draft the set's draft-critic lens checks; setting `KODEZART_MAX_REVIEWS` under `create_only`, or `create_only` over a set declaring no such lens, is refused at boot |
@@ -288,8 +310,8 @@ KODEZART_API_V1_PREFIX=/api/v1
 # startup. Leave the line commented out to keep it unset.
 #KODEZART_GITHUB_TOKEN=ghp_replace_me
 # Local directory for cached repository clones
-KODEZART_CLONE_CACHE_DIR=/tmp/kodezart-clones
-KODEZART_INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
+KODEZART_GIT__CLONE_CACHE_DIR=/tmp/kodezart-clones
+KODEZART_GIT__INTEGRATION_WORKSPACE_DIR=/tmp/kodezart-integration
 ```
 
 ## Logging Modes
@@ -422,3 +444,16 @@ configuration refuses scheduling. Retired flat Organize bound spellings remain
 rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
+## Tracker write verification
+
+Configured tracker-writing owners require `AppConfig.write_back` with
+`max_verify_rounds`, an integer from 1 through 10 with no default. Set
+`KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`, or declare the same field in the
+`KODEZART_WRITE_BACK` JSON object. The canonical verifier uses this bound
+independently of Organize admission and convergence. Its halt evidence names
+`write_back.max_verify_rounds` and retains every actual verification result.
+
+The retired flat `write_back_max_verify_rounds` field and its uppercase
+`KODEZART_` environment spelling are refused; migrate to the nested spelling.
+Deployments without a configured tracker-writing owner can leave the section
+absent. A configured owner with no verification budget refuses at startup.

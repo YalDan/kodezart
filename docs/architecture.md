@@ -51,6 +51,8 @@ does not exist.
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
 | RunRecordSink     | LinearRecordSink, NotionRecordSink | One structural run record into one declared destination (KOD-170) |
 | ManagedMcpToolCaller | HttpMcpToolCaller     | The same caller plus the session lifetime boot owns  |
+| GitSourceReader   | SubprocessGitSourceReader | Pins local commits and reads exact regular-file blob bytes without checkout |
+| TrackerCommentReader | LinearMcpTracker | Complete comment reads for lane, escalation and ruling readers |
 | TrackerCriteriaReader | LinearMcpTracker | Complete current native criterion families, no authoring or execution |
 | TrackerPort       | LinearMcpTracker         | Tracker vocabulary over the vendor MCP server, no model in the loop |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |

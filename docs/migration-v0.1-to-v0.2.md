@@ -93,11 +93,11 @@ hidden from validation errors (`src/kodezart/core/config.py`,
 | `KODEZART_MODEL` | `str \| None`, default `None` = SDK/account default | Unchanged, but note that an empty assignment `KODEZART_MODEL=` is not refused and sends an empty model id to the SDK | Leave it commented out unless you are pinning a model. |
 | `KODEZART_CI_NO_CHECKS_GRACE_POLLS` | `int`, default `10` | Same default; now applies only when the repository has workflows or the workflows probe was indeterminate (the no-workflows case uses `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS`) | Nothing. |
 
-Unchanged in name, type and default: `KODEZART_PROJECT_NAME`,
+Unchanged in type and default (Git settings now use the nested names shown): `KODEZART_PROJECT_NAME`,
 `KODEZART_DEBUG`, `KODEZART_LOG_LEVEL`, `KODEZART_LOG_PRETTY`,
-`KODEZART_API_V1_PREFIX`, `KODEZART_CLONE_CACHE_DIR`, `KODEZART_GIT_BASE_URL`,
-`KODEZART_GIT_REMOTE`, `KODEZART_GIT_COMMITTER_NAME`,
-`KODEZART_GIT_COMMITTER_EMAIL`, `KODEZART_MAX_ITERATIONS`,
+`KODEZART_API_V1_PREFIX`, `KODEZART_GIT__CLONE_CACHE_DIR`, `KODEZART_GIT__BASE_URL`,
+`KODEZART_GIT__REMOTE`, `KODEZART_GIT__COMMITTER_NAME`,
+`KODEZART_GIT__COMMITTER_EMAIL`, `KODEZART_MAX_ITERATIONS`,
 `KODEZART_RETRY_MAX_ATTEMPTS`, `KODEZART_RETRY_INITIAL_INTERVAL`,
 `KODEZART_CI_POLL_INTERVAL_SECONDS`, `KODEZART_CI_POLL_MAX_ATTEMPTS`,
 `KODEZART_FORGE_API_TIMEOUT_SECONDS`, `KODEZART_FORGE_API_MAX_RETRIES`,
@@ -128,7 +128,7 @@ otherwise.
 | `KODEZART_FAN_IN_MAX_ATTEMPTS` | not present | `2` (1 to 5) | Nothing. |
 | `KODEZART_LOOP_PLATEAU_WINDOW` | not present | `2` (2 to 10) | Nothing; the loop now stops early on a plateau. |
 | `KODEZART_RETRY_RATE_LIMIT_FLOOR_SECONDS` | not present | `60.0` (1 to 3600) | Nothing. |
-| `KODEZART_INTEGRATION_WORKSPACE_DIR` | not present | `/tmp/kodezart-integration` | Nothing. |
+| `KODEZART_GIT__INTEGRATION_WORKSPACE_DIR` | not present | `/tmp/kodezart-integration` | Nothing. |
 | `KODEZART_CI_NO_WORKFLOWS_GRACE_POLLS` | not present | `3` (1 to 20) | Nothing. |
 | `KODEZART_CI_GRACE_POLL_INTERVAL_SECONDS` | not present | `10.0` (1 to 60) | Nothing. |
 | `KODEZART_CI_REF_NOT_FOUND_GRACE_POLLS` | not present | `3` (1 to 20) | Nothing. |

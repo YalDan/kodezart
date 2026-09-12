@@ -12,6 +12,7 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
+from kodezart.core.git_settings import GitSettings
 from kodezart.core.organize_settings import OrganizeSettings
 from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.core.write_back_settings import WriteBackSettings
@@ -58,6 +59,8 @@ class AppConfig(BaseSettings):
         hide_input_in_errors=True,
     )
 
+    write_back: WriteBackSettings | None = None
+
     project_name: str = Field(
         default="kodezart",
         description="FastAPI application title.",
@@ -89,33 +92,7 @@ class AppConfig(BaseSettings):
             "one code path and the other on the next."
         ),
     )
-    clone_cache_dir: str = Field(
-        default="/tmp/kodezart-clones",
-        description="Local directory for bare repository cache.",
-    )
-    integration_workspace_dir: str = Field(
-        default="/tmp/kodezart-integration",
-        description=(
-            "Local directory the base resolver builds integration refs in. "
-            "One worktree per construction, removed when the ref is pushed."
-        ),
-    )
-    git_base_url: str = Field(
-        default="https://github.com",
-        description="Base URL for resolving owner/repo shorthand.",
-    )
-    git_remote: str = Field(
-        default="origin",
-        description="Git remote name for fetch/push operations and remote-ref probes.",
-    )
-    git_committer_name: str = Field(
-        default="kodezart",
-        description="Git committer name for auto-generated commits.",
-    )
-    git_committer_email: str = Field(
-        default="kodezart@noreply.dev",
-        description="Git committer email for auto-generated commits.",
-    )
+    git: GitSettings = Field(default_factory=GitSettings)
     max_iterations: int = Field(
         default=5,
         ge=1,
@@ -1247,6 +1224,12 @@ class AppConfig(BaseSettings):
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "write_back_max_verify_rounds",
+                "git_remote",
+                "git_base_url",
+                "clone_cache_dir",
+                "integration_workspace_dir",
+                "git_committer_name",
+                "git_committer_email",
             }
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:

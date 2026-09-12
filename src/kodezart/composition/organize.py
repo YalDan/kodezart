@@ -151,5 +151,5 @@ def build_organize_tick(
         for binding in operation.organize_scopes
     ]
     return OrganizeTick(
-        targets=targets, git=git, workspace=workspace, remote=config.git_remote
+        targets=targets, git=git, workspace=workspace, remote=config.git.remote
     )
