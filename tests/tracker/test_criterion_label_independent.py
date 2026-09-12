@@ -72,9 +72,7 @@ async def test_final_native_read_preserves_clock_and_surface_authority(
     board, tracker = criterion_board()
     if not criterion:
         board.server.issues[CLAIMED_ISSUE].labels.remove("native-criterion")
-    kind = (
-        SurfaceKind.CRITERION_SUB_ISSUE if criterion else SurfaceKind.ISSUE_LABEL_SET
-    )
+    kind = SurfaceKind.CRITERION_SUB_ISSUE if criterion else SurfaceKind.ISSUE_LABEL_SET
     actual = board.call_tool
     async with RunSurfaceLease(
         tracker=tracker,
