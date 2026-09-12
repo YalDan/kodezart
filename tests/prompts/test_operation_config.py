@@ -137,7 +137,10 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "scope_labels",
         "issue_labels",
+        "organize_mandates",
+        "organize_scopes",
         "workflow_states",
         "marker_prefixes",
         "repos",
@@ -634,7 +637,7 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
     native = dict(markdown_rows("## Native OperationConfig consumers"))
-    assert native == {"issue_labels": "composition/tracker.py::build_tracker"}
+    assert native == {"organize_scopes": "composition/organize.py::build_organize_tick"}
     assert set(mapped).isdisjoint(native)
     assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
 

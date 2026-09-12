@@ -104,6 +104,12 @@ registries.
 | initiatives.0.target_date | initiatives |
 | initiatives.1.id | initiatives |
 | private_surface | private_surface |
+| scope_labels | scope_labels |
+| issue_labels.criterion | issue_labels |
+| organize_mandates | organize_mandates |
+| scope_labels.triage | scope_labels |
+| scope_labels.proposed | scope_labels |
+| scope_labels.approved | scope_labels |
 
 ## What this lane does not claim
 
@@ -121,4 +127,4 @@ registries.
 
 | OperationConfig field | Actual native consumer |
 | --- | --- |
-| issue_labels | composition/tracker.py::build_tracker |
+| organize_scopes | composition/organize.py::build_organize_tick |
