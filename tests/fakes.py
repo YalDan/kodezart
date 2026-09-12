@@ -74,6 +74,7 @@ from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
     marked_comment_body,
+    require_expected_comment,
 )
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
@@ -3868,11 +3869,17 @@ class FakeTrackerPort:
         return comment
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str, holder: str | None = None
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Resolve the marker through the single attributed, leased writer."""
         return await self._upsert_comment(
-            target=target, marker=marker, body=body, holder=holder
+            target=target, marker=marker, body=body, holder=holder, expected=expected
         )
 
     async def _upsert_comment(
@@ -3882,6 +3889,7 @@ class FakeTrackerPort:
         marker: str,
         body: str,
         holder: str | None,
+        expected: TrackerComment | None = None,
         validate_existing: Callable[[TrackerComment], None] | None = None,
     ) -> TrackerComment:
         """Validate the exact addressed snapshot before issuing its mutation.
@@ -3901,11 +3909,14 @@ class FakeTrackerPort:
             ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
             marker=marker,
         )
+        authors = None
         if existing is not None and existing.body != content:
-            if existing.author_key not in await self.writer_identity():
+            authors = await self.writer_identity()
+            if existing.author_key not in authors:
                 raise SurfaceWriteAttributionError(
                     surface=surface, author=existing.author_key
                 )
+        current_comments = await self.list_comments(issue_key=target)
         lease = self.leases.get(surface)
         owner = (
             lease.holder
@@ -3918,8 +3929,24 @@ class FakeTrackerPort:
                 surface=surface,
                 current_holder=owner,
             )
+        existing = comment_under_marker(
+            target=target, marker=marker, comments=current_comments
+        )
+        if expected is not None:
+            require_expected_comment(
+                target=target,
+                marker=marker,
+                expected=expected,
+                current=existing,
+                replacement=content,
+            )
         if existing is not None and validate_existing is not None:
             validate_existing(existing)
+        if existing is not None and existing.body != content:
+            if authors is None or existing.author_key not in authors:
+                raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
         if existing.body == content:
