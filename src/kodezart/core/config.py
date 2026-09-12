@@ -13,6 +13,7 @@ from pydantic_settings import (
 )
 
 from kodezart.core.tracker_settings import TrackerSettings
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.types.domain.credentials import CREDENTIAL_SHAPES
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.gating import (
@@ -55,6 +56,8 @@ class AppConfig(BaseSettings):
         env_parse_none_str="null",
         hide_input_in_errors=True,
     )
+
+    write_back: WriteBackSettings | None = None
 
     project_name: str = Field(
         default="kodezart",
@@ -1242,6 +1245,7 @@ class AppConfig(BaseSettings):
                 "tracker_retry_backoff_factor",
                 "tracker_mcp_error_detail_limit",
                 "tracker_surface_lease_seconds",
+                "write_back_max_verify_rounds",
             }
 
         def checked(source: PydanticBaseSettingsSource) -> InitSettingsSource:
