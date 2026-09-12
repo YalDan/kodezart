@@ -72,6 +72,7 @@ from kodezart.domain.run_event_stream import (
 from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
+    classification_surface,
     comment_under_marker,
     description_replacement,
     marked_comment_body,
@@ -3933,10 +3934,7 @@ class FakeTrackerPort:
     ) -> TrackerIssue:
         issue = await self.read_issue(issue_key=issue_key)
         if holder is not None:
-            surface = WritableSurface(
-                kind=SurfaceKind.ISSUE_LABEL_SET,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-            )
+            surface = classification_surface(issue)
             grant = self.leases.get(surface)
             owner = (
                 grant.holder
@@ -3945,7 +3943,7 @@ class FakeTrackerPort:
             )
             if not holder.strip() or holder != owner:
                 raise SurfaceLeaseError(
-                    "classification requires the actual label-set holder",
+                    "classification requires the actual issue surface holder",
                     surface=surface,
                     current_holder=owner,
                 )
