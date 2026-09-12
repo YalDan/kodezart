@@ -68,14 +68,14 @@ class GatedDispatchPass:
         ``Exception``: a tick the scheduler cancels on its timeout must not
         eat the wake-up either.
         """
-        changed: tuple[str, ...] = ()
-        if self._gate is not None:
-            delta = await self._gate.delta()
-            if not delta.has_delta():
-                await self._log.ainfo("dispatch_pass_skipped_no_delta")
-                return PassRun.SKIPPED
-            changed = delta.changed
         try:
+            changed: tuple[str, ...] = ()
+            if self._gate is not None:
+                delta = await self._gate.delta()
+                if not delta.has_delta():
+                    await self._log.ainfo("dispatch_pass_skipped_no_delta")
+                    return PassRun.SKIPPED
+                changed = delta.changed
             await self._dispatch(changed=changed)
         except BaseException:
             if self._gate is not None:
