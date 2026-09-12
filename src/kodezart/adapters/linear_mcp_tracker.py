@@ -375,6 +375,15 @@ def _utc_now() -> datetime:
     return datetime.now(tz=UTC)
 
 
+@dataclass(frozen=True, slots=True)
+class _SplitCreation:
+    """Actual native save receipt and the facts needed for its separate readback."""
+
+    saved: TrackerIssue
+    source: TrackerIssue
+    content: str
+
+
 @dataclass
 class _LabelListings:
     """Every label listing this adapter read, classified by what defines it.
@@ -1405,6 +1414,33 @@ class LinearMcpTracker:
         changes: tuple[GraphChange, ...],
         holder: str,
     ) -> TrackerIssue:
+        async def attempt() -> tuple[TrackerIssue, ...]:
+            return await self._update_issue_graph_once(
+                issue_key=issue_key, expected=expected, changes=changes, holder=holder
+            )
+
+        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        # A completed save must never be retried because a later read cannot answer.
+        for expected_issue in written:
+            observed = await self.read_issue(issue_key=expected_issue.issue_key)
+            if graph_snapshot(observed) != graph_snapshot(expected_issue):
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=(
+                        "the backend did not retain the exact graph delta and "
+                        "inverse edges"
+                    ),
+                )
+        return await self.read_issue(issue_key=issue_key)
+
+    async def _update_issue_graph_once(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> tuple[TrackerIssue, ...]:
         facts = await self._read_unchanged_graph(issue_key=issue_key, expected=expected)
         candidate, peers = validate_graph_change(
             issue_key=issue_key,
@@ -1481,27 +1517,17 @@ class LinearMcpTracker:
         if graph_snapshot(
             next(issue for issue in facts if issue.issue_key == issue_key)
         ) == graph_snapshot(candidate):
-            return candidate
-        saved = self._saved_issue(await self._call(_TOOL_SAVE_ISSUE, arguments))
+            return (candidate,)
+        saved = self._saved_issue(await self._send(_TOOL_SAVE_ISSUE, arguments))
         if saved.issue_key != issue_key:
             raise OrganizeWriteRefusalError(
                 issue_key=issue_key,
                 reason="graph save returned another native identity",
             )
-        for expected_issue in (
+        return (
             candidate,
             *changed_peers(issue_key=issue_key, changes=changes, issues=facts),
-        ):
-            observed = await self.read_issue(issue_key=expected_issue.issue_key)
-            if graph_snapshot(observed) != graph_snapshot(expected_issue):
-                raise OrganizeWriteRefusalError(
-                    issue_key=issue_key,
-                    reason=(
-                        "the backend did not retain the exact graph delta and "
-                        "inverse edges"
-                    ),
-                )
-        return await self.read_issue(issue_key=issue_key)
+        )
 
     async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
         self._issue_identity.require_prefix()
@@ -1554,6 +1580,49 @@ class LinearMcpTracker:
             scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
             deliverable_key=deliverable_key,
         )
+
+        async def attempt() -> TrackerIssue | _SplitCreation:
+            return await self._create_split_once(
+                identity=identity,
+                title=title,
+                body=body,
+                holder=holder,
+                expected=expected,
+            )
+
+        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if isinstance(written, TrackerIssue):
+            return written
+        created, source, content = written.saved, written.source, written.content
+        # This verification is outside the resend boundary even when it fails.
+        current = await self.read_issue(issue_key=created.issue_key)
+        if (
+            current.issue_key != created.issue_key
+            or current.parent_key != source_key
+            or current.team_key != source.team_key
+            or current.project_id != source.project_id
+            or current.title != title
+            or current.body != content
+            or current.state_kind is not WorkflowStateKind.UNSTARTED
+            or {"criterion", "decision"} & current.issue_labels
+            or await self.read_issue_identity(issue_key=current.issue_key) != identity
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="created split did not retain its required native shape",
+            )
+        return current
+
+    async def _create_split_once(
+        self,
+        *,
+        identity: IssueIdentity,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue | _SplitCreation:
+        source_key = identity.scope_key.key
         self._issue_identity.require_prefix()
 
         async def existing_split() -> TrackerIssue | None:
@@ -1615,24 +1684,8 @@ class LinearMcpTracker:
         # No await separates this deadline check from issuing the save. The
         # earlier native snapshot is not an atomic uniqueness or fencing token.
         self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
-        created = self._saved_issue(await self._call(_TOOL_SAVE_ISSUE, arguments))
-        current = await self.read_issue(issue_key=created.issue_key)
-        if (
-            current.issue_key != created.issue_key
-            or current.parent_key != source_key
-            or current.team_key != source.team_key
-            or current.project_id != source.project_id
-            or current.title != title
-            or current.body != content
-            or current.state_kind is not WorkflowStateKind.UNSTARTED
-            or {"criterion", "decision"} & current.issue_labels
-            or await self.read_issue_identity(issue_key=current.issue_key) != identity
-        ):
-            raise OrganizeWriteRefusalError(
-                issue_key=source_key,
-                reason="created split did not retain its required native shape",
-            )
-        return current
+        created = self._saved_issue(await self._send(_TOOL_SAVE_ISSUE, arguments))
+        return _SplitCreation(saved=created, source=source, content=content)
 
     async def _unstarted_state_id(self, *, team_id: str, issue_key: str) -> str:
         payload = await self._call(_TOOL_LIST_ISSUE_STATUSES, {"team": team_id})
