@@ -3,7 +3,11 @@
 from collections.abc import Sequence
 
 from kodezart.types.domain.consolidation import ChangesetDigest
-from kodezart.types.domain.criteria import ExecutionCriterion, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    TrackerCriterionSet,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.organize import AdmissionResult
 
 
@@ -71,3 +75,10 @@ def execution_criteria_variables(
         if any(not isinstance(c, ValidatedCriterion) for c in criteria)
         else None,
     }
+
+
+def tracker_checks_section(snapshot: TrackerCriterionSet) -> str:
+    """Render current native obligations separately from historical evidence."""
+    return "## Current tracker Checks\n" + "\n\n".join(
+        f"### {criterion.id}\n{criterion.text}" for criterion in snapshot.criteria
+    )

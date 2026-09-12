@@ -10,7 +10,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import RetryPolicy
 
-from kodezart.chains.criteria import revalidate_criteria
+from kodezart.chains.criteria import (
+    require_current_native_snapshot,
+    revalidate_criteria,
+)
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
@@ -219,12 +222,12 @@ class RalphWorkflowEngine:
         )
         graph.add_node(
             "merge_to_feature",
-            self.floor(self.consolidation.merge_to_feature),
+            self.floor(self._merge_to_feature),
             retry_policy=self.retry,
         )
         graph.add_node(
             "land_best_iteration",
-            self.floor(self.consolidation.land_best_iteration),
+            self.floor(self._land_best_iteration),
             retry_policy=self.retry,
         )
         graph.add_node(
@@ -345,12 +348,27 @@ class RalphWorkflowEngine:
             return "remediate"
         return "complete"
 
+    async def _merge_to_feature(
+        self, state: WorkflowState, config: RunnableConfig
+    ) -> dict[str, object]:
+        """Recheck the judgment before consolidation, including checkpoint replay."""
+        await require_current_native_snapshot(state, reader=self.criteria)
+        return await self.consolidation.merge_to_feature(state, config)
+
+    async def _land_best_iteration(
+        self, state: WorkflowState, config: RunnableConfig
+    ) -> dict[str, object]:
+        """Keep best-iteration publication tied to the judged obligations."""
+        await require_current_native_snapshot(state, reader=self.criteria)
+        return await self.consolidation.land_best_iteration(state, config)
+
     async def _complete_node(
         self,
         state: WorkflowState,
         config: RunnableConfig,
     ) -> dict[str, object]:
-        """Emit the fire terminal before external delivery."""
+        """Emit the fire terminal only under current criterion authority."""
+        await require_current_native_snapshot(state, reader=self.criteria)
         _ = config
         writer = get_stream_writer()
         writer(
