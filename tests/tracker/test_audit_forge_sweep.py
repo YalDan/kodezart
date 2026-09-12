@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.domain.lane_record import parse_lane_record, render_lane_record
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
@@ -187,7 +187,9 @@ async def test_forge_survives_independent_failure_and_retains_raw_mandate_failur
     async def failing(kwargs):
         target = AUDIT_CLAIM_SCHEMA if failed_arm == "claim" else AUDIT_MANDATE_SCHEMA
         if kwargs["output_format"]["schema"] == target:
-            raise RuntimeError(f"unavailable {failed_arm} session")
+            raise AgentSDKError(
+                f"unavailable {failed_arm} session", error_kind="fixture"
+            )
 
     executor.during = failing
     async with forge("fake", "work") as (ci, _):

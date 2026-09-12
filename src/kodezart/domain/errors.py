@@ -2,10 +2,19 @@
 
 from collections.abc import Sequence
 
+from kodezart.types.domain.audit_runtime import AuditRunReport
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
 from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
+
+
+class AuditRunIncompleteError(Exception):
+    """The scheduled audit retained its receipts without claiming full coverage."""
+
+    def __init__(self, *, report: AuditRunReport) -> None:
+        self.report = report
+        super().__init__(f"audit run {report.identity.title()!r} is incomplete")
 
 
 class IssueLabelReadError(Exception):

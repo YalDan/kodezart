@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import (
     AUDIT_CLAIM_SCHEMA,
@@ -192,7 +192,7 @@ async def test_failed_independent_arm_never_suppresses_the_other_actual_session(
             "mandate": AUDIT_MANDATE_SCHEMA,
         }[failed]
         if schema == selected:
-            raise RuntimeError(f"unavailable {failed} session")
+            raise AgentSDKError(f"unavailable {failed} session", error_kind="fixture")
 
     executor.during = during
     child = (await build(include_overclaims=True).run()).observations[0]
@@ -310,7 +310,10 @@ async def test_only_successful_detector_still_rechecks_its_observed_head(
 
     async def during(kwargs):
         if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
-            raise RuntimeError("Independent current claim session is unavailable.")
+            raise AgentSDKError(
+                "Independent current claim session is unavailable.",
+                error_kind="fixture",
+            )
         if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
             git._remote_branch_shas["ordinary-name"] = "c" * 40
 

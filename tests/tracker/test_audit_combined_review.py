@@ -10,7 +10,7 @@ from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
 from kodezart.domain.criterion_evidence import render_evidence_field
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.types.domain.agent import (
     AUDIT_MANDATE_SCHEMA,
     AUDIT_OVERCLAIM_SCHEMA,
@@ -74,7 +74,7 @@ async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
         assert command(path, "rev-parse", "HEAD") == expected
         assert kwargs["session_id"] is None
         if schema == AUDIT_MANDATE_SCHEMA and mode == "mandate-error":
-            raise RuntimeError("historical mandate unavailable")
+            raise AgentSDKError("historical mandate unavailable", error_kind="fixture")
         if schema == DETECTOR_REMOVAL_SCHEMA and mode == "cancel":
             active.set()
             await asyncio.Future()

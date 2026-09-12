@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.audit_pass import AuditMandateHunt
 from kodezart.core.constants import EVAL_PERMISSION_MODE
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import AuditClaimReadError
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import (
@@ -152,16 +153,35 @@ async def test_absence_requires_entire_addressed_set(setup, tracker_writes):
 
 
 @pytest.mark.parametrize("damage", ["missing", "unsupported"])
-async def test_unreadable_surface_names_coverage_failure_before_session(setup, damage):
+async def test_unreadable_surface_names_coverage_failure_before_session(
+    setup, damage, tracker, monkeypatch
+):
     build, runner, _, workspace = setup
-    ref = ScopeRef(kind=ScopeKind.ISSUE, key="unreadable")
     surface = WritableSurface(
-        kind=SurfaceKind.ISSUE_DESCRIPTION
-        if damage == "missing"
-        else SurfaceKind.ISSUE_LABEL_SET,
-        ref=ref,
+        kind=(
+            SurfaceKind.ISSUE_DESCRIPTION
+            if damage == "missing"
+            else SurfaceKind.CONTAINER_STATUS_UPDATE
+        ),
+        ref=ScopeRef(
+            kind=ScopeKind.ISSUE if damage == "missing" else ScopeKind.PROJECT,
+            key="unreadable",
+        ),
     )
-    request = REQUEST.model_copy(update={"surfaces": (*SURFACES, surface)})
+    if damage == "missing":
+        original = tracker.read_issue
+
+        async def unavailable(*, issue_key):
+            if issue_key == "unreadable":
+                raise TrackerUnavailableError(
+                    "the addressed native issue is unavailable"
+                )
+            return await original(issue_key=issue_key)
+
+        monkeypatch.setattr(tracker, "read_issue", unavailable)
+    request = AuditMandateRequest.model_validate(
+        {**REQUEST.model_dump(), "surfaces": (*SURFACES, surface)}
+    )
     report = await build().complete(request)
     assert report.mandate.verdict is AuditVerdict.UNVERIFIABLE
     assert report.mandate.unreadable[0].surface == surface

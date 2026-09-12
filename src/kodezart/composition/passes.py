@@ -11,6 +11,7 @@ from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.audit import build_audit_pass, verify_audit_configuration
 from kodezart.composition.organize import (
     build_organize_tick,
     verify_organize_configuration,
@@ -28,6 +29,7 @@ from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
+    CIMonitor,
     DeliveryProbe,
     DispatchProducer,
     GitService,
@@ -35,6 +37,7 @@ from kodezart.core.protocols import (
     JobRegistry,
     OutboundContentGate,
     PromptSetProvider,
+    PRStateReader,
     RepoCache,
     TrackerPort,
     WorkspaceProvider,
@@ -576,7 +579,7 @@ def _session_running(kind: RunKind) -> SessionType:
     be added without answering this question for it.
     """
     match kind:
-        case RunKind.FIRE_PREP | RunKind.GROOMING:
+        case RunKind.FIRE_PREP | RunKind.GROOMING | RunKind.AUDIT:
             return SessionType.SCHEDULED_PASS
         case RunKind.FIRE:
             return SessionType.TICKET_FIRE
@@ -673,6 +676,7 @@ async def verify_pass_preflight(
     tracker: TrackerPort | None,
     github_api: DeliveryProbe | None,
     prompts: PromptSetProvider,
+    audit_forge: PRStateReader | None = None,
 ) -> None:
     """Every boot refusal the scheduled passes can raise, before anything runs.
 
@@ -695,6 +699,9 @@ async def verify_pass_preflight(
     """
     organize = verify_organize_configuration(
         config=config, operation=operation, tracker=tracker
+    )
+    verify_audit_configuration(
+        config=config, operation=operation, tracker=tracker, forge=audit_forge
     )
     _verify_knowledge_destinations(knowledge=config.knowledge, operation=operation)
     await _verify_wired_gates(
@@ -728,6 +735,8 @@ async def build_dispatch_runtime(
     skills: SkillsSelection,
     recorder: RunRecorder,
     log: BoundLogger,
+    audit_forge: PRStateReader | None = None,
+    audit_ci: CIMonitor | None = None,
 ) -> DispatchRuntime:
     """The scheduler, wired to every pass this deployment can actually run.
 
@@ -777,6 +786,49 @@ async def build_dispatch_runtime(
     # the tracker itself. They need one only to be GATED. What they cannot
     # do without is the operation config their prompts render from.
     scheduled: list[ScheduledPass] = [] if built is None else list(built.passes)
+    if config.audit is not None:
+        # Preflight has already required every collaborator before queue start.
+        # Keep an explicit refusal for direct callers of this public factory.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        if operation is None or dialled is None or audit_forge is None:
+            raise ValueError("configured audit lacks its preflight collaborators")
+        audit = build_audit_pass(
+            config=config,
+            operation=operation,
+            tracker=dialled.tracker,
+            forge=audit_forge,
+            ci=audit_ci,
+            git=git,
+            cache=cache,
+            workspace=workspace,
+            runner=runner,
+            prompts=prompts,
+            skills=skills,
+            gate=gate,
+        )
+        scheduled.append(
+            ScheduledPass(
+                name="audit",
+                interval_seconds=config.audit_sweep_interval_seconds,
+                timeout_seconds=config.audit.timeout_seconds,
+                run=audit.run,
+                report=run_report(recorder, RunKind.AUDIT, "audit"),
+            )
+        )
+    else:
+        # A declared roster without policy also refuses direct factory calls.
+        verify_audit_configuration(
+            config=config,
+            operation=operation,
+            tracker=None if dialled is None else dialled.tracker,
+            forge=audit_forge,
+        )
+        await log.ainfo("audit_pass_not_wired", reason="audit_unconfigured")
     if operation is not None:
         if dialled is None and (
             config.fire_prep_pass_gate_signals or config.grooming_pass_gate_signals

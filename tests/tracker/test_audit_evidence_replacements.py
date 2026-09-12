@@ -8,7 +8,7 @@ import pytest
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
-from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.errors import AuditEvidenceReadError, GitSourceReadError
 from tests.git_read_cancellation import assert_git_read_settles_before_release
 from tests.tracker.test_audit_evidence import CHILD, REQUEST, body
 from tests.tracker.test_audit_evidence import claim_setup as claim_setup
@@ -105,7 +105,11 @@ async def test_unreadable_replacement_namespace_cannot_be_reported_as_lapse(
     setup, monkeypatch, tracker_writes, read_number
 ):
     build, runner, git, _, _, workspace, *_ = setup
-    error = RuntimeError("the replacement namespace could not be read")
+    error = GitSourceReadError(
+        ref="actual replacement namespace",
+        path=None,
+        reason="the replacement namespace could not be read",
+    )
     monkeypatch.setattr(
         git,
         "has_replace_refs",

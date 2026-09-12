@@ -34,6 +34,7 @@ class AuditCoverage:
         candidates: Sequence[AuditCandidate],
         observed_at: datetime,
         visit: Callable[[AuditCandidate], Awaitable[None]],
+        complete: Callable[[AuditCoverageResult], Awaitable[None]] | None = None,
     ) -> AuditCoverageResult:
         """Visit the measured selection and commit its cache only on success."""
         if observed_at.utcoffset() is None:
@@ -73,6 +74,8 @@ class AuditCoverage:
         try:
             for candidate in selected:
                 await visit(candidate)
+            if complete is not None:
+                await complete(result)
             if selected:
                 retained = {} if full else dict(previous)
                 retained.update(
