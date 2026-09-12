@@ -1015,6 +1015,7 @@ class FakeChangePersister:
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         if before_commit is not None:
             await before_commit()
@@ -1025,6 +1026,8 @@ class FakeChangePersister:
                 "backup_ref_id_prefix": backup_ref_id_prefix,
             }
         )
+        if before_publish is not None and self._result is not None:
+            await before_publish(self._result.commit_sha)
         return self._result
 
 

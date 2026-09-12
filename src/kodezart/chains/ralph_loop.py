@@ -42,7 +42,6 @@ from kodezart.types.domain.agent import (
     ACCEPTANCE_CRITERIA_SCHEMA,
     AcceptanceCriteriaOutput,
     AgentEvent,
-    CriterionResult,
     NativeAmendmentEvent,
     ResultEvent,
     WorkflowIterationEvent,
@@ -208,7 +207,9 @@ class RalphLoop:
             retry_policy=self._retry,
         )
         graph.add_edge(START, "execute")
-        graph.add_edge("execute", "evaluate")
+        graph.add_conditional_edges(
+            "execute", self._route_after_execute, ["evaluate", "execute", END]
+        )
         graph.add_conditional_edges(
             "evaluate",
             self._should_continue,
@@ -338,25 +339,6 @@ class RalphLoop:
                     reader=self._criteria_reader,
                 )
                 criteria = list(snapshot.criteria)
-            if state.get("amendment_blocked", False):
-                return grade_iteration(
-                    criteria,
-                    AcceptanceCriteriaOutput(
-                        criteria_results=[
-                            CriterionResult(
-                                criterion_id=item.id,
-                                criterion=item.text,
-                                passed=False,
-                                reasoning=(
-                                    "The independent precommit gate upheld a subject; "
-                                    "this proposed departure was not committed "
-                                    "or evaluated."
-                                ),
-                            )
-                            for item in criteria
-                        ],
-                    ),
-                )
             eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
                 {
                     **execution_criteria_variables(criteria),
@@ -498,11 +480,18 @@ class RalphLoop:
             "iteration_records": records,
         }
 
+    def _route_after_execute(self, state: RalphLoopState) -> str:
+        if state.get("amendment_blocked", False):
+            # No code/evaluation observation was produced. Keep the actual
+            # prior failures and trajectory; only the attempt budget advances.
+            return self._should_continue(state)
+        return "evaluate"
+
     def _should_continue(
         self,
         state: RalphLoopState,
     ) -> str:
-        if gate_cleared(state["verdict"]):
+        if gate_cleared(state["verdict"]) and not state.get("amendment_blocked", False):
             return END
         if state["iteration"] >= self._max_iterations:
             return END

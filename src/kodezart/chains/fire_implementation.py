@@ -16,6 +16,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.accept_gate import (
     flagged_items,
 )
+from kodezart.domain.amendment import NativeAmendmentRefusalError
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
     current_fire_spec,
@@ -24,6 +25,7 @@ from kodezart.domain.workflow_state import (
     validated_criteria,
 )
 from kodezart.types.domain.agent import (
+    NativeAmendmentEvent,
     TicketDraftOutput,
     WorkflowArtifactsEvent,
     WorkflowIterationEvent,
@@ -96,6 +98,7 @@ class FireImplementation:
         """Delegate to the quality gate for iterative execution."""
         writer = get_stream_writer()
         last_iteration_event: WorkflowIterationEvent | None = None
+        last_amendment: NativeAmendmentEvent | None = None
         async for event in self._quality_gate.run(
             prompt=prompt,
             repo_path=repo_path,
@@ -113,8 +116,16 @@ class FireImplementation:
             repo_visibility=repo_visibility,
         ):
             writer(event)
+            if isinstance(event, NativeAmendmentEvent):
+                last_amendment = event
             if isinstance(event, WorkflowIterationEvent):
                 last_iteration_event = event
+                last_amendment = None
+
+        if last_amendment is not None and last_amendment.report.upheld:
+            raise NativeAmendmentRefusalError(
+                report=last_amendment.report, last_iteration=last_iteration_event
+            )
 
         if last_iteration_event is None:
             msg = "Ralph loop completed without emitting an iteration event."

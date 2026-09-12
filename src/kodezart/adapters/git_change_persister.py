@@ -81,6 +81,7 @@ class GitChangePersister:
         skills: SkillsSelection,
         visibility: RepoVisibility,
         before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Ensure ``<remote>/<branch>`` equals workspace HEAD.
 
@@ -105,6 +106,7 @@ class GitChangePersister:
                 skills=skills,
                 visibility=visibility,
                 before_commit=before_commit,
+                before_publish=before_publish,
             )
 
         head_sha = await self._git.current_sha(workspace_path)
@@ -145,6 +147,8 @@ class GitChangePersister:
         head_message = await self._git.head_commit_message(workspace_path)
         if before_commit is not None:
             await before_commit()
+        if before_publish is not None:
+            await before_publish(head_sha)
         await self._git.push(workspace_path, branch)
         await self._log.ainfo(
             "agent_direct_commit_pushed",
@@ -167,6 +171,7 @@ class GitChangePersister:
         skills: SkillsSelection,
         visibility: RepoVisibility,
         before_commit: Callable[[], Awaitable[None]] | None,
+        before_publish: Callable[[str], Awaitable[None]] | None,
     ) -> PersistResult:
         commit_msg = await self._generate_commit_message(
             executor,
@@ -193,6 +198,8 @@ class GitChangePersister:
             author_name=self._committer_name,
             author_email=self._committer_email,
         )
+        if before_publish is not None:
+            await before_publish(sha)
         await self._git.push(workspace_path, branch)
         await self._log.ainfo("changes_persisted", commit_sha=sha, branch=branch)
         return PersistResult(

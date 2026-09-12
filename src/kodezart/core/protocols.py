@@ -365,6 +365,7 @@ class ChangePersister(Protocol):
         skills: SkillsSelection,
         visibility: RepoVisibility,
         before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -1460,6 +1461,16 @@ class NativeWriteGuard(Protocol):
         start: NativeWriterStart,
     ) -> None:
         """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
+        ...
+
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        """Recheck current authority against the harness's actual commit receipt."""
         ...
 
     async def require_unchanged_head(
