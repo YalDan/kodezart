@@ -237,11 +237,9 @@ async def test_a_mandate_report_cannot_replace_the_actual_forge_claim(
         async def changed(request):
             report = await original(request)
             if request.defect_class.startswith("forge checks"):
-                return report.model_copy(
-                    update={
-                        "claim": report.claim.model_copy(update={"head_sha": "b" * 40})
-                    }
-                )
+                changed_report = report.model_dump()
+                changed_report["claim"]["head_sha"] = "b" * 40
+                return type(report).model_validate(changed_report)
             return report
 
         monkeypatch.setattr(sweep._mandates, "complete", changed)
