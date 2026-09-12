@@ -3098,7 +3098,6 @@ class FakeTrackerPort:
         self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
             ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
-        self.scope_label_members = dict(scope_label_members or {})
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
@@ -3140,7 +3139,6 @@ class FakeTrackerPort:
         #: so what a consumer spends on reads is only visible as a list of
         #: them (KOD-173).
         self.issue_reads: list[str] = []
-        self.issue_writes: list[tuple[str, str | None, str | None]] = []
         #: Every claim this double GRANTED, in order — kept past the release
         #: that deletes the claim itself, so a claim/release pair spent and
         #: undone is still visible as the write it was (KOD-173).
