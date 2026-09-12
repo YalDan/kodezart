@@ -45,6 +45,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -194,7 +195,7 @@ async def _drive(
             repo_path="/tmp/fake",
             repo_url=repo_url,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )

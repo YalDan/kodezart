@@ -7,6 +7,8 @@ from pydantic import Field, model_validator
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
 
+HttpPermissionMode = Literal["plan", "bypassPermissions"]
+
 
 class RepoSourceRequest(CamelCaseModel):
     """Base request model enforcing mutual exclusion between repoPath and repoUrl.
@@ -37,7 +39,7 @@ class QueryRequest(RepoSourceRequest):
     """
 
     branch: str | None = None
-    permission_mode: Literal["plan", "bypassPermissions"] = "plan"
+    permission_mode: HttpPermissionMode = "plan"
     session_id: str | None = None
     allowed_tools: list[str] = Field(
         default_factory=lambda: ["Read", "Glob", "Grep", "Bash"],
@@ -73,7 +75,7 @@ class WorkflowRequest(RepoSourceRequest):
     base_branch: str = "main"
     base_spec: BaseSpec | None = None
     implied_base: BaseSpec | None = None
-    permission_mode: Literal["plan", "bypassPermissions"] = "bypassPermissions"
+    permission_mode: HttpPermissionMode = "bypassPermissions"
     allowed_tools: list[str] = Field(
         default_factory=lambda: [
             "Read",

@@ -17,6 +17,35 @@ from pydantic import ConfigDict, Field, SecretStr, model_validator
 from kodezart.types.base import CamelCaseModel
 
 
+class PermissionMode(StrEnum):
+    """The approval behavior requested by an application session.
+
+    Adapters translate these choices to their engine's permission modes.
+    Tool selection remains a separate input; these values do not grant tools.
+    """
+
+    INTERACTIVE = "interactive"
+    ACCEPT_EDITS = "accept_edits"
+    PLAN = "plan"
+    UNATTENDED = "unattended"
+
+
+class ToolPreset(StrEnum):
+    """Existing application tool bundles, expanded by the session adapter.
+
+    Callers can instead supply an explicit list of selectors, including tools
+    this application does not name. Permission mode remains independent.
+    """
+
+    EVALUATION = "evaluation"
+    DELEGATED_EVALUATION = "delegated_evaluation"
+    AUTHORING = "authoring"
+    IMPLEMENTATION = "implementation"
+
+
+type AllowedTools = ToolPreset | list[str]
+
+
 class SessionType(StrEnum):
     """Every kind of agent session the service starts.
 

@@ -40,7 +40,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.persist import PersistResult, PersistSource
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -314,8 +314,8 @@ class GitChangePersister:
             executor.stream(
                 prompt=self._prompts.template_for(PromptKey.COMMIT_MESSAGE).render({}),
                 cwd=cwd,
-                permission_mode="plan",
-                allowed_tools=["Read", "Glob", "Grep", "Bash"],
+                permission_mode=PermissionMode.PLAN,
+                allowed_tools=ToolPreset.EVALUATION,
                 skills=skills,
                 session_type=SessionType.COMMIT_MESSAGE,
                 session_policy=self._prompts.session_policy(

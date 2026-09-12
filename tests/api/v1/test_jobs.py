@@ -44,6 +44,8 @@ from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.session import PermissionMode, ToolPreset
+from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
@@ -226,8 +228,16 @@ def _worker_tasks(queue: AsyncioJobQueue) -> list[asyncio.Task[None]]:
     return [worker for lane in queue._lanes.values() for worker in lane.workers]
 
 
-def _request(prompt: str) -> WorkflowRequest:
-    return WorkflowRequest(prompt=prompt, repo_path="/tmp/fake")
+def _request(prompt: str) -> WorkflowSubmission:
+    return WorkflowSubmission(
+        prompt=prompt,
+        repo_path="/tmp/fake",
+        repo_url=None,
+        base_spec=trunk_base("main"),
+        implied_base=None,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=ToolPreset.IMPLEMENTATION,
+    )
 
 
 # ---------------------------------------------------------------------------

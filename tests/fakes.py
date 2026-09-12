@@ -104,7 +104,12 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
-from kodezart.types.domain.session import KnowledgeGrant, SessionType
+from kodezart.types.domain.session import (
+    AllowedTools,
+    KnowledgeGrant,
+    PermissionMode,
+    SessionType,
+)
 from kodezart.types.domain.skills import SettingSource, SkillsMode, SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -134,8 +139,7 @@ from kodezart.types.domain.tracker import (
     WorkflowStateKind,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
@@ -378,7 +382,7 @@ async def recorded_session(
         async for event in executor.stream(
             prompt=prompt,
             cwd=cwd,
-            permission_mode="plan",
+            permission_mode=PermissionMode.PLAN,
             allowed_tools=[],
             skills=skills,
             session_type=session_type,
@@ -696,8 +700,8 @@ class FakeAgentExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -866,8 +870,8 @@ class FakeRaisingExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1030,8 +1034,8 @@ class FakeAgentRunner:
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1060,8 +1064,8 @@ class FakeAgentRunner:
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1087,8 +1091,8 @@ class FakeAgentRunner:
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1140,8 +1144,8 @@ class ScriptedFakeExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1490,8 +1494,8 @@ class FakeQualityGate:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -3822,14 +3826,14 @@ class FakeJobQueue:
         states: Mapping[str, JobState] | None = None,
         events: Sequence[AgentEvent] = (),
     ) -> None:
-        self.submissions: list[tuple[str, WorkflowRequest]] = []
+        self.submissions: list[tuple[str, WorkflowSubmission]] = []
         self.records: dict[str, JobRecord] = {}
         self.attached: list[str] = []
         self._states: dict[str, JobState] = dict(states or {})
         self._events: tuple[AgentEvent, ...] = tuple(events)
         self._sequence: int = 0
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         await asyncio.sleep(0)
         self._sequence += 1
         job_id = f"job-{self._sequence:04d}"
