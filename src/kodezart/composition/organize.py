@@ -72,6 +72,32 @@ def build_organize_owner(
     )
 
 
+def verify_organize_configuration(
+    *,
+    config: AppConfig,
+    operation: OperationConfig | None,
+    tracker: TrackerPort | None,
+) -> bool:
+    """Validate the declared owner before a queue or scheduler starts."""
+    if config.organize is None and (operation is None or not operation.organize_scopes):
+        return False
+    if operation is None:
+        raise OperationMemberAbsentError(
+            missing="operation", stops="configured Organize scheduling"
+        )
+    for present, missing in (
+        (bool(operation.organize_scopes), "organize_scopes"),
+        (bool(operation.organize_mandates), "organize_mandates"),
+        (config.organize is not None, "organize"),
+        (tracker is not None, "tracker"),
+    ):
+        if not present:
+            raise OperationMemberAbsentError(
+                missing=missing, stops="configured Organize scheduling"
+            )
+    return True
+
+
 def build_organize_tick(
     *,
     config: AppConfig,
@@ -85,18 +111,10 @@ def build_organize_tick(
     gate: OutboundContentGate,
 ) -> OrganizeTick | None:
     """Absent means undeclared; partial configuration refuses before scheduling."""
-    if not operation.organize_scopes and config.organize is None:
-        return None
-    for present, missing in (
-        (bool(operation.organize_scopes), "organize_scopes"),
-        (bool(operation.organize_mandates), "organize_mandates"),
-        (config.organize is not None, "organize"),
-        (tracker is not None, "tracker"),
+    if not verify_organize_configuration(
+        config=config, operation=operation, tracker=tracker
     ):
-        if not present:
-            raise OperationMemberAbsentError(
-                missing=missing, stops="configured Organize scheduling"
-            )
+        return None
     if tracker is None:
         raise OperationMemberAbsentError(
             missing="tracker", stops="configured Organize scheduling"
