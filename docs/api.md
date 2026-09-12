@@ -231,7 +231,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (16)
+### Workflow Events (18)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -263,16 +263,6 @@ so the scope envelope validates against the same schema it emits.
 When this controller invocation finishes, the job is `terminal` with a null
 outcome; this does not certify scope convergence. Unapproved and skipped lanes
 and unresolved criterion keys remain explicit in `scope_walk.observation`.
-
-The nested `lane_delivery` event carries `delivery.phase`: `completed` holds an
-actual typed delivery result, while `skipped` holds an existing workflow outcome
-and reason without inventing a PR. The completed result names the lane and issue,
-head/base branches, final commit SHA, PR, coherent check observation, red
-classification and outcome. Completed delivery can still report failed or
-unverifiable checks; it does not establish scope acceptance. Internal pending
-remediation never appears as a terminal delivery event. Consumers evaluating a
-later scope result must use these actual delivery records and current tracker
-obligations.
 
 This request route executes eligible lanes serially once per invocation. Scheduled
 configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
@@ -309,6 +299,22 @@ write-back records as the issue's deliverable work ref. `false` is the
 stall exit's do-not-merge best-iteration branch, opened over a run its own
 acceptance gate rejected: it is reported and commented on, and no work ref
 is recorded for it.
+
+### Native Delivery Events (1)
+
+| Event Type      | Key Fields |
+| --------------- | ---------- |
+| `lane_delivery` | `delivery` |
+
+This event appears inside `scope_lane.event`. A `delivery.phase` of `completed`
+holds an actual typed delivery result, while `skipped` holds an existing workflow
+outcome and reason without inventing a PR. The completed result names the lane
+and issue, head/base branches, final commit SHA, PR, coherent check observation,
+red classification and outcome. Completed delivery can still report failed or
+unverifiable checks; it does not establish scope acceptance. Internal pending
+remediation never appears as a terminal delivery event. Consumers evaluating a
+later scope result must use these actual delivery records and current tracker
+obligations.
 
 ### Job Events (1)
 
