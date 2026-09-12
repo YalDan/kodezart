@@ -25,6 +25,7 @@ from kodezart.services.repo_observations import ensure_repository
 from kodezart.services.tracker_artifacts import read_tracker_artifact
 from kodezart.types.domain.agent import AUDIT_CLAIM_SCHEMA, AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import (
+    AbsentMandateObservation,
     AuditClaimJudgment,
     AuditClaimObservation,
     AuditClaimReport,
@@ -34,8 +35,13 @@ from kodezart.types.domain.audit import (
     AuditMandateObservation,
     AuditMandateRequest,
     AuditVerdict,
+    InstructedMandateObservation,
+    MandateAbsent,
+    MandateInstructed,
+    MandateUnverifiable,
     TrackerArtifact,
     UnreadableAuditSurface,
+    UnverifiableMandateObservation,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType
@@ -233,12 +239,14 @@ class AuditMandateHunt:
         covered, unreadable = await self._read_set(request.surfaces)
         if unreadable:
             return AuditMandateObservation(
-                verdict=AuditVerdict.UNVERIFIABLE,
-                covered=covered,
-                unreadable=unreadable,
-                finding=None,
-                finding_surface=None,
-                evidence="The addressed surface set could not be fully read.",
+                UnverifiableMandateObservation(
+                    verdict=AuditVerdict.UNVERIFIABLE,
+                    covered=covered,
+                    unreadable=unreadable,
+                    finding=None,
+                    finding_surface=None,
+                    evidence="The addressed surface set could not be fully read.",
+                )
             )
         async with owned_workspace(
             self._workspace,
@@ -305,17 +313,13 @@ class AuditMandateHunt:
                 raise AuditClaimReadError(
                     "mandating surface set changed during verification"
                 )
-            finding_surface = None
-            if judgment.source_index is not None:
-                if judgment.source_index >= len(covered):
-                    raise AuditClaimReadError(
-                        "mandate judgment names an unprovided surface"
-                    )
-                source = covered[judgment.source_index]
-                if judgment.verdict is AuditVerdict.HOLDS:
-                    finding = judgment.finding
-                    if finding is None or finding.mandate_text is None:
-                        raise AuditClaimReadError("mandate finding is missing")
+            match judgment.root:
+                case MandateInstructed(source_index=index, finding=finding):
+                    if index >= len(covered):
+                        raise AuditClaimReadError(
+                            "mandate judgment names an unprovided surface"
+                        )
+                    source = covered[index]
                     if (
                         finding.issue_id != source.surface.ref.key
                         or finding.defect_class != request.defect_class
@@ -327,16 +331,32 @@ class AuditMandateHunt:
                         raise AuditClaimReadError(
                             "mandate quotation is not exact source text"
                         )
-                    finding_surface = source.surface
-                else:
+                    return AuditMandateObservation(
+                        InstructedMandateObservation(
+                            verdict=AuditVerdict.HOLDS,
+                            covered=covered,
+                            unreadable=(),
+                            finding=finding,
+                            finding_surface=source.surface,
+                            evidence=judgment.evidence,
+                        )
+                    )
+                case MandateUnverifiable(source_index=index):
+                    if index >= len(covered):
+                        raise AuditClaimReadError(
+                            "mandate judgment names an unprovided surface"
+                        )
                     raise AuditClaimReadError(
                         "session claims a successfully read source was unreadable"
                     )
-            return AuditMandateObservation(
-                verdict=judgment.verdict,
-                covered=covered,
-                unreadable=unreadable,
-                finding=judgment.finding,
-                finding_surface=finding_surface,
-                evidence=judgment.evidence,
-            )
+                case MandateAbsent():
+                    return AuditMandateObservation(
+                        AbsentMandateObservation(
+                            verdict=AuditVerdict.REFUTED,
+                            covered=covered,
+                            unreadable=(),
+                            finding=None,
+                            finding_surface=None,
+                            evidence=judgment.evidence,
+                        )
+                    )

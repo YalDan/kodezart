@@ -15,6 +15,7 @@ from kodezart.types.domain.audit import (
     AuditMandateJudgment,
     AuditMandateRequest,
     AuditVerdict,
+    MandateFinding,
 )
 from kodezart.types.domain.organize import DefectRole, SpecFinding
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -117,7 +118,8 @@ async def test_actual_source_instruction_is_quoted_without_writes(
     report = await build(set_name).complete(REQUEST)
     assert report.claim == CLAIM
     assert report.mandate.verdict is AuditVerdict.HOLDS
-    assert type(report.mandate.finding) is SpecFinding
+    assert type(report.mandate.finding) is MandateFinding
+    assert isinstance(report.mandate.finding, SpecFinding)
     assert report.mandate.finding.role is DefectRole.MANDATE
     assert report.mandate.finding.mandate_text == QUOTE
     assert report.mandate.finding_surface == SURFACES[1]
