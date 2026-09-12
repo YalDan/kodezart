@@ -188,6 +188,7 @@ class ScopeWorkflowEngine:
                 permission_mode=permission_mode,
                 allowed_tools=allowed_tools,
                 cache_key=lane_key,
+                surface_holder=cache_key,
                 run_identity=RunIdentity(
                     kind=RunKind.FIRE, name=key, started_at=datetime.now(tz=UTC)
                 ),
@@ -195,6 +196,7 @@ class ScopeWorkflowEngine:
             context = ExecutionContext.from_configurable(config)
             address = {
                 "job": cache_key,
+                "surface_holder": context.surface_holder,
                 "scope": scope.model_dump_json(),
                 "issue": key,
                 "repo_url": context.repo_url,

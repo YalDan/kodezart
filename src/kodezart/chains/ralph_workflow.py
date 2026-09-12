@@ -402,6 +402,7 @@ class RalphWorkflowEngine:
         allowed_tools: AllowedTools,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
     ) -> tuple[WorkflowState, RunnableConfig]:
         """Execute the full workflow pipeline.
 
@@ -449,6 +450,7 @@ class RalphWorkflowEngine:
             repo_url=resolved_url,
             cache_key=cache_key,
             run_identity=run_identity,
+            surface_holder=surface_holder,
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,

@@ -108,6 +108,15 @@ class ExecutionContext(WorkflowContext):
     base_spec: BaseSpec
     permission_mode: PermissionMode
     allowed_tools: AllowedTools
+    surface_holder: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The actual parent queue job holding native write surfaces; "
+            "independent of any lane checkpoint namespace. Authored runs may omit it."
+        ),
+    )
 
     @property
     def base_branch(self) -> str:
