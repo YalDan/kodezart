@@ -1906,11 +1906,9 @@ class LinearMcpTracker:
     async def _read_criterion_family(
         self, *, issue_key: str, subject: TrackerIssue | None = None
     ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
-        if "criterion" not in self._issue_labels:
-            raise OperationMemberAbsentError(
-                missing="issue_labels['criterion']",
-                stops="criterion sub-issue membership cannot be read",
-            )
+        self._classification_label(
+            "criterion", stops="criterion sub-issue membership cannot be read"
+        )
         try:
             parent = (
                 subject
