@@ -1,11 +1,10 @@
 """A later recorded assertion supersedes only the same lane's same field."""
 
-import json
 from itertools import product
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.domain.errors import RunShapeReadError
@@ -15,15 +14,20 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    IssueSubject,
+    LaneFieldEvidence,
     LaneFieldValue,
+    ReferencesEvidence,
     RunAlarm,
+    ScopeSubject,
+    TextEvidence,
 )
 
 ORDER = ("sha-z", "sha-a", "sha-y", "sha-b")
 
 
 def subject(**changes):
-    return AlarmSubject.model_validate(
+    return TypeAdapter(AlarmSubject).validate_python(
         {
             "kind": AlarmSubjectKind.LANE,
             "scope_key": "scope/run",
@@ -53,17 +57,21 @@ def readings(
     return (
         AlarmReading(
             source_ref="record/ref",
-            value=json.dumps(assertion(record_value), indent=2),
+            value=LaneFieldEvidence(
+                value=LaneFieldValue.model_validate(assertion(record_value))
+            ),
             at_sha=record_sha,
         ),
         AlarmReading(
             source_ref="event/occurrence-7",
-            value=json.dumps(assertion(event_value), indent=2),
+            value=LaneFieldEvidence(
+                value=LaneFieldValue.model_validate(assertion(event_value))
+            ),
             at_sha=event_sha,
         ),
         AlarmReading(
             source_ref="record/ref",
-            value=json.dumps(order, indent=2),
+            value=ReferencesEvidence(value=order),
             at_sha=order[-1] if order else None,
         ),
     )
@@ -110,7 +118,9 @@ def test_every_recorded_order_pair_uses_strict_position_and_value(
 def test_reordering_the_same_recorded_commits_reverses_the_verdict():
     original = readings()
     assert observe(original) is not None
-    reversed_history = replace(original, 2, value=json.dumps(tuple(reversed(ORDER))))
+    reversed_history = replace(
+        original, 2, value=ReferencesEvidence(value=tuple(reversed(ORDER)))
+    )
     assert observe(reversed_history) is None
 
 
@@ -123,9 +133,10 @@ def test_equal_opaque_values_stay_clean_after_json_decoding(value):
     altered = replace(
         original,
         1,
-        value=json.dumps(
-            {"value": value, "fieldKey": "quality_gate", "laneKey": "lane/42"},
-            ensure_ascii=False,
+        value=LaneFieldEvidence(
+            value=LaneFieldValue(
+                value=value, field_key="quality_gate", lane_key="lane/42"
+            )
         ),
     )
     assert observe(altered) is None
@@ -150,16 +161,21 @@ def test_other_lane_or_field_cannot_supply_a_contrary_assertion(slot, changes):
     original = readings()
     body = assertion("red" if slot == 0 else "green", **changes)
     with pytest.raises(RunShapeReadError):
-        observe(replace(original, slot, value=json.dumps(body)))
+        observe(
+            replace(
+                original,
+                slot,
+                value=LaneFieldEvidence(value=LaneFieldValue.model_validate(body)),
+            )
+        )
 
 
 @pytest.mark.parametrize(
     "target",
     [
         subject(lane_key="other"),
-        AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope/run"),
-        AlarmSubject(
-            kind=AlarmSubjectKind.ISSUE,
+        ScopeSubject(scope_key="scope/run"),
+        IssueSubject(
             scope_key="scope/run",
             lane_key="lane/42",
             issue_id="issue/42",
@@ -204,19 +220,24 @@ def test_assertions_require_a_recorded_sha_even_when_values_agree(
 )
 def test_incomplete_or_ambiguous_history_never_manufactures_a_clean_read(order):
     original = readings(event_value="red")
-    with pytest.raises(RunShapeReadError):
-        observe(replace(original, 2, value=json.dumps(order)))
+    expected = (
+        RunShapeReadError
+        if order in ((), ("sha-z",), ("sha-a",), (*ORDER, "sha-z"))
+        else ValidationError
+    )
+    with pytest.raises(expected):
+        observe(replace(original, 2, value=ReferencesEvidence(value=order)))
 
 
 @pytest.mark.parametrize("slot", range(3))
 @pytest.mark.parametrize("value", ["not-json", "null", "{}", "7"])
-def test_malformed_readings_raise_with_signal_source_and_validation_cause(slot, value):
+def test_wrong_evidence_arm_raises_with_signal_and_source(slot, value):
     original = readings()
     with pytest.raises(RunShapeReadError) as raised:
-        observe(replace(original, slot, value=value))
+        observe(replace(original, slot, value=TextEvidence(value=value)))
     assert raised.value.signal == "record_superseded"
     assert raised.value.source_ref == original[slot].source_ref
-    assert isinstance(raised.value.__cause__, ValidationError)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -230,8 +251,14 @@ def test_malformed_readings_raise_with_signal_source_and_validation_cause(slot, 
     ],
 )
 def test_assertion_projection_is_closed_and_carries_explicit_string_values(body):
-    with pytest.raises(RunShapeReadError):
-        observe(replace(readings(), 1, value=json.dumps(body)))
+    with pytest.raises(ValidationError):
+        observe(
+            replace(
+                readings(),
+                1,
+                value=LaneFieldEvidence(value=LaneFieldValue.model_validate(body)),
+            )
+        )
 
 
 @pytest.mark.parametrize("extra", [False, True])

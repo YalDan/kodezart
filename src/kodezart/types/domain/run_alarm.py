@@ -1,12 +1,18 @@
-"""Immutable observations of a run's recorded shape, with one subject each."""
+"""Immutable typed observations of a run's recorded shape."""
 
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import ConfigDict, Field
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.escalation import EscalationResolution
+from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
+from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
+
+Identity = Annotated[str, Field(min_length=1, pattern=r"\S")]
 
 
 class AlarmSignal(StrEnum):
@@ -35,81 +41,68 @@ class AlarmSubjectKind(StrEnum):
     ESCALATION = "escalation"
 
 
-_SURFACE_ADDRESS = TypeAdapter(WritableSurface)
-
-
-def surface_alarm_member_id(surface: WritableSurface) -> str:
-    """Encode a surface address as a canonical, backend-neutral member key.
-
-    This retains the subject's declared string shape while preserving every
-    address component, including a comment's marker. One spelling prevents
-    equivalent surface addresses from creating different alarm identities.
-    """
-    return _SURFACE_ADDRESS.dump_json(surface).decode("utf-8")
-
-
-class AlarmSubject(CamelCaseModel):
-    """One addressed run object; criterion member keys are tracker identities.
-
-    Lane and issue context may accompany member subjects. Scope and lane
-    subjects cannot carry a narrower member masquerading as their identity.
-    """
-
+class _Subject(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
+    scope_key: Identity
 
-    kind: AlarmSubjectKind
-    scope_key: str = Field(min_length=1, pattern=r"\S")
-    lane_key: str | None = Field(default=None, min_length=1, pattern=r"\S")
-    issue_id: str | None = Field(default=None, min_length=1, pattern=r"\S")
-    member_id: str | None = Field(default=None, min_length=1, pattern=r"\S")
 
-    @model_validator(mode="after")
-    def _required_region(self) -> Self:
-        match self.kind:
-            case AlarmSubjectKind.SCOPE:
-                if any(
-                    value is not None
-                    for value in (self.lane_key, self.issue_id, self.member_id)
-                ):
-                    raise ValueError(
-                        "a scope alarm subject cannot carry a lane, issue or member"
-                    )
-            case AlarmSubjectKind.LANE:
-                if self.lane_key is None:
-                    raise ValueError("a lane alarm subject requires its lane key")
-                if self.issue_id is not None or self.member_id is not None:
-                    raise ValueError(
-                        "a lane alarm subject cannot carry an issue or member"
-                    )
-            case AlarmSubjectKind.ISSUE:
-                if self.issue_id is None:
-                    raise ValueError(
-                        "an issue alarm subject requires its issue identity"
-                    )
-                if self.member_id is not None:
-                    raise ValueError("an issue alarm subject cannot carry a member")
-            case AlarmSubjectKind.CRITERION:
-                if self.issue_id is None or self.member_id is None:
-                    raise ValueError(
-                        "a criterion alarm subject requires its issue "
-                        "and criterion sub-issue identities"
-                    )
-            case AlarmSubjectKind.SURFACE:
-                if self.member_id is None:
-                    raise ValueError(
-                        "a surface alarm subject requires its surface address"
-                    )
-                address = _SURFACE_ADDRESS.validate_json(self.member_id)
-                if self.member_id != surface_alarm_member_id(address):
-                    raise ValueError(
-                        "a surface alarm member must use the canonical surface address"
-                    )
-            case AlarmSubjectKind.ESCALATION:
-                if self.member_id is None:
-                    raise ValueError(
-                        "an escalation alarm subject requires its escalation key"
-                    )
-        return self
+class ScopeSubject(_Subject):
+    """A whole scope, with no inferred lane or issue carrier."""
+
+    kind: Literal[AlarmSubjectKind.SCOPE] = AlarmSubjectKind.SCOPE
+
+
+class LaneSubject(_Subject):
+    """One explicit lane inside the recorded scope."""
+
+    kind: Literal[AlarmSubjectKind.LANE] = AlarmSubjectKind.LANE
+    lane_key: Identity
+
+
+class IssueSubject(_Subject):
+    """One native issue, optionally qualified by its observed lane."""
+
+    kind: Literal[AlarmSubjectKind.ISSUE] = AlarmSubjectKind.ISSUE
+    issue_id: Identity
+    lane_key: Identity | None = None
+
+
+class CriterionSubject(_Subject):
+    """A native criterion identity and its observed owning issue."""
+
+    kind: Literal[AlarmSubjectKind.CRITERION] = AlarmSubjectKind.CRITERION
+    issue_id: Identity
+    member_id: Identity
+    lane_key: Identity | None = None
+
+
+class SurfaceSubject(_Subject):
+    """One typed writable address, including its marker when applicable."""
+
+    kind: Literal[AlarmSubjectKind.SURFACE] = AlarmSubjectKind.SURFACE
+    surface: WritableSurface
+    lane_key: Identity | None = None
+    issue_id: Identity | None = None
+
+
+class EscalationSubject(_Subject):
+    """One recorded question occurrence with explicit known context."""
+
+    kind: Literal[AlarmSubjectKind.ESCALATION] = AlarmSubjectKind.ESCALATION
+    member_id: Identity
+    lane_key: Identity | None = None
+    issue_id: Identity | None = None
+
+
+AlarmSubject = Annotated[
+    ScopeSubject
+    | LaneSubject
+    | IssueSubject
+    | CriterionSubject
+    | SurfaceSubject
+    | EscalationSubject,
+    Field(discriminator="kind"),
+]
 
 
 class LaneFieldValue(CamelCaseModel):
@@ -128,14 +121,116 @@ class LaneFieldValue(CamelCaseModel):
     value: str
 
 
-class AlarmReading(CamelCaseModel):
-    """A referenced input, retaining the value exactly as it was read."""
+class Evidence[T](CamelCaseModel):
+    """One already-typed projection, never a serialized domain payload."""
 
     model_config = ConfigDict(frozen=True)
+    value: T
 
-    source_ref: str = Field(min_length=1, pattern=r"\S")
-    value: str
-    at_sha: str | None = Field(default=None, min_length=1, pattern=r"\S")
+
+class TextEvidence(Evidence[str]):
+    """Verbatim text or opaque identity; no interpretation is implied."""
+
+    kind: Literal["text"] = "text"
+
+
+class CountEvidence(Evidence[Annotated[int, Field(strict=True, ge=0)]]):
+    """An observed nonnegative integer, without string or boolean coercion."""
+
+    kind: Literal["count"] = "count"
+
+
+class PresenceEvidence(Evidence[Annotated[bool, Field(strict=True)]]):
+    """The boolean result of a completed addressed lookup."""
+
+    kind: Literal["presence"] = "presence"
+
+
+class ReferencesEvidence(Evidence[tuple[Identity, ...]]):
+    """An ordered projection of native references or commit identities."""
+
+    kind: Literal["references"] = "references"
+
+
+class LabelsEvidence(Evidence[tuple[Identity, ...] | None]):
+    """Actual labels, or an explicitly missing label observation."""
+
+    kind: Literal["labels"] = "labels"
+
+
+class SurfaceEvidence(Evidence[WritableSurface]):
+    """The actual writable address declared by an observed obligation."""
+
+    kind: Literal["surface"] = "surface"
+
+
+class EscalationEvidence(Evidence[LaneEscalation]):
+    """The typed question record returned by its native reader."""
+
+    kind: Literal["escalation"] = "escalation"
+
+
+class ResolutionEvidence(Evidence[EscalationResolution]):
+    """The actual resolution and its decision reference, when resolved."""
+
+    kind: Literal["resolution"] = "resolution"
+
+
+class CommitsEvidence(Evidence[tuple[LaneCommit, ...]]):
+    """Recorded commit rows in trajectory order."""
+
+    kind: Literal["commits"] = "commits"
+
+
+class LaneFieldEvidence(Evidence[LaneFieldValue]):
+    """One explicit lane field assertion, without prose inference."""
+
+    kind: Literal["lane_field"] = "lane_field"
+
+
+class ScopeEvidence(Evidence[ScopeRef]):
+    """The native scope address supplied by its current reader."""
+
+    kind: Literal["scope"] = "scope"
+
+
+class RulingsEvidence(Evidence[LaneRulingSnapshot]):
+    """A typed ruling observation window with recorded attribution."""
+
+    kind: Literal["rulings"] = "rulings"
+
+
+class GraphEvidence(Evidence[LaneGraphSnapshot]):
+    """A complete typed membership observation, without inferred closure."""
+
+    kind: Literal["graph"] = "graph"
+
+
+AlarmEvidence = Annotated[
+    TextEvidence
+    | CountEvidence
+    | PresenceEvidence
+    | ReferencesEvidence
+    | LabelsEvidence
+    | SurfaceEvidence
+    | EscalationEvidence
+    | ResolutionEvidence
+    | CommitsEvidence
+    | LaneFieldEvidence
+    | ScopeEvidence
+    | RulingsEvidence
+    | GraphEvidence,
+    Field(discriminator="kind"),
+]
+
+
+class AlarmReading(CamelCaseModel):
+    """A referenced input retaining the exact typed projection and source SHA."""
+
+    model_config = ConfigDict(frozen=True)
+    source_ref: Identity
+    value: AlarmEvidence
+    at_sha: Identity | None = None
 
 
 class AlarmBound(CamelCaseModel):

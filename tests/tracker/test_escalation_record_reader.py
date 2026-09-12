@@ -169,6 +169,8 @@ def test_actual_collector_declares_only_tracker_reads_and_pure_observation_calls
         "read_escalation_ageing",
         "tracker.read_escalation_resolution",
         "AlarmReading",
+        "EscalationEvidence",
+        "ReferencesEvidence",
         "escalation_comment.body.partition",
         "json.dumps",
     }

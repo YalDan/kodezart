@@ -10,7 +10,11 @@ from kodezart.domain.errors import CriterionReadError
 from kodezart.domain.run_shape import barren_tick_with_diff_growth
 from kodezart.services import run_shape
 from kodezart.services.run_shape import observe_barren_tick, read_barren_tick
-from kodezart.types.domain.run_alarm import AlarmReading
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    CountEvidence,
+    ReferencesEvidence,
+)
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE, fixture_server
 
@@ -51,13 +55,16 @@ def inputs():
         "lane_key": "lane-a",
         "issue_key": APPROVED_ISSUE,
         "previous_open": AlarmReading(
-            source_ref="previous-tick#open", value='["previous/criterion"]'
+            source_ref="previous-tick#open",
+            value=ReferencesEvidence(value=("previous/criterion",)),
         ),
         "files_changed": AlarmReading(
-            source_ref="lane-record#files", value="11", at_sha="head"
+            source_ref="lane-record#files", value=CountEvidence(value=11), at_sha="head"
         ),
         "commits_ahead": AlarmReading(
-            source_ref="lane-record#commits", value="6", at_sha="head"
+            source_ref="lane-record#commits",
+            value=CountEvidence(value=6),
+            at_sha="head",
         ),
         "supersession_refs": {},
         "raised_at_sha": "head",
@@ -183,15 +190,12 @@ def test_observer_has_one_tracker_read_and_no_version_control_dependency():
     }
     assert imports == {
         "collections.abc",
-        "pydantic",
         "kodezart.core.config",
         "kodezart.core.protocols",
-        "kodezart.domain.errors",
         "kodezart.domain.gap",
         "kodezart.domain.run_shape",
         "kodezart.types.domain.escalation",
         "kodezart.types.domain.run_alarm",
-        "kodezart.types.domain.run_state",
         "kodezart.types.domain.tracker",
     }
     assert set(inspect.signature(observe_barren_tick).parameters) == {

@@ -1,7 +1,5 @@
 """Collect escalation age from the recorded occurrence and its lane history."""
 
-import json
-
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
@@ -9,7 +7,13 @@ from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_shape import read_escalation_ageing
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.run_alarm import AlarmReading, AlarmSignal, RunAlarm
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    AlarmSignal,
+    EscalationEvidence,
+    ReferencesEvidence,
+    RunAlarm,
+)
 
 
 async def observe_recorded_escalation_ageing(
@@ -65,12 +69,12 @@ async def observe_recorded_escalation_ageing(
         lane_key=lane_key,
         escalation=AlarmReading(
             source_ref=escalation_comment.comment_key,
-            value=escalation_comment.body.partition("\n")[2],
+            value=EscalationEvidence(value=escalation),
             at_sha=escalation.raised_at_sha,
         ),
         commits=AlarmReading(
             source_ref=lane_comment.comment_key,
-            value=json.dumps(commit_order),
+            value=ReferencesEvidence(value=commit_order),
             at_sha=lane.head_sha,
         ),
         ticks_since_raise=ticks_since_raise,

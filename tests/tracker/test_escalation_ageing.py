@@ -1,14 +1,18 @@
 """Current addressed decisions feed a pure observer through every adapter."""
 
-import json
-
 import pytest
 
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import EscalationReadError, RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
 from kodezart.services.run_shape import observe_escalation_ageing
-from kodezart.types.domain.run_alarm import AlarmReading
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    CountEvidence,
+    EscalationEvidence,
+    ReferencesEvidence,
+    TextEvidence,
+)
 from kodezart.types.domain.run_state import LaneEscalation
 from tests.fakes import FakeTrackerPort
 from tests.tracker.conftest import APPROVED_ISSUE
@@ -41,15 +45,17 @@ async def recorded_inputs(tracker):
         "lane_key": LANE,
         "escalation": AlarmReading(
             source_ref=comment.comment_key,
-            value=comment.body.partition("\n")[2],
+            value=EscalationEvidence(value=record),
             at_sha=record.raised_at_sha,
         ),
         "commits": AlarmReading(
             source_ref="lane-record#commits",
-            value=json.dumps(["before", "raised", "after", "latest"]),
+            value=ReferencesEvidence(value=("before", "raised", "after", "latest")),
             at_sha="latest",
         ),
-        "ticks_since_raise": AlarmReading(source_ref="walker-record#age", value="3"),
+        "ticks_since_raise": AlarmReading(
+            source_ref="walker-record#age", value=CountEvidence(value=3)
+        ),
         "raised_at_sha": "latest",
         "raised_by": "supervisor-holder",
     }
@@ -139,7 +145,9 @@ async def test_unreachable_decision_read_never_appears_unanswered_or_clear(
 
 async def test_unreadable_record_is_a_typed_refusal(tracker, tracker_writes):
     inputs = await recorded_inputs(tracker)
-    inputs["escalation"] = AlarmReading(source_ref="broken-comment", value="{}")
+    inputs["escalation"] = AlarmReading(
+        source_ref="broken-comment", value=TextEvidence(value="wrong evidence kind")
+    )
     before = tracker_writes()
     with pytest.raises(RunShapeReadError) as raised:
         await observe_escalation_ageing(

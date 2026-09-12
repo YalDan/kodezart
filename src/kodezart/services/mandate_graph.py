@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import TrackerPort
@@ -14,6 +14,7 @@ from kodezart.domain.mandate_graph import (
     rulings_outpace_closures,
     structural_write_uncrosses_milestone,
 )
+from kodezart.domain.run_shape import _read_value
 from kodezart.services.ruling_records import RulingRecordReader
 from kodezart.types.domain.mandate_graph import (
     IssueSupersession,
@@ -27,12 +28,14 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    CountEvidence,
+    GraphEvidence,
+    ReferencesEvidence,
+    RulingsEvidence,
     RunAlarm,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
-
-_REFS = TypeAdapter(tuple[str, ...])
 
 
 async def read_lane_rulings(
@@ -51,7 +54,7 @@ async def read_lane_rulings(
     """
     try:
         empty = LaneRulingSnapshot(lane_key=lane_key, issue_keys=issue_keys, rulings=())
-        AlarmReading(source_ref=source_ref, value=empty.model_dump_json())
+        AlarmReading(source_ref=source_ref, value=RulingsEvidence(value=empty))
     except ValidationError as exc:
         raise RunShapeReadError(
             signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES.value,
@@ -79,9 +82,7 @@ async def read_lane_rulings(
     snapshot = LaneRulingSnapshot(
         lane_key=lane_key, issue_keys=issue_keys, rulings=tuple(rows)
     )
-    return AlarmReading(
-        source_ref=source_ref, value=snapshot.model_dump_json(by_alias=True)
-    )
+    return AlarmReading(source_ref=source_ref, value=RulingsEvidence(value=snapshot))
 
 
 async def observe_recorded_ruling_growth(
@@ -162,7 +163,7 @@ async def read_lane_graph(
     lane_graph_members(snapshot, source_ref=source_ref)
     return AlarmReading(
         source_ref=source_ref,
-        value=snapshot.model_dump_json(by_alias=True),
+        value=GraphEvidence(value=snapshot),
     )
 
 
@@ -220,16 +221,9 @@ async def observe_ruling_growth(
     This service reads current criteria and uses the shared gap arithmetic.
     Recording the next window and publishing alarms belong to their writers.
     """
-    try:
-        snapshot = LaneRulingSnapshot.model_validate_json(
-            current_rulings.value, strict=True
-        )
-    except ValidationError as exc:
-        raise RunShapeReadError(
-            signal=AlarmSignal.RULINGS_OUTPACE_CLOSURES.value,
-            source_ref=current_rulings.source_ref,
-            reason="invalid ruling projection",
-        ) from exc
+    snapshot = _read_value(
+        current_rulings, RulingsEvidence, AlarmSignal.RULINGS_OUTPACE_CLOSURES
+    )
     criteria: list[TrackerIssue] = []
     for issue_key in snapshot.issue_keys:
         criteria.extend(await tracker.read_criteria(issue_key=issue_key))
@@ -248,11 +242,11 @@ async def observe_ruling_growth(
             previous_open,
             AlarmReading(
                 source_ref=baseline_rulings.source_ref,
-                value=_REFS.dump_json(closed).decode("utf-8"),
+                value=ReferencesEvidence(value=closed),
             ),
             AlarmReading(
                 source_ref=RULINGS_BOUND,
-                value=str(config.run_alarm_max_rulings_without_closure),
+                value=CountEvidence(value=config.run_alarm_max_rulings_without_closure),
             ),
         ),
         raised_at_sha=raised_at_sha,

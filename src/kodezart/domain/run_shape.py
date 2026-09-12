@@ -1,14 +1,8 @@
 """Run-shape predicates over recorded values, with no side effects."""
 
-from typing import Annotated
-
-from pydantic import Field, NonNegativeInt, TypeAdapter, ValidationError
-
 from kodezart.domain.errors import RunShapeReadError
-from kodezart.types.domain.escalation import (
-    EscalationResolution,
-    EscalationResolutionState,
-)
+from kodezart.domain.run_alarm_record import surface_alarm_member_id
+from kodezart.types.domain.escalation import EscalationResolutionState
 from kodezart.types.domain.organize import OrganizeLabelNamespace, split_label_key
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
@@ -16,38 +10,26 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
-    LaneFieldValue,
+    CommitsEvidence,
+    CountEvidence,
+    EscalationEvidence,
+    Evidence,
+    LabelsEvidence,
+    LaneFieldEvidence,
+    PresenceEvidence,
+    ReferencesEvidence,
+    ResolutionEvidence,
     RunAlarm,
-    surface_alarm_member_id,
+    ScopeEvidence,
+    SurfaceEvidence,
+    TextEvidence,
 )
-from kodezart.types.domain.run_state import LaneCommit, LaneEscalation
-from kodezart.types.domain.scope import ScopeRef
-from kodezart.types.domain.surface import WritableSurface
 
 ESCALATION_COMMITS_BOUND = "run_alarm_escalation_age_max_commits"
 ESCALATION_TICKS_BOUND = "run_alarm_escalation_age_max_ticks"
 BARREN_FILES_BOUND = "run_alarm_barren_tick_max_files_changed"
 BARREN_COMMITS_BOUND = "run_alarm_barren_tick_max_commits_ahead"
 SURFACE_HOLDERS_BOUND = "run_alarm_max_surface_holders"
-
-_ESCALATION = TypeAdapter(LaneEscalation)
-_RESOLUTION = TypeAdapter(EscalationResolution)
-_COMMITS = TypeAdapter(tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...])
-_COUNT = TypeAdapter(NonNegativeInt)
-_REFERENCES = TypeAdapter(
-    tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...]
-)
-_SURFACE = TypeAdapter(WritableSurface)
-_PRESENT = TypeAdapter(bool)
-_IDENTITY: TypeAdapter[str] = TypeAdapter(
-    Annotated[str, Field(min_length=1, pattern=r"\S")]
-)
-_COMMIT_ROWS = TypeAdapter(tuple[LaneCommit, ...])
-_LANE_FIELD = TypeAdapter(LaneFieldValue)
-_SCOPE = TypeAdapter(ScopeRef)
-_MARKER_LABELS: TypeAdapter[tuple[str, ...] | None] = TypeAdapter(
-    tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] | None
-)
 
 
 def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeReadError:
@@ -58,13 +40,22 @@ def _unreadable(signal: AlarmSignal, source_ref: str, reason: str) -> RunShapeRe
     )
 
 
-def _decode[T](
-    reading: AlarmReading, adapter: TypeAdapter[T], signal: AlarmSignal
+def _read_value[T](
+    reading: AlarmReading, expected: type[Evidence[T]], signal: AlarmSignal
 ) -> T:
-    try:
-        return adapter.validate_json(reading.value, strict=True)
-    except ValidationError as exc:
-        raise _unreadable(signal, reading.source_ref, "invalid recorded value") from exc
+    value = reading.value
+    if not isinstance(value, expected):
+        raise _unreadable(
+            signal, reading.source_ref, "another evidence kind was recorded"
+        )
+    return value.value
+
+
+def _identity(reading: AlarmReading, signal: AlarmSignal) -> str:
+    value = _read_value(reading, TextEvidence, signal)
+    if not value.strip():
+        raise _unreadable(signal, reading.source_ref, "recorded identity is empty")
+    return value
 
 
 def record_superseded(
@@ -76,12 +67,12 @@ def record_superseded(
 ) -> RunAlarm | None:
     """Compare one record field with a later event asserting that same field.
 
-    Three JSON readings: the record's LaneFieldValue, the event's
+    Three typed readings: the record's LaneFieldValue, the event's
     LaneFieldValue, and the lane record's ordered commit SHA projection.
     The first two carry their asserted SHAs in at_sha; commit history names
     the same source as the record. Lane and field keys match exactly.
 
-    Opaque values are compared after JSON decoding, never by interpreting
+    Opaque values are compared as typed field values, never by interpreting
     their prose. Only a contrary value at a strictly later recorded position
     supersedes the record. Equal or earlier positions cannot do so. Missing
     or repeated commit identities refuse observation, including when the
@@ -92,9 +83,9 @@ def record_superseded(
         record, event, commits = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    recorded = _decode(record, _LANE_FIELD, signal)
-    asserted = _decode(event, _LANE_FIELD, signal)
-    order = _decode(commits, _COMMITS, signal)
+    recorded = _read_value(record, LaneFieldEvidence, signal)
+    asserted = _read_value(event, LaneFieldEvidence, signal)
+    order = _read_value(commits, ReferencesEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != recorded.lane_key
@@ -145,7 +136,7 @@ def write_back_missing(
 ) -> RunAlarm | None:
     """Observe one event's explicit write obligation against a completed read.
 
-    Two JSON readings: the event's owed WritableSurface, then a strict
+    Two typed readings: the event's owed WritableSurface, then a strict
     boolean recording whether its keyed record exists. The event reference
     is the first source; the canonical complete surface address is the
     second. The caller supplies the event's declared target and a successful
@@ -160,9 +151,9 @@ def write_back_missing(
         event_target, record_presence = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    owed = _decode(event_target, _SURFACE, signal)
+    owed = _read_value(event_target, SurfaceEvidence, signal)
     address = surface_alarm_member_id(owed)
-    if subject.kind is not AlarmSubjectKind.SURFACE or subject.member_id != address:
+    if subject.kind is not AlarmSubjectKind.SURFACE or subject.surface != owed:
         raise _unreadable(
             signal, event_target.source_ref, "subject identifies another surface"
         )
@@ -172,7 +163,7 @@ def write_back_missing(
             record_presence.source_ref,
             "record lookup identifies another surface",
         )
-    present = _decode(record_presence, _PRESENT, signal)
+    present = _read_value(record_presence, PresenceEvidence, signal)
     if present:
         return None
     return RunAlarm(
@@ -194,7 +185,7 @@ def commits_ahead_of_record(
 ) -> RunAlarm | None:
     """Compare the lane record's own count and enumerated commit rows.
 
-    Four JSON readings from the same record: lane key, declared head SHA,
+    Four typed readings from the same record: lane key, declared head SHA,
     commits-ahead count, and the ordered LaneCommit rows. A supplied reading
     SHA must identify that declared head. The head is recorded evidence;
     this predicate never resolves it against a repository. If the whole
@@ -208,10 +199,10 @@ def commits_ahead_of_record(
         lane, head, count, rows = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    lane_key = _decode(lane, _IDENTITY, signal)
-    declared_head = _decode(head, _IDENTITY, signal)
-    declared_count = _decode(count, _COUNT, signal)
-    commits = _decode(rows, _COMMIT_ROWS, signal)
+    lane_key = _identity(lane, signal)
+    declared_head = _identity(head, signal)
+    declared_count = _read_value(count, CountEvidence, signal)
+    commits = _read_value(rows, CommitsEvidence, signal)
     if subject.kind is not AlarmSubjectKind.LANE or subject.lane_key != lane_key:
         raise _unreadable(signal, lane.source_ref, "subject identifies another lane")
     for reading in readings:
@@ -253,7 +244,7 @@ def escalation_ageing(
 
     Readings are ordered: the escalation value, its resolution value, the
     recorded commit SHA sequence, ticks since raise, and the two configured
-    count limits (commits then ticks). Values use JSON; their original bytes
+    count limits (commits then ticks). Values remain typed; their original values
     and source references survive in the alarm. The resolution names the
     same escalation source, and bound sources are AppConfig field names.
 
@@ -266,12 +257,10 @@ def escalation_ageing(
     try:
         escalation, resolution, commits, ticks, max_commits, max_ticks = readings
     except ValueError as exc:
-        raise _unreadable(
-            signal, subject.member_id or subject.scope_key, "incomplete readings"
-        ) from exc
+        raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
 
-    record = _decode(escalation, _ESCALATION, signal)
-    answer = _decode(resolution, _RESOLUTION, signal)
+    record = _read_value(escalation, EscalationEvidence, signal)
+    answer = _read_value(resolution, ResolutionEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.ESCALATION
         or subject.member_id != record.escalation_key
@@ -293,10 +282,10 @@ def escalation_ageing(
             signal, subject.member_id, "age bounds do not name their AppConfig fields"
         )
 
-    commit_order = _decode(commits, _COMMITS, signal)
-    tick_age = _decode(ticks, _COUNT, signal)
-    commit_limit = _decode(max_commits, _COUNT, signal)
-    tick_limit = _decode(max_ticks, _COUNT, signal)
+    commit_order = _read_value(commits, ReferencesEvidence, signal)
+    tick_age = _read_value(ticks, CountEvidence, signal)
+    commit_limit = _read_value(max_commits, CountEvidence, signal)
+    tick_limit = _read_value(max_ticks, CountEvidence, signal)
     if len(set(commit_order)) != len(commit_order):
         raise _unreadable(
             signal, commits.source_ref, "recorded commit order repeats a SHA"
@@ -338,7 +327,7 @@ def surface_contended(
 ) -> RunAlarm | None:
     """Count explicit run-holder identities for one complete surface address.
 
-    Three JSON readings, in order: the WritableSurface address, its ordered
+    Three typed readings, in order: the WritableSurface address, its ordered
     holder history, and the configured distinct-holder limit. Address and
     history must name the same provenance source. Holder identities are
     opaque job identities supplied by the provenance reader; this function
@@ -353,11 +342,8 @@ def surface_contended(
         surface, history, max_holders = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    address = _decode(surface, _SURFACE, signal)
-    if (
-        subject.kind is not AlarmSubjectKind.SURFACE
-        or subject.member_id != surface_alarm_member_id(address)
-    ):
+    address = _read_value(surface, SurfaceEvidence, signal)
+    if subject.kind is not AlarmSubjectKind.SURFACE or subject.surface != address:
         raise _unreadable(
             signal, surface.source_ref, "subject identifies another surface"
         )
@@ -371,8 +357,8 @@ def surface_contended(
             max_holders.source_ref,
             "holder bound does not name its AppConfig field",
         )
-    holders = _decode(history, _REFERENCES, signal)
-    configured = _decode(max_holders, _COUNT, signal)
+    holders = _read_value(history, ReferencesEvidence, signal)
+    configured = _read_value(max_holders, CountEvidence, signal)
     observed = len(set(holders))
     if observed > configured:
         return RunAlarm(
@@ -399,7 +385,7 @@ def barren_tick_with_diff_growth(
 ) -> RunAlarm | None:
     """Observe recorded growth without closure of any previously-open identity.
 
-    Six JSON readings, in order: previously-open reference identities,
+    Six typed readings, in order: previously-open reference identities,
     currently-closed identities, recorded files changed, recorded commits
     ahead, and the configured limits for files and commits. A newly-created
     closed reference or a reference missing from the current snapshot is
@@ -427,8 +413,8 @@ def barren_tick_with_diff_growth(
             subject.scope_key,
             "growth bounds do not name their AppConfig fields",
         )
-    previous_open = _decode(previous, _REFERENCES, signal)
-    current_closed = _decode(current, _REFERENCES, signal)
+    previous_open = _read_value(previous, ReferencesEvidence, signal)
+    current_closed = _read_value(current, ReferencesEvidence, signal)
     for reading, identities in ((previous, previous_open), (current, current_closed)):
         if len(set(identities)) != len(identities):
             raise _unreadable(
@@ -436,10 +422,10 @@ def barren_tick_with_diff_growth(
                 reading.source_ref,
                 "a reference identity appears more than once",
             )
-    files_changed = _decode(files, _COUNT, signal)
-    commits_ahead = _decode(commits, _COUNT, signal)
-    file_limit = _decode(max_files, _COUNT, signal)
-    commit_limit = _decode(max_commits, _COUNT, signal)
+    files_changed = _read_value(files, CountEvidence, signal)
+    commits_ahead = _read_value(commits, CountEvidence, signal)
+    file_limit = _read_value(max_files, CountEvidence, signal)
+    commit_limit = _read_value(max_commits, CountEvidence, signal)
     if set(previous_open) & set(current_closed):
         return None
     for reading, configured, observed in (
@@ -478,7 +464,7 @@ def tally_unmoved(
 
     Readings retain two qualified configuration keys, the native scope
     address, its ORGANIZE work-target keys, then per-member semantic label
-    sets. An absent member reading or a JSON null label set counts as open;
+    sets. An absent member reading or a absent label set counts as open;
     malformed or foreign readings refuse. This is the scope arm of the
     shared signal. The lane arm and execution-entry event reader are not
     implemented by substituting other tracker facts.
@@ -500,12 +486,8 @@ def tally_unmoved(
     }:
         raise _unreadable(signal, subject.scope_key, "wrong phase marker sources")
     try:
-        current_namespace, current_key = split_label_key(
-            _decode(current, _IDENTITY, signal)
-        )
-        next_namespace, next_key = split_label_key(
-            _decode(following, _IDENTITY, signal)
-        )
+        current_namespace, current_key = split_label_key(_identity(current, signal))
+        next_namespace, next_key = split_label_key(_identity(following, signal))
     except ValueError as exc:
         raise _unreadable(
             signal, current.source_ref, "invalid phase marker key"
@@ -518,8 +500,8 @@ def tally_unmoved(
         raise _unreadable(
             signal, current.source_ref, "distinct issue phase markers required"
         )
-    scope = _decode(scope_reading, _SCOPE, signal)
-    roster = _decode(roster_reading, _REFERENCES, signal)
+    scope = _read_value(scope_reading, ScopeEvidence, signal)
+    roster = _read_value(roster_reading, ReferencesEvidence, signal)
     if (
         scope.key != subject.scope_key
         or scope_reading.source_ref != scope.key
@@ -534,7 +516,7 @@ def tally_unmoved(
             raise _unreadable(
                 signal, member.source_ref, "foreign or repeated member reading"
             )
-        labels[member.source_ref] = _decode(member, _MARKER_LABELS, signal)
+        labels[member.source_ref] = _read_value(member, LabelsEvidence, signal)
     carrying = sum(current_key in (labels.get(key) or ()) for key in roster)
     entered = any(next_key in (labels.get(key) or ()) for key in roster)
     if carrying == len(roster) or not entered:

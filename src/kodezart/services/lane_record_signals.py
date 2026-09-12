@@ -1,22 +1,17 @@
 """Supervisor observations collected from one addressed lane record read."""
 
-import json
-
-from pydantic import TypeAdapter
-
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.run_shape import commits_ahead_of_record
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.operation import OperationConfig
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
-    AlarmSubject,
-    AlarmSubjectKind,
+    CommitsEvidence,
+    CountEvidence,
+    LaneSubject,
     RunAlarm,
+    TextEvidence,
 )
-from kodezart.types.domain.run_state import LaneCommit
-
-_COMMIT_ROWS = TypeAdapter(tuple[LaneCommit, ...])
 
 
 async def observe_commits_ahead_of_record(
@@ -38,17 +33,15 @@ async def observe_commits_ahead_of_record(
     This observation never resolves the head against a repository. A wholly
     stale record whose count and rows agree remains invisible to this signal.
     """
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.LANE, scope_key=scope_key, lane_key=lane_key
-    )
+    subject = LaneSubject(scope_key=scope_key, lane_key=lane_key)
     comment, record = await LaneRecordReader(tracker=tracker, operation=operation).read(
         issue_key=issue_key, lane_key=lane_key, record_ref=record_ref
     )
     values = (
-        json.dumps(record.lane_key),
-        json.dumps(record.head_sha),
-        str(record.commits_ahead),
-        _COMMIT_ROWS.dump_json(tuple(record.commits), by_alias=True).decode("utf-8"),
+        TextEvidence(value=record.lane_key),
+        TextEvidence(value=record.head_sha),
+        CountEvidence(value=record.commits_ahead),
+        CommitsEvidence(value=tuple(record.commits)),
     )
     return commits_ahead_of_record(
         subject=subject,

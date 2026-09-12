@@ -9,7 +9,12 @@ from kodezart.services.mandate_graph import (
     observe_structural_write,
     read_lane_graph,
 )
-from kodezart.types.domain.run_alarm import AlarmSubject, AlarmSubjectKind
+from kodezart.types.domain.mandate_graph import LaneRulingSnapshot
+from kodezart.types.domain.run_alarm import (
+    LaneSubject,
+    ReferencesEvidence,
+    RulingsEvidence,
+)
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.domain.test_mandate_graph import reading, ruling
 from tests.fakes import FakeMcpIssue, FakeTrackerPort
@@ -55,12 +60,14 @@ def arguments():
     }
     return {
         "config": AppConfig(_env_file=None, run_alarm_max_rulings_without_closure=1),
-        "subject": AlarmSubject(
-            kind=AlarmSubjectKind.LANE, scope_key="scope", lane_key="lane"
+        "subject": LaneSubject(scope_key="scope", lane_key="lane"),
+        "baseline_rulings": reading(
+            RulingsEvidence(value=LaneRulingSnapshot.model_validate(snapshot))
         ),
-        "baseline_rulings": reading(snapshot),
-        "current_rulings": reading(current),
-        "previous_open": reading(["criterion/open"]),
+        "current_rulings": reading(
+            RulingsEvidence(value=LaneRulingSnapshot.model_validate(current))
+        ),
+        "previous_open": reading(ReferencesEvidence(value=("criterion/open",))),
         "supersession_refs": {},
         "raised_at_sha": "head",
         "raised_by": "holder",
@@ -139,8 +146,10 @@ async def test_closure_on_another_declared_lane_issue_is_observed(tracker, serve
             ruling("b", issue=CLAIMED_ISSUE),
         ],
     }
-    kwargs["current_rulings"] = reading(snapshot)
-    kwargs["previous_open"] = reading(["other/criterion"])
+    kwargs["current_rulings"] = reading(
+        RulingsEvidence(value=LaneRulingSnapshot.model_validate(snapshot))
+    )
+    kwargs["previous_open"] = reading(ReferencesEvidence(value=("other/criterion",)))
     assert await observe_ruling_growth(tracker=tracker, **kwargs) is None
 
 
@@ -179,9 +188,7 @@ async def previous_graph(tracker):
 async def observe_graph(tracker, previous):
     return await observe_structural_write(
         tracker=tracker,
-        subject=AlarmSubject(
-            kind=AlarmSubjectKind.LANE, scope_key="scope", lane_key="lane"
-        ),
+        subject=LaneSubject(scope_key="scope", lane_key="lane"),
         previous=previous,
         fire_key=ROOT.key,
         milestone=MILESTONE,

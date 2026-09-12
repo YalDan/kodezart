@@ -14,7 +14,10 @@ from kodezart.domain.run_shape import escalation_ageing
 from kodezart.services.escalation_records import EscalationRecordReader
 from kodezart.services.escalation_signals import observe_recorded_escalation_ageing
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.run_alarm import AlarmReading
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    CountEvidence,
+)
 from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.tracker import TrackerComment
 from tests.domain.test_lane_record import record_data
@@ -70,7 +73,9 @@ def arguments(**overrides):
         "scope_key": "scope/current",
         **ADDRESS,
         "ticks_since_raise": AlarmReading(
-            source_ref="walker/tick-age/question:ageing", value="3", at_sha=None
+            source_ref="walker/tick-age/question:ageing",
+            value=CountEvidence(value=3),
+            at_sha=None,
         ),
         "raised_at_sha": "supervisor-observation",
         "raised_by": "supervisor-holder",
@@ -114,11 +119,13 @@ async def test_same_native_sources_feed_both_age_arms_and_replay(
         == alarm.readings[1].source_ref
         == question.comment_key
     )
-    assert alarm.readings[0].value == question.body.partition("\n")[2]
+    assert alarm.readings[0].value.value == LaneEscalation.model_validate_json(
+        question.body.partition("\n")[2]
+    )
     assert alarm.readings[0].at_sha == "first-sha"
     assert alarm.readings[2].source_ref == record.comment_key
     assert alarm.readings[2].at_sha == "head-full-identity"
-    assert json.loads(alarm.readings[2].value) == ["first-sha", "head-full-identity"]
+    assert alarm.readings[2].value.value == ("first-sha", "head-full-identity")
     assert alarm.readings[3] == inputs["ticks_since_raise"]
     assert alarm.raised_at_sha == "supervisor-observation"
     assert alarm.raised_by == "supervisor-holder"

@@ -2,7 +2,6 @@
 
 import ast
 import inspect
-import json
 
 import pytest
 from pydantic import ValidationError
@@ -11,19 +10,28 @@ from kodezart.core.config import AppConfig
 from kodezart.domain import run_shape
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
+from kodezart.types.domain.escalation import (
+    EscalationResolution,
+    EscalationResolutionState,
+)
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
     AlarmSubjectKind,
+    CountEvidence,
+    EscalationEvidence,
+    EscalationSubject,
+    ReferencesEvidence,
+    ResolutionEvidence,
     RunAlarm,
+    TextEvidence,
 )
+from kodezart.types.domain.run_state import LaneEscalation
 
 COMMIT_FIELD = "run_alarm_escalation_age_max_commits"
 TICK_FIELD = "run_alarm_escalation_age_max_ticks"
-SUBJECT = AlarmSubject(
-    kind=AlarmSubjectKind.ESCALATION,
+SUBJECT = EscalationSubject(
     scope_key="scope-a",
     lane_key="lane-a",
     issue_id="EXT/42",
@@ -51,28 +59,31 @@ def readings(
     return (
         AlarmReading(
             source_ref="comment/raise",
-            value=json.dumps(escalation, indent=2),
+            value=EscalationEvidence(value=LaneEscalation.model_validate(escalation)),
             at_sha="raised",
         ),
         AlarmReading(
             source_ref="comment/raise",
-            value=json.dumps(
-                {
-                    "state": "resolved" if resolved else "unresolved",
-                    "decisionRef": "comment/decision" if resolved else None,
-                }
+            value=ResolutionEvidence(
+                value=EscalationResolution(
+                    state=EscalationResolutionState.RESOLVED
+                    if resolved
+                    else EscalationResolutionState.UNRESOLVED,
+                    decision_ref="comment/decision" if resolved else None,
+                )
             ),
         ),
         AlarmReading(
             source_ref="record/lane#commits",
-            value=json.dumps(commits, indent=2),
+            value=ReferencesEvidence(value=commits),
             at_sha="last",
         ),
         AlarmReading(
-            source_ref="record/walker#ticks-since-question", value=json.dumps(ticks)
+            source_ref="record/walker#ticks-since-question",
+            value=CountEvidence(value=ticks),
         ),
-        AlarmReading(source_ref=COMMIT_FIELD, value=json.dumps(max_commits)),
-        AlarmReading(source_ref=TICK_FIELD, value=json.dumps(max_ticks)),
+        AlarmReading(source_ref=COMMIT_FIELD, value=CountEvidence(value=max_commits)),
+        AlarmReading(source_ref=TICK_FIELD, value=CountEvidence(value=max_ticks)),
     )
 
 
@@ -186,35 +197,36 @@ def test_a_decision_does_not_make_an_unreadable_history_a_clean_observation(comm
 
 
 def test_a_decision_does_not_supply_a_missing_tick_count():
-    with pytest.raises(RunShapeReadError) as raised:
+    with pytest.raises(ValidationError):
         evaluate(readings(ticks=None, resolved=True))
-    assert raised.value.source_ref == "record/walker#ticks-since-question"
 
 
 @pytest.mark.parametrize("slot", range(6))
 @pytest.mark.parametrize("value", ["not-json", "null", "{}"])
-def test_malformed_readings_are_typed_errors_with_the_source(slot, value):
+def test_wrong_evidence_arm_is_a_typed_error_with_the_source(slot, value):
     original = readings()
     altered = tuple(
-        item.model_copy(update={"value": value}) if position == slot else item
+        item.model_copy(update={"value": TextEvidence(value=value)})
+        if position == slot
+        else item
         for position, item in enumerate(original)
     )
     with pytest.raises(RunShapeReadError) as raised:
         evaluate(altered)
     assert raised.value.source_ref == original[slot].source_ref
-    assert isinstance(raised.value.__cause__, ValidationError)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize("name", ["ticks", "max_commits", "max_ticks"])
 @pytest.mark.parametrize("value", [-1, True, 1.5, "2"])
 def test_recorded_counts_are_nonnegative_integers(name, value):
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(readings(**{name: value}))
 
 
 @pytest.mark.parametrize("commits", [("raised", ""), ("raised", "  "), ("raised", 3)])
 def test_commit_identities_are_nonempty_opaque_strings(commits):
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(readings(commits=commits))
 
 
@@ -277,6 +289,7 @@ def test_signal_module_is_pure_and_count_comparisons_have_no_literal_bound():
         "typing",
         "pydantic",
         "kodezart.domain.errors",
+        "kodezart.domain.run_alarm_record",
         "kodezart.types.domain.escalation",
         "kodezart.types.domain.run_alarm",
         "kodezart.types.domain.run_state",

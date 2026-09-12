@@ -1,8 +1,7 @@
 """The scope tally is replayable arithmetic over explicit roster readings."""
 
-import json
-
 import pytest
+from pydantic import ValidationError
 
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.run_shape import (
@@ -13,27 +12,36 @@ from kodezart.domain.run_shape import (
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
-    AlarmSubjectKind,
+    LabelsEvidence,
+    LaneSubject,
+    ReferencesEvidence,
+    ScopeEvidence,
+    ScopeSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 
 SCOPE = ScopeRef(kind=ScopeKind.PROJECT, key="scope/opaque")
-SUBJECT = AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key=SCOPE.key)
+SUBJECT = ScopeSubject(scope_key=SCOPE.key)
 
 
 def reading(source, value):
-    return AlarmReading(source_ref=source, value=json.dumps(value))
+    return AlarmReading(source_ref=source, value=value)
 
 
 def inputs(*, roster=("one", "two"), labels=None):
     labels = {"one": ["criteria-ready"], "two": []} if labels is None else labels
     return (
-        reading(TICKET_MARKER_SOURCE, "issue_labels.body-ready"),
-        reading(CRITERIA_MARKER_SOURCE, "issue_labels.criteria-ready"),
-        AlarmReading(source_ref=SCOPE.key, value=SCOPE.model_dump_json()),
-        reading(SCOPE.key, roster),
-        *(reading(key, value) for key, value in labels.items()),
+        reading(TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")),
+        reading(
+            CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.criteria-ready")
+        ),
+        AlarmReading(source_ref=SCOPE.key, value=ScopeEvidence(value=SCOPE)),
+        reading(SCOPE.key, ReferencesEvidence(value=roster)),
+        *(
+            reading(key, LabelsEvidence(value=None if value is None else tuple(value)))
+            for key, value in labels.items()
+        ),
     )
 
 
@@ -119,44 +127,55 @@ def test_incomplete_malformed_or_foreign_data_refuses(damage):
     if damage == "short":
         values = values[:3]
     elif damage == "wrong-current-source":
-        values[0] = reading("elsewhere", "issue_labels.body-ready")
+        values[0] = reading("elsewhere", TextEvidence(value="issue_labels.body-ready"))
     elif damage == "wrong-next-source":
-        values[1] = reading("elsewhere", "issue_labels.criteria-ready")
+        values[1] = reading(
+            "elsewhere", TextEvidence(value="issue_labels.criteria-ready")
+        )
     elif damage == "wrong-scope-source":
         values[2] = values[2].model_copy(update={"source_ref": "elsewhere"})
     elif damage == "wrong-roster-source":
-        values[3] = reading("elsewhere", ["one", "two"])
+        values[3] = reading("elsewhere", ReferencesEvidence(value=("one", "two")))
     elif damage == "wrong-scope-key":
-        values[2] = reading(SCOPE.key, {"kind": "project", "key": "foreign"})
+        values[2] = reading(
+            SCOPE.key,
+            ScopeEvidence(value=ScopeRef(kind=ScopeKind.PROJECT, key="foreign")),
+        )
     elif damage == "duplicate-roster":
-        values[3] = reading(SCOPE.key, ["one", "two", "one"])
+        values[3] = reading(SCOPE.key, ReferencesEvidence(value=("one", "two", "one")))
     elif damage == "foreign-member":
-        values.append(reading("foreign", ["criteria-ready"]))
+        values.append(reading("foreign", LabelsEvidence(value=("criteria-ready",))))
     elif damage == "duplicate-member":
         values.append(values[4])
     elif damage == "malformed-member":
-        values[4] = AlarmReading(source_ref="one", value="not JSON")
+        values[4] = AlarmReading(
+            source_ref="one", value=TextEvidence(value="wrong evidence arm")
+        )
     elif damage == "string-members":
-        values[3] = reading(SCOPE.key, "one")
+        values[3] = reading(SCOPE.key, TextEvidence(value="one"))
     elif damage == "empty-member-key":
-        values[3] = reading(SCOPE.key, [""])
+        with pytest.raises(ValidationError):
+            reading(SCOPE.key, ReferencesEvidence(value=("",)))
+        return
     elif damage == "same-marker":
-        values[1] = reading(CRITERIA_MARKER_SOURCE, "issue_labels.body-ready")
+        values[1] = reading(
+            CRITERIA_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")
+        )
     elif damage == "scope-marker":
-        values[0] = reading(TICKET_MARKER_SOURCE, "scope_labels.approved")
+        values[0] = reading(
+            TICKET_MARKER_SOURCE, TextEvidence(value="scope_labels.approved")
+        )
     elif damage == "malformed-marker":
-        values[0] = reading(TICKET_MARKER_SOURCE, [])
+        values[0] = reading(TICKET_MARKER_SOURCE, LabelsEvidence(value=()))
     elif damage == "unqualified-marker":
-        values[0] = reading(TICKET_MARKER_SOURCE, "body-ready")
+        values[0] = reading(TICKET_MARKER_SOURCE, TextEvidence(value="body-ready"))
     with pytest.raises(RunShapeReadError) as caught:
         observe(tuple(values))
     assert caught.value.signal == AlarmSignal.TALLY_UNMOVED.value
 
 
 def test_lane_arm_is_explicitly_unavailable_not_a_second_signal():
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.LANE, scope_key=SCOPE.key, lane_key="lane/one"
-    )
+    subject = LaneSubject(scope_key=SCOPE.key, lane_key="lane/one")
     with pytest.raises(RunShapeReadError, match="lane tally inputs"):
         observe(inputs(), subject=subject)
 
@@ -165,9 +184,11 @@ def test_graph_to_body_uses_the_same_signal_and_governed_source_pair():
     from kodezart.domain.run_shape import GROOM_MARKER_SOURCE
 
     values = list(inputs())
-    values[0] = reading(GROOM_MARKER_SOURCE, "issue_labels.groomed")
-    values[1] = reading(TICKET_MARKER_SOURCE, "issue_labels.body-ready")
-    values[4] = reading("one", ["body-ready"])
+    values[0] = reading(GROOM_MARKER_SOURCE, TextEvidence(value="issue_labels.groomed"))
+    values[1] = reading(
+        TICKET_MARKER_SOURCE, TextEvidence(value="issue_labels.body-ready")
+    )
+    values[4] = reading("one", LabelsEvidence(value=("body-ready",)))
     alarm = observe(tuple(values))
     assert alarm is not None
     assert alarm.signal is AlarmSignal.TALLY_UNMOVED
@@ -178,12 +199,12 @@ def test_skipping_the_middle_phase_is_not_an_adjacent_transition():
     from kodezart.domain.run_shape import GROOM_MARKER_SOURCE
 
     values = list(inputs())
-    values[0] = reading(GROOM_MARKER_SOURCE, "issue_labels.groomed")
+    values[0] = reading(GROOM_MARKER_SOURCE, TextEvidence(value="issue_labels.groomed"))
     with pytest.raises(RunShapeReadError, match="phase marker sources"):
         observe(tuple(values))
 
 
 def test_consistent_recorded_scope_cannot_be_replayed_under_a_foreign_subject():
-    foreign = AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="different/scope")
+    foreign = ScopeSubject(scope_key="different/scope")
     with pytest.raises(RunShapeReadError, match="scope identity disagrees"):
         observe(inputs(), subject=foreign)

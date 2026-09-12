@@ -1,11 +1,8 @@
 """Identity arithmetic for mandate growth and structural lane regressions."""
 
 from collections.abc import Sequence
-from typing import Annotated
 
-from pydantic import Field, NonNegativeInt, TypeAdapter
-
-from kodezart.domain.run_shape import _decode, _unreadable
+from kodezart.domain.run_shape import _read_value, _unreadable
 from kodezart.types.domain.agent import RulingAuthor, RulingId
 from kodezart.types.domain.mandate_graph import LaneGraphSnapshot, LaneRulingSnapshot
 from kodezart.types.domain.run_alarm import (
@@ -14,16 +11,16 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    CountEvidence,
+    GraphEvidence,
+    ReferencesEvidence,
+    RulingsEvidence,
     RunAlarm,
 )
 from kodezart.types.domain.scope import ScopeKind
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 
 RULINGS_BOUND = "run_alarm_max_rulings_without_closure"
-_RULINGS = TypeAdapter(LaneRulingSnapshot)
-_GRAPH = TypeAdapter(LaneGraphSnapshot)
-_COUNT = TypeAdapter(NonNegativeInt)
-_REFS = TypeAdapter(tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...])
 
 
 def _ruling_authors(
@@ -68,7 +65,7 @@ def rulings_outpace_closures(
 ) -> RunAlarm | None:
     """Count newly recorded machine ruling identities inside one closure window.
 
-    Five JSON readings: the lane's ruling snapshot at its last closure,
+    Five typed readings: the lane's ruling snapshot at its last closure,
     current ruling snapshot, previously-open obligation references, current
     closed references, and the configured bound. The four observations name
     the same lane source. A closure is an identity intersection, never an
@@ -80,13 +77,13 @@ def rulings_outpace_closures(
         baseline, current, previous_open, current_closed, bound = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    before = _decode(baseline, _RULINGS, signal)
-    after = _decode(current, _RULINGS, signal)
-    open_refs = _decode(previous_open, _REFS, signal)
-    closed_refs = _decode(current_closed, _REFS, signal)
+    before = _read_value(baseline, RulingsEvidence, signal)
+    after = _read_value(current, RulingsEvidence, signal)
+    open_refs = _read_value(previous_open, ReferencesEvidence, signal)
+    closed_refs = _read_value(current_closed, ReferencesEvidence, signal)
     was_open = set(open_refs)
     now_closed = set(closed_refs)
-    limit = _decode(bound, _COUNT, signal)
+    limit = _read_value(bound, CountEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != before.lane_key
@@ -189,7 +186,7 @@ def structural_write_uncrosses_milestone(
 ) -> RunAlarm | None:
     """Detect an unresolved member added to a previously crossed lane's graph.
 
-    Two JSON LaneGraphSnapshot readings retain both full membership sets.
+    Two typed LaneGraphSnapshot readings retain both full membership sets.
     The earlier graph must support the crossing: its fire is completed,
     and every member is completed or canceled with an explicit supersession.
     The fire remains completed. A newly present unresolved member is a
@@ -201,8 +198,8 @@ def structural_write_uncrosses_milestone(
         previous, current = readings
     except ValueError as exc:
         raise _unreadable(signal, subject.scope_key, "incomplete readings") from exc
-    before = _decode(previous, _GRAPH, signal)
-    after = _decode(current, _GRAPH, signal)
+    before = _read_value(previous, GraphEvidence, signal)
+    after = _read_value(current, GraphEvidence, signal)
     if (
         subject.kind is not AlarmSubjectKind.LANE
         or subject.lane_key != before.lane_key
