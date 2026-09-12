@@ -26,19 +26,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from kodezart.core.backoff import RetryPolicy
-from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.domain.errors import (
-    CheckObservationError,
-    ForgeAPIError,
-    PRStateReadError,
-    RateLimitError,
-    TransientAPIError,
-)
-from kodezart.domain.git_url import extract_owner_repo
-from kodezart.types.domain.check_observation import ObservedChecks
-from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.github import (
+from kodezart.adapters.github_types import (
     CheckRun,
     CheckRunsResponse,
     CommitIdentity,
@@ -53,6 +41,18 @@ from kodezart.types.domain.github import (
     WorkflowRunsResponse,
     WorkflowsResponse,
 )
+from kodezart.core.backoff import RetryPolicy
+from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.domain.errors import (
+    CheckObservationError,
+    ForgeAPIError,
+    PRStateReadError,
+    RateLimitError,
+    TransientAPIError,
+)
+from kodezart.domain.git_url import extract_owner_repo
+from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
 

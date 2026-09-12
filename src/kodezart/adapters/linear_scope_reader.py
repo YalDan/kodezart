@@ -5,12 +5,8 @@ from typing import Protocol, assert_never
 
 from pydantic import ValidationError
 
-from kodezart.adapters.pagination import cursor_pages
-from kodezart.core.errors import TrackerProtocolError
-from kodezart.core.protocols import McpToolResult
-from kodezart.domain.errors import ScopeReadError
-from kodezart.types.domain.linear_mcp import LinearWireModel
-from kodezart.types.domain.linear_scope import (
+from kodezart.adapters.linear_mcp_types import LinearWireModel
+from kodezart.adapters.linear_scope_types import (
     LinearApprovalInitiativeWire,
     LinearApprovalProjectWire,
     LinearScopeIdentityWire,
@@ -23,6 +19,10 @@ from kodezart.types.domain.linear_scope import (
     LinearScopeProjectsWire,
     LinearScopeProjectWire,
 )
+from kodezart.adapters.pagination import cursor_pages
+from kodezart.core.errors import TrackerProtocolError
+from kodezart.core.protocols import McpToolResult
+from kodezart.domain.errors import ScopeReadError
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
 
