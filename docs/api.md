@@ -322,12 +322,18 @@ obligations.
 | ---------- | ---------- |
 | `native_amendment` | `report`, `repeated` |
 
-The native precommit gate reports the actual departure claims it independently
-judged. An upheld record retains the original claim, reason and cited judgment;
-that proposed departure was not committed. Repeated entries count the exact
-subject kind, identity and reason across the current inner loop. This event can
-appear inside `scope_lane.event`. A reproduced ground requiring an unconfirmed
-tracker amendment refuses before commit and does not emit an applied amendment.
+The native precommit graph reports completed entries in `report.verdicts`, each
+discriminated by `verdict`. An `upheld` entry retains the original claim, reason,
+cited judgment and verified owning-issue refusal record; that departure was not
+committed. A measured uneconomic refusal also carries its verified escalation.
+An `amended` entry retains the exact prior tracker artifact, its verified archive,
+and the verified applied native amendment. Criterion amendments retire prior
+Evidence and Class and reset the existing criterion before changing its Check.
+Unconfirmed writes refuse before commit and produce no completed amendment.
+
+Repeated entries count the exact upheld subject kind, identity and reason across
+the current inner loop. The event can appear inside `scope_lane.event`; neither
+variant establishes lane delivery, scope convergence or tracker completion.
 
 ### Job Events (1)
 

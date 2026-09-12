@@ -157,3 +157,116 @@ async def test_description_surface_does_not_grant_criterion_amendment(action):
                     ),
                 )
     assert not any(name == "save_issue" for name, _ in board.calls)
+
+
+async def test_explicit_issue_description_authority_preserves_generic_description_use():
+    board, tracker = board_and_tracker()
+    board.server.issues[KEY].labels.clear()
+    async with lease(tracker, SurfaceKind.ISSUE_DESCRIPTION):
+        await tracker.edit_description(
+            target=KEY,
+            expected=BODY,
+            replacement="A generic issue description.",
+            authorization=DescriptionWriteAuthority(
+                holder=HOLDER,
+                surface=WritableSurface(
+                    kind=SurfaceKind.ISSUE_DESCRIPTION,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY),
+                ),
+            ),
+        )
+    assert board.server.issues[KEY].description == "A generic issue description."
+    assert board.server.issues[KEY].status == "Done"
+
+
+async def test_description_authority_target_mismatch_refuses_before_any_backend_call():
+    board, tracker = board_and_tracker()
+    before = list(board.calls)
+    with pytest.raises(ValueError, match="target"):
+        await tracker.edit_description(
+            target=KEY,
+            expected=BODY,
+            replacement="Different.",
+            authorization=DescriptionWriteAuthority(
+                holder=HOLDER,
+                surface=WritableSurface(
+                    kind=SurfaceKind.ISSUE_DESCRIPTION,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key="another"),
+                ),
+            ),
+        )
+    assert board.calls == before
+
+
+@pytest.mark.parametrize(
+    "holder,kind",
+    [(" ", SurfaceKind.ISSUE_DESCRIPTION), (HOLDER, SurfaceKind.ISSUE_LABEL_SET)],
+)
+def test_description_authority_has_only_two_real_description_surfaces(holder, kind):
+    with pytest.raises(ValueError):
+        DescriptionWriteAuthority(
+            holder=holder,
+            surface=WritableSurface(
+                kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY)
+            ),
+        )
+
+
+@pytest.mark.parametrize("action", ["reset", "description"])
+async def test_known_unsent_native_write_retries_only_the_fresh_authorized_attempt(
+    monkeypatch, action
+):
+    board, tracker = board_and_tracker()
+    expected = await tracker.read_issue(issue_key=KEY)
+    actual = board.call_tool
+    attempts = 0
+
+    async def call(*, name, arguments):
+        nonlocal attempts
+        if name == "save_issue":
+            attempts += 1
+            if attempts == 1:
+                raise McpTransportError("known unsent", server_name="fixture")
+        return await actual(name=name, arguments=arguments)
+
+    async with lease(tracker):
+        monkeypatch.setattr(board, "call_tool", call)
+        if action == "reset":
+            assert (
+                await tracker.reset_criterion_pending(expected=expected, holder=HOLDER)
+            ).state_kind is WorkflowStateKind.UNSTARTED
+        else:
+            await tracker.edit_description(
+                target=KEY,
+                expected=BODY,
+                replacement=BODY.replace("old predicate", "new predicate"),
+                authorization=DescriptionWriteAuthority(
+                    holder=HOLDER,
+                    surface=WritableSurface(
+                        kind=SurfaceKind.CRITERION_SUB_ISSUE,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY),
+                    ),
+                ),
+            )
+    assert attempts == 2
+    assert sum(name == "save_issue" for name, _ in board.calls) == 1
+
+
+async def test_generic_description_grant_cannot_write_a_native_criterion_body():
+    board, tracker = board_and_tracker()
+    async with lease(tracker, SurfaceKind.ISSUE_DESCRIPTION):
+        with pytest.raises(ValueError, match="current native surface"):
+            await tracker.edit_description(
+                target=KEY,
+                expected=BODY,
+                replacement=BODY + "unauthorized",
+                authorization=DescriptionWriteAuthority(
+                    holder=HOLDER,
+                    surface=WritableSurface(
+                        kind=SurfaceKind.ISSUE_DESCRIPTION,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=KEY),
+                    ),
+                ),
+            )
+    assert board.server.issues[KEY].description == BODY
+    assert not any(name == "save_issue" for name, _ in board.calls)

@@ -120,7 +120,9 @@ class Executor:
                     "check": "the amended observable Check",
                     "do": "the amended implementation guidance",
                 },
-                "explanation": "The independently reproduced ground requires this text change.",
+                "explanation": (
+                    "The independently reproduced ground requires this text change."
+                ),
             }
         elif title == "CommitMessageOutput":
             payload = {"title": "fix: implementation", "body": "Reviewed change."}
@@ -164,7 +166,14 @@ class Workspaces(GitWorktreeProvider):
 
 
 async def build(
-    repository, executor, *, prompt_set="claude-opus", port=None, gate=None
+    repository,
+    executor,
+    *,
+    prompt_set="claude-opus",
+    port=None,
+    gate=None,
+    repo_url=REPO_URL,
+    frozen_spec=None,
 ):
     repo, base = repository
     git_service = SubprocessGitService(remote="origin")
@@ -186,7 +195,7 @@ async def build(
     )
     port = port or tracker()
     criteria = TrackerCriteria(tracker=port)
-    spec = await criteria.read_spec(issue_key=SUBJECT)
+    spec = frozen_spec or await criteria.read_spec(issue_key=SUBJECT)
     owner = NativeAmendments(
         tracker=port,
         operation=OperationConfig(
@@ -215,7 +224,7 @@ async def build(
         spec=spec,
         criteria=await criteria.read_current(spec=spec),
         base_ref=base,
-        repo_url=REPO_URL,
+        repo_url=repo_url,
         holder="actual-parent-job",
         visibility=RepoVisibility.PUBLIC,
         stage=PromptKey.IMPLEMENTATION,

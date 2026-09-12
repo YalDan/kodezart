@@ -1563,6 +1563,7 @@ class FakeQualityGate:
         tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -3841,6 +3842,11 @@ class FakeTrackerPort:
             surface = authorization.surface
             if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
                 require_criterion_source(expected=current, current=current)
+            elif "criterion" in current.issue_labels:
+                raise ValueError(
+                    "description authority must match the target's "
+                    "current native surface"
+                )
             grant = self.leases.get(surface)
             owner = (
                 grant.holder

@@ -173,12 +173,12 @@ class AmendmentWriteBack:
         max_verify_rounds: int,
         gate: OutboundContentGate,
         lease_seconds: float,
-        repo_url: str,
+        repo_path: str,
     ) -> None:
         self._tracker, self._runner, self._workspace = tracker, runner, workspace
         self._git, self._prompts, self._skills = git, prompts, skills
         self._operation, self._gate = operation, gate
-        self._lease_seconds, self._repo_url = lease_seconds, repo_url
+        self._lease_seconds, self._repo_path = lease_seconds, repo_path
         self._log = get_logger(__name__)
         self._verifier = WriteBackVerifier(
             tracker=tracker,
@@ -188,7 +188,7 @@ class AmendmentWriteBack:
                 git=git,
                 prompts=prompts,
                 skills=skills,
-                repo_url=repo_url,
+                repo_path=repo_path,
                 session_type=SessionType.TICKET_FIRE,
             ),
             max_rounds=max_verify_rounds,
@@ -221,7 +221,7 @@ class AmendmentWriteBack:
             }
         )
         async with owned_workspace(
-            self._workspace, repo_url=self._repo_url, ref=judgment.base_sha
+            self._workspace, repo_path=self._repo_path, ref=judgment.base_sha
         ) as workspace:
 
             async def require_base() -> None:
@@ -289,7 +289,8 @@ class AmendmentWriteBack:
             != result.artifact
         ):
             raise NativeWriteRefusalError(
-                "The canonical amendment artifact changed during independent verification"
+                "The canonical amendment artifact changed during "
+                "independent verification"
             )
         await authority.require_current()
         if result.verdict is not AuditVerdict.HOLDS:
@@ -354,7 +355,8 @@ class AmendmentWriteBack:
         ) as lease:
             await authority.require_current()
             explanation = judgment.finding.refutation or (
-                f"The independently judged departure remains {reason.value if reason else 'pending'}"
+                "The independently judged departure remains "
+                f"{reason.value if reason else 'pending'}"
             )
             existing_archive = comment_under_marker(
                 target=surface.ref.key,
@@ -377,7 +379,8 @@ class AmendmentWriteBack:
                     )
                 ):
                     raise NativeWriteRefusalError(
-                        "The existing amendment record has different historical evidence"
+                        "The existing amendment record has different "
+                        "historical evidence"
                     )
                 explanation = stored.explanation
 
@@ -636,7 +639,9 @@ class AmendmentWriteBack:
                 escalation_key=occurrence,
                 raised_by=holder,
                 question=question,
-                interim_reading="UPHELD: retain the existing criterion or pinned ruling.",
+                interim_reading=(
+                    "UPHELD: retain the existing criterion or pinned ruling."
+                ),
                 interim_basis=judgment.model_dump_json(),
                 raised_at_sha=judgment.base_sha,
             )

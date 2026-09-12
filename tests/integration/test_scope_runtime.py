@@ -15,6 +15,7 @@ from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.job_queue_settings import JobQueueSettings
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.domain.errors import (
     FireSpecEntryError,
     ScopePlanRefusalError,
@@ -172,6 +173,7 @@ def runtime(
         engine = build_workflow_engine(
             operation=native_operation(),
             config=AppConfig(
+                write_back=WriteBackSettings(max_verify_rounds=2),
                 ticket_review_mode=TicketReviewMode.REVIEWED,
                 max_iterations=1,
                 retry_max_attempts=1,

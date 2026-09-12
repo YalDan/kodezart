@@ -7,7 +7,7 @@ import pytest
 from kodezart.domain.amendment import AmendmentWriteBackRefusalError
 from kodezart.domain.fire_spec import criterion_field_bodies
 from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent
-from kodezart.types.domain.amendment import UpheldReason
+from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.amendment_write import AmendmentRecord
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.chains.test_native_fire import DIRECT_DONE, DIRECT_OWED, tracker
@@ -21,6 +21,26 @@ from tests.services.test_native_amendments import (
 )
 
 __all__ = ["repository"]
+
+
+async def test_path_only_native_amendment_uses_real_separate_base_worktrees(repository):
+    executor = Executor(reproduced=True)
+    service, guard, workspace, _ = await build(repository, executor, repo_url=None)
+    try:
+        events = await drive(service, guard, repository)
+        assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+        writer_path = workspace.acquired[0][0]
+        assert len(workspace.acquired) == 5
+        assert len({path for path, _ in workspace.acquired}) == 5
+        for path, arguments in workspace.acquired[1:]:
+            assert path != writer_path
+            assert arguments["repo_path"] == writer_path
+            assert arguments["repo_url"] is None
+            assert arguments["ref"] == repository[1]
+            assert arguments["create_branch"] is False
+        assert {path for path, _ in workspace.acquired} == set(workspace.released)
+    finally:
+        await cleanup(workspace)
 
 
 async def test_done_criterion_archives_exact_evidence_then_resets_before_new_check(
@@ -164,8 +184,8 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
     async def observe(title, payload, kwargs):
         if title == "AmendmentJudgment":
             payload["finding"] = {
-                "verdict": "unverifiable",
-                "smallest_repair": "environment_supply",
+                "verdict": "feasible",
+                "smallest_repair": "none",
                 "cost_claim": {
                     "assertion": "The demonstration costs too much.",
                     "measurement": None
@@ -211,5 +231,130 @@ async def test_cost_departure_is_recorded_not_actioned_and_uneconomic_is_escalat
             await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
             == ""
         )
+    finally:
+        await cleanup(workspace)
+
+
+@pytest.mark.parametrize("ground", list(AmendmentGround))
+async def test_ruling_amendment_preserves_native_occurrence_question_and_prior_bytes(
+    repository, ground
+):
+    from kodezart.domain.rulings import render_ruling
+    from kodezart.services.ruling_records import RulingRecordReader
+    from kodezart.types.domain.agent import Ruling
+    from kodezart.types.domain.operation import OperationConfig
+    from tests.chains.test_native_fire import SUBJECT
+    from tests.domain.test_rulings import ruling_data
+
+    port = tracker()
+    ruling = Ruling.model_validate(
+        ruling_data(issue_ref=SUBJECT, authored_by="principal")
+    )
+    body = render_ruling(
+        ruling=ruling,
+        lane_key="historical:café/lane",
+        marker_prefixes={"ruling": "fixture-pinned"},
+    )
+    original = await port.post_comment(issue_key=SUBJECT, body=body)
+
+    async def answers(title, payload, kwargs):
+        if title == "AmendmentTextOutput":
+            payload["replacement"] = {
+                "kind": "ruling",
+                "subject": {"kind": "ruling", "id": ruling.ruling_id},
+                "resolution": (
+                    "The corrected answer follows the reproduced base evidence."
+                ),
+                "rejected_alternative": "The independently refuted prior reading.",
+                "repo_evidence": ["policy.py"],
+            }
+
+    executor = Executor(
+        reproduced=True,
+        ground=ground,
+        subject={"kind": "ruling", "id": ruling.ruling_id},
+        mutate=answers,
+    )
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    try:
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        amended = report.verdicts[0]
+        assert amended.verdict == "amended"
+        assert amended.prior.content == body
+        assert amended.prior.native_ref == original.comment_key
+        records = await RulingRecordReader(
+            tracker=port,
+            operation=OperationConfig(
+                operation_name="fixture",
+                workspace="fixture",
+                marker_prefixes={"ruling": "fixture-pinned"},
+            ),
+        ).read_issue(issue_key=SUBJECT)
+        assert len(records) == 1
+        observed_comment, observed_ruling = records[0]
+        assert observed_comment.comment_key == original.comment_key
+        assert observed_comment.author_key == original.author_key
+        assert observed_comment.created_at == original.created_at
+        assert observed_comment.body.partition("\n")[0] == body.partition("\n")[0]
+        assert observed_ruling.ruling_id == ruling.ruling_id
+        assert observed_ruling.question == ruling.question
+        assert observed_ruling.ruling_class is ruling.ruling_class
+        assert observed_ruling.resolution != ruling.resolution
+        assert observed_ruling.authored_by.value == "machine"
+        assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+    finally:
+        await cleanup(workspace)
+
+
+@pytest.mark.parametrize("boundary", ["author", "verification"])
+@pytest.mark.parametrize("change", ["check", "outage"])
+async def test_amendment_refuses_external_authority_drift_across_fresh_sessions(
+    repository, monkeypatch, boundary, change
+):
+    from kodezart.domain.amendment import NativeWriteRefusalError
+    from kodezart.domain.errors import FireSpecEntryError
+    from tests.chains.test_native_fire import NESTED_OWED
+
+    port = tracker()
+    verifies = 0
+
+    async def answers(title, payload, kwargs):
+        nonlocal verifies
+        if title == "WriteBackFinding":
+            verifies += 1
+        if (boundary == "author" and title == "AmendmentTextOutput") or (
+            boundary == "verification" and title == "WriteBackFinding" and verifies == 2
+        ):
+            if change == "check":
+                current = port.issues[NESTED_OWED]
+                port.issues[NESTED_OWED] = current.model_copy(
+                    update={
+                        "body": current.body.replace(
+                            "the check", "a concurrent different check"
+                        )
+                    }
+                )
+            else:
+
+                async def unavailable(**kwargs):
+                    raise ConnectionError("tracker unavailable after awaited judgment")
+
+                monkeypatch.setattr(port, "scope_issues", unavailable)
+
+    executor = Executor(reproduced=True, mutate=answers)
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    try:
+        with pytest.raises((NativeWriteRefusalError, FireSpecEntryError)):
+            await drive(service, guard, repository)
+        assert not await git(
+            repository[0], "ls-remote", "origin", "refs/heads/native-test"
+        )
+        assert (
+            await git(repository[0], "log", "native-test", "--format=%s", "-1")
+            == "newer writer starting point"
+        )
+        if boundary == "author":
+            assert "the amended observable Check" not in port.issues[DIRECT_OWED].body
     finally:
         await cleanup(workspace)

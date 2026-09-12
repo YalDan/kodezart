@@ -21,6 +21,7 @@ from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.chains.remediation import RemediationChain
 from kodezart.core.protocols import QualityGate
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.domain.errors import (
     FireSpecEntryError,
     InvalidFireCriterionError,
@@ -201,6 +202,9 @@ def engine(
                     prompts=prompts,
                     skills=SUPPRESS_ALL_SKILLS,
                     repositories=(),
+                    gate=gate,
+                    max_verify_rounds=2,
+                    lease_seconds=900,
                 )
                 if criteria is not None
                 else None
@@ -431,6 +435,7 @@ def test_the_addressed_issue_is_the_subject_the_run_carries() -> None:
         permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         cache_key="native-fire",
+        surface_holder="native-fire",
     )
     assert state["issue_key"] == SUBJECT
 
@@ -557,7 +562,12 @@ def native_operation():
     return OperationConfig(
         operation_name="native-fixture",
         workspace="fixture",
-        marker_prefixes={"ruling": "native-fixture-ruling"},
+        marker_prefixes={
+            "ruling": "native-fixture-ruling",
+            "amendment": "native-amendment",
+            "escalation": "native-escalation",
+        },
+        issue_labels={"decision": "decision"},
     )
 
 
@@ -888,6 +898,7 @@ async def test_native_fresh_engine_resume_reads_current_checks(barrier, change):
         permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         cache_key="native-fire",
+        surface_holder="native-fire",
     )
     async for _ in fire.native_graph.astream(
         initial, config=config, interrupt_before=[barrier]
@@ -963,6 +974,7 @@ async def test_native_inner_checkpoint_resume_requires_current_checks(barrier, c
         repo_path="/tmp/fire",
         repo_url=None,
         cache_key="inner-resume",
+        surface_holder="inner-resume",
         base_spec=trunk_base("main"),
         permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
@@ -1048,6 +1060,7 @@ async def test_production_constructor_wires_native_source_to_shared_consumers(
         operation=native_operation(),
         scope_tracker=port,
         config=AppConfig(
+            write_back=WriteBackSettings(max_verify_rounds=2),
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=1,
             retry_max_attempts=1,

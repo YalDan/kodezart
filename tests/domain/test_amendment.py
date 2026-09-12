@@ -14,12 +14,17 @@ from kodezart.types.domain.amendment import (
     AmendmentSubject,
     CriterionSubject,
     NativeWriterOutput,
+    RecordedRefusal,
     UpheldAmendment,
     UpheldReason,
 )
+from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.ruling_id import RulingId
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_runtime import ScopeLaneEvent
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.write_back import WriteBackFinding, WriteBackResult
 
 
 def record(
@@ -55,7 +60,30 @@ def record(
         departure="A proposed change",
         claimed_capability=None,
     )
-    return UpheldAmendment(claim=claim, reason=reason, judgment=judgment)
+    return UpheldAmendment(
+        claim=claim,
+        reason=reason,
+        judgment=judgment,
+        publication=RecordedRefusal(
+            record=WriteBackResult(
+                verdict="holds",
+                artifact=TrackerArtifact(
+                    surface=WritableSurface(
+                        kind=SurfaceKind.MARKER_COMMENT,
+                        ref=ScopeRef(kind=ScopeKind.ISSUE, key=identity),
+                        marker="[amendment:fixture]",
+                    ),
+                    native_ref="actual-record",
+                    content="Fixture of an independently verified record.",
+                ),
+                rounds=(
+                    WriteBackFinding(
+                        verdict="holds", evidence="Fixture verified.", cited_refs=()
+                    ),
+                ),
+            )
+        ),
+    )
 
 
 def test_same_ruling_newtype_object_reexported_and_native_ids_remain_opaque():
@@ -72,9 +100,10 @@ def test_pure_counts_separate_subject_kind_identity_and_reason():
     ruling = record(kind="ruling")
     other_reason = record(reason="cost_measured_affordable")
     reports = [
-        AmendmentReport(upheld=items)
+        AmendmentReport(verdicts=items)
         for items in [
-            (a, ruling, other_reason),
+            (a, ruling),
+            (other_reason,),
             (a, ruling),
             (a,),
         ]
@@ -125,12 +154,12 @@ def test_actual_scope_egress_roundtrips_required_nulls_and_rejects_bad_native_re
     event = ScopeLaneEvent(
         lane_key="lane",
         event=NativeAmendmentEvent(
-            report=AmendmentReport(upheld=(record(),)),
+            report=AmendmentReport(verdicts=(record(),)),
         ),
     )
     payload = _queued_event_payload(event)
     assert ScopeLaneEvent.model_validate(payload) == event
-    original = payload["event"]["report"]["upheld"][0]
+    original = payload["event"]["report"]["verdicts"][0]
     assert "claimedCapability" in original["claim"]
     assert original["claim"]["claimedCapability"] is None
     original["reason"] = "guessed_reason"
@@ -210,3 +239,31 @@ def test_cost_never_authorizes_amendment_and_requires_recorded_base_measurement(
         }
     )
     assert upheld_reason(value.claim, judgment, environment={}).value == expected
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_publication",
+        "unverified",
+        "wrong_issue",
+        "duplicate",
+        "uneconomic_without_escalation",
+    ],
+)
+def test_completed_reports_refuse_missing_or_unrelated_canonical_evidence(mutation):
+    value = record().model_dump()
+    if mutation == "missing_publication":
+        del value["publication"]
+    elif mutation == "unverified":
+        value["publication"]["record"]["verdict"] = "unverifiable"
+    elif mutation == "wrong_issue":
+        value["publication"]["record"]["artifact"]["surface"]["ref"]["key"] = (
+            "another-issue"
+        )
+    elif mutation == "uneconomic_without_escalation":
+        value["reason"] = "cost_measured_uneconomic"
+    with pytest.raises(ValidationError):
+        AmendmentReport.model_validate(
+            {"verdicts": [value, value] if mutation == "duplicate" else [value]}
+        )

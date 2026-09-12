@@ -44,7 +44,9 @@ class NativeAmendmentGraph:
 
     def __init__(self, *, actions: AmendmentActions) -> None:
         self._actions = actions
-        graph = StateGraph(AmendmentState)
+        graph: StateGraph[AmendmentState, None, AmendmentState, AmendmentState] = (
+            StateGraph(AmendmentState)
+        )
         graph.add_node("judge", self._judge)
         graph.add_node("canonical_write_back", self._write_back)
         graph.add_node("complete", self._complete)

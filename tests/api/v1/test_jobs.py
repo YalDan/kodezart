@@ -339,6 +339,7 @@ class GatedQualityGate:
         tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
@@ -359,6 +360,7 @@ class GatedQualityGate:
             tracker_spec=tracker_spec,
             cache_key=cache_key,
             run_identity=run_identity,
+            surface_holder=surface_holder,
             repo_visibility=repo_visibility,
         ):
             yield event

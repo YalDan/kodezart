@@ -132,6 +132,7 @@ class RalphWorkflowEngine:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             cache_key=cache_key,
+            surface_holder=cache_key if scope is not None else None,
             run_identity=run_identity,
         )
         terminal: WorkflowCompleteEvent | None = None

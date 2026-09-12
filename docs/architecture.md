@@ -82,7 +82,7 @@ does not exist.
 | TrackerContextReader | LinearMcpTracker | Referenced assets and document bodies for fire context |
 | ArtifactPersister | GitArtifactPersister     | Writes and cleans named files under `.kodezart/`     |
 | AgentRunner       | AgentService             | Orchestrates workspace lifecycle around executor     |
-| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, judges departure claims independently, and guards the harness commit boundary; reproduced grounds still require confirmed amendment writes |
+| NativeWriteGuard | _NativeWriterGuard | Reads current native Checks and ruling records, routes claims through independent judgment and canonical verified amendment writes, and guards harness commit and publication |
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
