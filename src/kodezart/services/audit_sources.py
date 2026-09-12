@@ -9,9 +9,9 @@ from kodezart.core.protocols import (
     RepoCache,
     TrackerCriteriaReader,
 )
-from kodezart.domain.criterion_evidence import parse_criterion_evidence
-from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.lane_records import LaneRecordReader
@@ -73,14 +73,16 @@ class AuditSourceReader:
             criterion.state_kind is not WorkflowStateKind.STARTED
             or criterion.state_name != self._review_state
         ):
-            raise ValueError("a completed or configured review claim is required")
+            raise AuditClaimReadError(
+                "a completed or configured review claim is required"
+            )
         return criterion
 
     async def read(self, request: AuditClaimRequest) -> AuditSourceSnapshot:
         """Resolve and retain the actual source pair, then check its coherence."""
         try:
             criterion = await self._criterion(request)
-            evidence = parse_criterion_evidence(criterion.body)
+            evidence = parse_audit_evidence(criterion.body)
             check = criterion_check(
                 criterion=criterion, issue_key=request.lane_issue_key
             )
@@ -101,19 +103,23 @@ class AuditSourceReader:
                     repository, self._remote, record.branch
                 )
                 if not head:
-                    raise ValueError("the recorded branch has no live remote head")
+                    raise AuditClaimReadError(
+                        "the recorded branch has no live remote head"
+                    )
                 for sha in (evidence.graded_sha, head):
                     if (
                         await self._source.resolve_commit(cwd=repository, ref=sha)
                         != sha
                     ):
-                        raise ValueError(
+                        raise AuditClaimReadError(
                             "a revision did not resolve to its exact commit"
                         )
                 if not await self._git.is_ancestor(
                     repository, evidence.graded_sha, head
                 ):
-                    raise ValueError("the graded commit is not on the recorded branch")
+                    raise AuditClaimReadError(
+                        "the graded commit is not on the recorded branch"
+                    )
                 return head
 
             head = await settle(resolve())
@@ -131,7 +137,7 @@ class AuditSourceReader:
             return snapshot
         except AuditEvidenceReadError:
             raise
-        except Exception as exc:
+        except AUDIT_READ_FAILURES as exc:
             raise AuditEvidenceReadError(
                 criterion_key=request.criterion_key, reason=str(exc)
             ) from exc
@@ -141,14 +147,14 @@ class AuditSourceReader:
         request = snapshot.request
         try:
             if await self._criterion(request) != snapshot.criterion:
-                raise ValueError("the criterion changed during the audit")
+                raise AuditClaimReadError("the criterion changed during the audit")
             latest = await self._records.read(
                 issue_key=request.lane_issue_key,
                 lane_key=request.lane_key,
                 record_ref=snapshot.comment.comment_key,
             )
             if latest != (snapshot.comment, snapshot.record):
-                raise ValueError("the lane record changed during the audit")
+                raise AuditClaimReadError("the lane record changed during the audit")
             if (
                 await read_remote_head(
                     git=self._git,
@@ -158,10 +164,10 @@ class AuditSourceReader:
                 )
                 != snapshot.head_sha
             ):
-                raise ValueError("the remote head changed during the audit")
+                raise AuditClaimReadError("the remote head changed during the audit")
         except AuditEvidenceReadError:
             raise
-        except Exception as exc:
+        except AUDIT_READ_FAILURES as exc:
             raise AuditEvidenceReadError(
                 criterion_key=request.criterion_key, reason=str(exc)
             ) from exc

@@ -12,6 +12,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.errors import AuditClaimReadError, CriterionResolutionError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import (
@@ -209,7 +210,7 @@ class AuditMandateHunt:
                 covered.append(
                     await read_tracker_artifact(tracker=self._tracker, surface=surface)
                 )
-            except Exception as exc:
+            except AUDIT_READ_FAILURES as exc:
                 # A failed addressed read is coverage failure, never absence.
                 # Cancellation is BaseException and always propagates.
                 unreadable.append(

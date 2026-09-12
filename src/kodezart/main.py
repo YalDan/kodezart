@@ -103,6 +103,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             tracker=tracker,
             github_api=github_api,
             prompts=prompts,
+            audit_forge=github_api,
         )
         built_recorder = await build_run_recorder(
             knowledge=config.knowledge,
@@ -219,6 +220,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             skills=skills,
             recorder=built_recorder.recorder,
             log=log,
+            audit_forge=github_api,
+            audit_ci=github_api,
         )
         app.state.pass_scheduler = dispatch.scheduler
         if dispatch.lifecycle is not None:

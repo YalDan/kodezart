@@ -30,6 +30,11 @@ organize_mandates = []
 # Each row names scope = { kind = "issue", key = "native-parent-key" }
 # and repo_url matching one declared [[repos]] URL; no cross-product is inferred.
 organize_scopes = []
+# Independent native Audit roster. Each row declares scope, repo_url and
+# report_issue_key (the actual tracker issue receiving the verified summary).
+# Requires AppConfig.audit.timeout_seconds, write_back.max_verify_rounds,
+# and configured audit/escalation marker prefixes. Absence schedules no audit.
+audit_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
