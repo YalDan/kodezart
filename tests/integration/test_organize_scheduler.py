@@ -46,6 +46,7 @@ def dependencies(tmp_path):
     config = _config(
         tmp_path,
         organize={"max_admission_rounds": 2, "max_convergence_rounds": 2},
+        write_back={"max_verify_rounds": 2},
         fire_prep_pass_gate_signals=[],
         grooming_pass_gate_signals=[],
         ticket_review_mode="reviewed",

@@ -36,6 +36,10 @@ def build_organize_owner(
         raise OperationMemberAbsentError(
             missing="organize", stops="configured Organize owner"
         )
+    if config.write_back is None:
+        raise OperationMemberAbsentError(
+            missing="write_back", stops="configured Organize write verification"
+        )
     admission = OrganizeAdmission(
         tracker=tracker,
         runner=runner,
@@ -68,6 +72,7 @@ def build_organize_owner(
         prompts=prompts,
         operation=operation,
         policy=config.organize,
+        write_back_max_rounds=config.write_back.max_verify_rounds,
         lease_seconds=config.tracker.surface_lease_seconds,
     )
 
@@ -89,6 +94,7 @@ def verify_organize_configuration(
         (bool(operation.organize_scopes), "organize_scopes"),
         (bool(operation.organize_mandates), "organize_mandates"),
         (config.organize is not None, "organize"),
+        (config.write_back is not None, "write_back"),
         (tracker is not None, "tracker"),
     ):
         if not present:
