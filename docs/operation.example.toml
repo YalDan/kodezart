@@ -294,3 +294,11 @@ target_date = 2026-12-31
 
 [[initiatives]]
 id = "example-initiative-without-a-target-date"
+
+
+# Semantic issue classification keys map to labels this operation owns.
+# Native criterion membership uses current direct children with this label.
+[issue_labels]
+criterion = "Verification requirement"
+decision = "Unresolved decision"
+tracker = "Run record"

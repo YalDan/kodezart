@@ -565,7 +565,22 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
 
 @runtime_checkable
-class TrackerPort(Protocol):
+class TrackerCriteriaReader(Protocol):
+    """Read current native criterion families with their full source."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        """Read exactly the currently labelled direct criterion sub-issues.
+
+        Their own issue keys carry identity; full bodies and workflow states
+        carry specification and evidence. A successful empty read returns
+        an empty sequence. A failed or incomplete lookup raises; it never
+        becomes an empty answer. No parent-body syntax supplies membership.
+        """
+        ...
+
+
+@runtime_checkable
+class TrackerPort(TrackerCriteriaReader, Protocol):
     """The whole capability surface the passes and the runner need.
 
     Vendor-neutral by construction: every parameter and every return type
@@ -615,6 +630,30 @@ class TrackerPort(Protocol):
         other failure RAISES: a transport that could not answer at all has
         said nothing about scope, and reporting it as a refusal would take
         a pass off the air for the length of an outage.
+        """
+        ...
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        """Read reported labels and full dependency relations; omission refuses."""
+        ...
+
+    def require_scope_plan_reads(self) -> None:
+        """Require semantic criterion and decision reads before scope planning.
+
+        Missing configuration or capability raises rather than projecting an
+        empty decision set. This declaration performs no tracker write.
+        """
+        ...
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        """Require semantic criterion, tracker and decision classification.
+
+        Additional semantic keys name other required issue-label mappings.
+        Missing configuration refuses before a record issue can be mistaken
+        for a deliverable or an unmapped phase can appear open. This declaration
+        performs no tracker write.
         """
         ...
 

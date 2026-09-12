@@ -408,3 +408,12 @@ class StaleCommentWriteError(Exception):
             f"comment {expected_comment_key!r} on {target!r} "
             f"cannot be amended: {reason}"
         )
+
+
+class CriterionReadError(Exception):
+    """A criterion membership read could not establish a complete answer."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")

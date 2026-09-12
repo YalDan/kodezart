@@ -35,6 +35,7 @@ from kodezart.core.protocols import (
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.errors import (
+    CriterionReadError,
     DuplicateWorkRefError,
     MergeConflictError,
     RateLimitError,
@@ -2434,11 +2435,13 @@ class FakeLinearMcpServer:
     ) -> Mapping[str, object]:
         label = arguments.get("label")
         team = arguments.get("team")
+        parent = arguments.get("parentId")
         selected = [
             issue
             for issue in self.issues.values()
             if (label is None or label in issue.labels)
             and (team is None or issue.team == team)
+            and (parent is None or issue.parent_id == parent)
         ]
         limit = int(str(arguments.get("limit", len(selected))))
         return {
@@ -3068,6 +3071,45 @@ class FakeTrackerPort:
             for signal in signals
             if (diagnosis := self.scan_refusals.get(signal)) is not None
         }
+
+    async def read_planning_issue(self, *, issue_key: str) -> TrackerIssue:
+        return await self.read_issue(issue_key=issue_key)
+
+    def require_scope_plan_reads(self) -> None:
+        """Supported: fixture issues retain their semantic label keys."""
+
+    def require_issue_classification_reads(
+        self, *, additional_keys: frozenset[str] = frozenset()
+    ) -> None:
+        """Supported: criterion and record classifications are explicit facts."""
+
+    async def read_criteria(self, *, issue_key: str) -> Sequence[TrackerIssue]:
+        _, criteria = await self._read_criterion_family(issue_key=issue_key)
+        return criteria
+
+    async def _read_criterion_family(
+        self, *, issue_key: str, subject: TrackerIssue | None = None
+    ) -> tuple[TrackerIssue, tuple[TrackerIssue, ...]]:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        parent = (
+            subject
+            if subject is not None
+            else await self.read_issue(issue_key=issue_key)
+        )
+        return parent, tuple(
+            sorted(
+                (
+                    issue
+                    for issue in self.issues.values()
+                    if issue.parent_key == parent.issue_key
+                    and "criterion" in issue.issue_labels
+                ),
+                key=lambda issue: issue.issue_key,
+            )
+        )
 
     async def read_issue(self, *, issue_key: str) -> TrackerIssue:
         await asyncio.sleep(0)

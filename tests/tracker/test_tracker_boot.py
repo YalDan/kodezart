@@ -160,7 +160,12 @@ class TestConfiguredMappings:
         ref at all.  A tracker-side record would, and that is
         ``TestRecordDestinationsResolveAtBoot`` below.
         """
-        config = operation_config()
+        config = OperationConfig.model_validate(
+            {
+                **operation_config().model_dump(),
+                "issue_labels": {"criterion": "Configured Check"},
+            }
+        )
         refs = (*configured_mappings(config), *owned_mappings(config))
 
         assert {ref.kind for ref in refs} == set(MappingKind)
@@ -573,6 +578,7 @@ class TestQueueVocabularyPerDeclaredTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            issue_labels={},
             marker_prefixes=MARKER_PREFIXES,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
@@ -698,6 +704,7 @@ class TestWorkflowStatesResolvePerTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            issue_labels={},
             marker_prefixes=MARKER_PREFIXES,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
