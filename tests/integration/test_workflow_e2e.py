@@ -652,10 +652,10 @@ async def test_workflow_e2e_divergent_base_branch(
 # The two tests below cover the failed criteria from the refactor that
 # extracted ``_REMOTE = "origin"`` to ``AppConfig.git_remote``:
 #
-#   1. Default-parity: WITHOUT ``KODEZART_GIT_REMOTE`` set, every git
+#   1. Default-parity: WITHOUT ``KODEZART_GIT__REMOTE`` set, every git
 #      subprocess and remote-ref probe addresses ``origin/*`` (byte-identical
 #      to the pre-refactor literal).
-#   2. Override path: WITH ``KODEZART_GIT_REMOTE=upstream`` (or, equivalently,
+#   2. Override path: WITH ``KODEZART_GIT__REMOTE=upstream`` (or, equivalently,
 #      ``remote="upstream"`` threaded through constructors), every git
 #      subprocess addresses ``upstream/*`` and the three rewritten error
 #      messages contain ``upstream`` rather than ``origin``.
@@ -1205,7 +1205,7 @@ async def test_ralph_workflow_base_branch_not_found_error_references_configured_
 def test_app_config_threads_kodezart_git_remote_env_var(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``KODEZART_GIT_REMOTE`` env var lands on ``AppConfig.git_remote``.
+    """``KODEZART_GIT__REMOTE`` env var lands on ``AppConfig.git_remote``.
 
     Closes the env-var → config → constructor-kwarg loop end-to-end at the
     config layer.  Without the env var, the default is ``"origin"`` (byte-
@@ -1214,13 +1214,13 @@ def test_app_config_threads_kodezart_git_remote_env_var(
     ``git_remote=`` kwarg to the four touched classes by the lifespan.
     """
     # Drop any inherited override so the default path is honestly tested.
-    monkeypatch.delenv("KODEZART_GIT_REMOTE", raising=False)
+    monkeypatch.delenv("KODEZART_GIT__REMOTE", raising=False)
     default_config = AppConfig.from_env()
-    assert default_config.git_remote == "origin"
+    assert default_config.git.remote == "origin"
 
-    monkeypatch.setenv("KODEZART_GIT_REMOTE", "upstream")
+    monkeypatch.setenv("KODEZART_GIT__REMOTE", "upstream")
     override_config = AppConfig.from_env()
-    assert override_config.git_remote == "upstream"
+    assert override_config.git.remote == "upstream"
 
 
 # ---------------------------------------------------------------------------
