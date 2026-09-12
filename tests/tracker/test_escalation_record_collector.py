@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.comment_markers import compose_comment_marker
 from kodezart.domain.errors import EscalationReadError, RunShapeReadError
 from kodezart.domain.run_shape import escalation_ageing
@@ -313,7 +313,7 @@ async def test_transport_error_never_becomes_missing_or_resolved(tracker, monkey
     monkeypatch.setattr(
         tracker,
         "list_comments",
-        AsyncMock(side_effect=McpTransportError("offline", server_name="fixture")),
+        AsyncMock(side_effect=TrackerUnavailableError("offline")),
     )
     with pytest.raises(EscalationReadError, match="read failed"):
         await observe_recorded_escalation_ageing(tracker=tracker, **arguments())

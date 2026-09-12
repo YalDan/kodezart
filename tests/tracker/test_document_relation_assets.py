@@ -4,7 +4,11 @@ import asyncio
 
 import pytest
 
-from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpTransportError,
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
 from tests.fakes import FakeMcpDocument, FakeMcpIssue
 from tests.model_members import model_workspace
 
@@ -119,5 +123,5 @@ async def test_document_read_failure_and_cancellation_propagate(
         return await original(name=name, arguments=arguments)
 
     monkeypatch.setattr(workspace.server, "call_tool", failed)
-    with pytest.raises(asyncio.CancelledError if cancel else McpTransportError):
+    with pytest.raises(asyncio.CancelledError if cancel else TrackerUnavailableError):
         await workspace.native.list_issue_assets(issue_key="subject")

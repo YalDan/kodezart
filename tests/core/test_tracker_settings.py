@@ -15,6 +15,7 @@ from kodezart.core.errors import (
     McpCredentialRefusedError,
     McpTransportError,
     TrackerCredentialShapeError,
+    TrackerUnavailableError,
 )
 from kodezart.core.logging import get_logger
 from tests.adapters.test_http_mcp_tool_caller import _FakeStreamableServer
@@ -338,7 +339,7 @@ async def test_boot_constructs_shared_retry_for_native_answered_errors(
     endpoint.fail_get_issue = 10
     before = len(endpoint.wire)
     try:
-        with pytest.raises(McpTransportError):
+        with pytest.raises(TrackerUnavailableError):
             await dialled.tracker.read_issue(issue_key=CLAIMED_ISSUE)
     finally:
         await dialled.caller.close()

@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.types.domain.gating import (
@@ -128,7 +128,7 @@ async def test_failed_decision_write_propagates_and_retry_completes_same_comment
         tracker=tracker, gate=PassThroughGate(), operation=OPERATION
     )
     server._tool_errors["save_issue"] = "temporarily refused"
-    with pytest.raises(McpTransportError):
+    with pytest.raises(TrackerUnavailableError):
         await writer.raise_escalation(
             lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
         )

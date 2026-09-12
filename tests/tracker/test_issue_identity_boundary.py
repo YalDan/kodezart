@@ -7,8 +7,8 @@ import pytest
 
 from kodezart.core.errors import (
     McpCallUnansweredError,
-    McpTransportError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.domain.errors import DuplicateIssueIdentityError
 from kodezart.types.domain.operation import OperationMemberAbsentError
@@ -149,8 +149,9 @@ class LostCreateReplyServer(FakeLinearMcpServer):
 
 async def test_new_adapter_recovers_a_create_whose_reply_was_lost():
     server = LostCreateReplyServer()
-    with pytest.raises(McpCallUnansweredError):
+    with pytest.raises(TrackerUnavailableError) as caught:
         await upsert(linear_over_fake_mcp(server))
+    assert isinstance(caught.value.__cause__, McpCallUnansweredError)
     assert len(server.issues) == 1
     issue_key = next(iter(server.issues))
     resumed = await upsert(linear_over_fake_mcp(server))
@@ -165,7 +166,7 @@ async def test_a_failed_full_read_does_not_allow_creation():
         issues=[FakeMcpIssue(id="UNREADABLE-1")],
         tool_errors={"get_issue": "unavailable"},
     )
-    with pytest.raises(McpTransportError):
+    with pytest.raises(TrackerUnavailableError):
         await upsert(linear_over_fake_mcp(server))
     assert server.tool_calls("save_issue") == []
 

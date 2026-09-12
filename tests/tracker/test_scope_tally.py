@@ -313,7 +313,7 @@ async def test_native_omitted_classification_is_not_a_missing_phase_marker(
 async def test_unreadable_roster_member_cannot_become_a_missing_marker(
     tally, monkeypatch
 ):
-    from kodezart.core.errors import McpTransportError
+    from kodezart.core.errors import TrackerUnavailableError
 
     original = tally.tracker.scope_issues
 
@@ -324,7 +324,7 @@ async def test_unreadable_roster_member_cannot_become_a_missing_marker(
         return rows
 
     monkeypatch.setattr(tally.tracker, "scope_issues", disappearing)
-    with pytest.raises((RunShapeReadError, McpTransportError)):
+    with pytest.raises((RunShapeReadError, TrackerUnavailableError)):
         await tally.observe()
     tally.read_only()
 

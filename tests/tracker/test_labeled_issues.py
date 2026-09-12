@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import McpTransportError, TrackerUnavailableError
 from kodezart.domain.errors import IssueLabelReadError
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from tests.fakes import FakeMcpIssue
@@ -170,7 +170,8 @@ async def test_failed_later_page_does_not_return_the_first_page(monkeypatch):
     monkeypatch.setattr(workspace.server, "call_tool", unavailable)
     with pytest.raises(IssueLabelReadError) as raised:
         await workspace.tracker.read_labeled_issues(classification=CLASSIFICATION)
-    assert isinstance(raised.value.__cause__, McpTransportError)
+    assert isinstance(raised.value.__cause__, TrackerUnavailableError)
+    assert isinstance(raised.value.__cause__.__cause__, McpTransportError)
 
 
 async def test_native_cancellation_is_not_an_empty_set(monkeypatch):

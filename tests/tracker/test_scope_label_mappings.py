@@ -7,9 +7,9 @@ import pytest
 
 from kodezart.adapters.linear_mcp_types import LinearLabelListWire
 from kodezart.core.errors import (
-    McpTransportError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.core.protocols import TrackerPort
 from kodezart.services.tracker_boot import (
@@ -261,7 +261,7 @@ async def test_unavailable_project_creator_is_a_typed_failure_without_fallback()
 ):
     server = fixture_server(scope_refusals={"save_project_label": "Unknown tool"})
     tracker = linear_over_fake_mcp(server)
-    with pytest.raises(McpTransportError, match="save_project_label"):
+    with pytest.raises(TrackerUnavailableError, match="save_project_label"):
         await tracker.ensure_mappings(refs=[APPROVAL])
     assert server.tool_calls("save_project_label") == [
         {"name": SCOPE_LABELS["approved"]}

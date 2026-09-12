@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import LaneRecordReadError, RunShapeReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.domain.run_shape import commits_ahead_of_record
@@ -120,7 +120,7 @@ async def test_duplicate_commit_identities_retain_the_pure_predicate_refusal(tra
 
 async def test_transport_error_and_cancellation_propagate(tracker, monkeypatch):
     for error in [
-        McpTransportError("unreachable", server_name="fixture"),
+        TrackerUnavailableError("unreachable"),
         asyncio.CancelledError(),
     ]:
         monkeypatch.setattr(tracker, "list_comments", AsyncMock(side_effect=error))
