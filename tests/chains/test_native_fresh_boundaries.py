@@ -44,6 +44,7 @@ def prepare(fire, key):
         permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=["Bash"],
         cache_key=key,
+        surface_holder=key,
     )
 
 

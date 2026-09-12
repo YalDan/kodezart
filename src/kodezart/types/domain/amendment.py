@@ -287,6 +287,12 @@ class UpheldAmendment(UpheldJudgment):
             for result in results
         ):
             raise ValueError("refusal publications address canonical comment records")
+        if isinstance(self.subject, CriterionSubject) and any(
+            result.artifact.surface.ref.key != self.subject.id for result in results
+        ):
+            raise ValueError("a criterion refusal remains on its own native issue")
+        if len({result.artifact.surface.ref for result in results}) != 1:
+            raise ValueError("a refusal and escalation retain the same owning issue")
         return self
 
 

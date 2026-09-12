@@ -3,6 +3,7 @@
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.core.config import AppConfig
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.agent import (
@@ -65,6 +66,7 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
     await git(repository[0], "branch", "native-loop", "main")
     router = build_workflow_engine(
         config=AppConfig(
+            write_back=WriteBackSettings(max_verify_rounds=2),
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=3,
             loop_plateau_window=2,
@@ -94,6 +96,7 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
         repo_path=str(repository[0]),
         repo_url=REPO_URL,
         cache_key="independent-upheld-history",
+        surface_holder="independent-upheld-history",
         base_spec=trunk_base(repository[1]),
         permission_mode=PermissionMode.UNATTENDED,
         allowed_tools=ToolPreset.IMPLEMENTATION,
@@ -124,7 +127,9 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
                 final = value
         assert final is not None
         assert any(isinstance(event, NativeAmendmentEvent) for event in events)
-        assert len(executor.calls) == 2
+        assert [
+            call["output_format"]["schema"]["title"] for call in executor.calls
+        ] == ["NativeWriterOutput", "AmendmentJudgment", "WriteBackFinding"]
         assert not await git(
             repository[0], "ls-remote", "origin", "refs/heads/native-loop"
         )

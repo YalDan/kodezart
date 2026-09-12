@@ -138,10 +138,6 @@ class NativeAmendments:
             raise NativeWriteRefusalError(
                 "Native writing requires the actual parent job holder"
             )
-        if repo_url is None:
-            raise NativeWriteRefusalError(
-                "Native amendment verification requires the actual repository"
-            )
         for purpose in ("amendment", "escalation"):
             configured_marker_prefix(self._operation.marker_prefixes, purpose=purpose)
         if "decision" not in self._operation.issue_labels:
@@ -159,19 +155,6 @@ class NativeAmendments:
             criteria=criteria,
             base_ref=base_ref,
             environment=environment,
-            write_back=AmendmentWriteBack(
-                tracker=self._tracker,
-                runner=self._runner,
-                workspace=self._workspace,
-                git=self._git,
-                prompts=self._prompts,
-                skills=self._skills,
-                operation=self._operation,
-                max_verify_rounds=self._max_verify_rounds,
-                gate=self._gate,
-                lease_seconds=self._lease_seconds,
-                repo_url=repo_url,
-            ),
             holder=holder,
             visibility=visibility,
         )
@@ -237,7 +220,6 @@ class _NativeWriterGuard:
         criteria: TrackerCriterionSet,
         base_ref: str,
         environment: dict[CheckPrerequisite, bool] | None,
-        write_back: AmendmentWriteBack,
         holder: str,
         visibility: RepoVisibility,
     ) -> None:
@@ -250,11 +232,7 @@ class _NativeWriterGuard:
         self._criterion_issues: tuple[TrackerIssue, ...] | None = None
         self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
         self._base_sha: str | None = None
-        self._write_back, self._holder, self._visibility = (
-            write_back,
-            holder,
-            visibility,
-        )
+        self._holder, self._visibility = holder, visibility
 
     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
         owner = self._owner
@@ -484,6 +462,20 @@ class _WriterActions:
         start: NativeWriterStart,
     ) -> None:
         self._guard, self._workspace_path, self._start = guard, workspace_path, start
+        owner = guard._owner
+        self._write_back = AmendmentWriteBack(
+            tracker=owner._tracker,
+            runner=owner._runner,
+            workspace=owner._workspace,
+            git=owner._git,
+            prompts=owner._prompts,
+            skills=owner._skills,
+            operation=owner._operation,
+            max_verify_rounds=owner._max_verify_rounds,
+            gate=owner._gate,
+            lease_seconds=owner._lease_seconds,
+            repo_path=workspace_path,
+        )
 
     async def require_current(self) -> None:
         await self._guard.require_current(
@@ -528,7 +520,7 @@ class _WriterActions:
                     "The claimed native ruling is no longer current"
                 )
             source = RulingAmendmentSource(comment=ruling[0], ruling=ruling[1])
-        return await guard._write_back.apply(
+        return await self._write_back.apply(
             claim=claim,
             judgment=judgment,
             reason=upheld_reason(claim, judgment, environment=guard._environment),
@@ -544,7 +536,7 @@ class _WriterActions:
     ) -> TrackerIssue:
         guard = self._guard
         current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
-        expected = previous.model_copy(update={"body": body})
+        expected = TrackerIssue.model_validate({**previous.model_dump(), "body": body})
         require_criterion_source(
             expected=expected, current=current, pending_replay=reset
         )
@@ -593,14 +585,18 @@ class _WriterActions:
     async def observe_decision(self, *, previous: TrackerIssue) -> None:
         guard = self._guard
         current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
-        expected = previous.model_copy(
-            update={"issue_labels": previous.issue_labels | {"decision"}}
+        expected = TrackerIssue.model_validate(
+            {
+                **previous.model_dump(),
+                "issue_labels": previous.issue_labels | {"decision"},
+            }
         )
         if expected.model_dump(exclude={"updated_at"}) != current.model_dump(
             exclude={"updated_at"}
         ):
             raise NativeWriteRefusalError(
-                "The escalation changed more than its authorized decision classification"
+                "The escalation changed more than its authorized "
+                "decision classification"
             )
         guard._criterion_issues = tuple(
             current if i.issue_key == previous.issue_key else i

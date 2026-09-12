@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.core.config import AppConfig
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.domain.amendment import (
     NativeAmendmentRefusalError,
     NativeWriteRefusalError,
@@ -48,10 +49,16 @@ async def make_runtime(repository, executor, *, configured=True, max_iterations=
     operation = OperationConfig(
         operation_name="fixture",
         workspace="fixture",
-        marker_prefixes={"ruling": "fixture-pinned"},
+        marker_prefixes={
+            "ruling": "fixture-pinned",
+            "amendment": "fixture-amendment",
+            "escalation": "fixture-escalation",
+        },
+        issue_labels={"decision": "decision"},
     )
     router = build_workflow_engine(
         config=AppConfig(
+            write_back=WriteBackSettings(max_verify_rounds=2),
             ticket_review_mode=TicketReviewMode.REVIEWED,
             max_iterations=max_iterations,
             retry_max_attempts=1,
@@ -104,6 +111,7 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
                 acceptance_criteria=list(current.criteria),
                 tracker_spec=spec,
                 cache_key="semantic-checkpoint",
+                surface_holder="actual-parent-job",
                 repo_visibility=RepoVisibility.PUBLIC,
             )
         ]
@@ -129,7 +137,7 @@ async def test_native_builder_retains_reports_and_requires_the_actual_owner(
     assert state.values["amendment_reports"] == [event.report for event in reports]
     assert state.values["iteration_records"] == []
     assert state.values["pending_failures"] == []
-    assert len(executor.calls) == 4
+    assert len(executor.calls) == 6
     assert all(call["session_id"] is None for call in executor.calls)
 
 
@@ -148,6 +156,7 @@ def consumer_graph(fire, repository, spec, current):
             acceptance_criteria=list(current.criteria),
             tracker_spec=spec,
             cache_key="semantic-consumer",
+            surface_holder="actual-parent-job",
             repo_visibility=RepoVisibility.PUBLIC,
         )
         return {"iteration": result}
@@ -253,5 +262,44 @@ async def test_upheld_retry_can_later_evaluate_and_complete_normally(repository)
         assert len(actual.trajectory.records) == 1
         assert actual.trajectory.records[0].iteration == 2
         assert actual.commit_sha is not None
+    finally:
+        await cleanup(workspace)
+
+
+async def test_amended_done_criterion_enters_the_actual_fresh_grading_roster(
+    repository,
+):
+    from tests.chains.test_native_fire import DIRECT_DONE
+
+    evaluated = []
+    current_checks = {}
+
+    async def answers(title, payload, kwargs):
+        if title == "AcceptanceCriteriaOutput":
+            evaluated.append(kwargs["prompt"])
+            payload.clear()
+            payload.update(native_evaluation(checks=current_checks))
+
+    executor = Executor(
+        reproduced=True,
+        subject={"kind": "criterion", "id": DIRECT_DONE},
+        mutate=answers,
+    )
+    fire, spec, current, _, workspace = await make_runtime(
+        repository, executor, max_iterations=1
+    )
+    current_checks.update({c.id: c.text for c in current.criteria})
+    current_checks[DIRECT_DONE] = "the amended observable Check"
+    assert DIRECT_DONE not in {c.id for c in current.criteria}
+    try:
+        final = await consumer_graph(fire, repository, spec, current).ainvoke({})
+        iteration = final["iteration"]
+        assert len(evaluated) == 1
+        assert "the amended observable Check" in evaluated[0]
+        results = iteration.evaluation.criteria_results
+        assert {r.criterion_id: r.criterion for r in results} == current_checks
+        assert all(r.passed for r in results)
+        assert iteration.trajectory.records[-1].passed_count == 4
+        assert iteration.commit_sha
     finally:
         await cleanup(workspace)

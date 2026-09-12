@@ -35,6 +35,7 @@ from kodezart.types.domain.agent import (
     TicketReviewOutput,
 )
 from kodezart.types.domain.amendment import AmendmentJudgment, NativeWriterOutput
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
@@ -75,6 +76,7 @@ CALLER_SUPPLIED_SCHEMA = "request.output_schema"
 WIRE_MODELS: dict[str, type[BaseModel]] = {
     "NATIVE_WRITER_SCHEMA": NativeWriterOutput,
     "AMENDMENT_JUDGMENT_SCHEMA": AmendmentJudgment,
+    "AMENDMENT_TEXT_SCHEMA": AmendmentTextOutput,
     "COMMIT_MESSAGE_SCHEMA": CommitMessageOutput,
     "ACCEPTANCE_CRITERIA_SCHEMA": AcceptanceCriteriaOutput,
     "BRANCH_NAME_SCHEMA": BranchNameOutput,
@@ -196,6 +198,12 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "services/amendment_writeback.py",
+        ("AmendmentWriteBack", "_author"),
+        "judge_in_workspace",
+        "AMENDMENT_TEXT_SCHEMA",
+    ),
     (
         "services/native_amendments.py",
         ("_NativeWriterGuard", "_judge_claim"),

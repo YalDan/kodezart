@@ -13,6 +13,7 @@ PROMPT_FUNCTION_NAMES: Final[frozenset[str]] = frozenset(
         "implementation",
         "native_writer_contract",
         "amendment_judge",
+        "amendment_author",
         "evaluation",
         "iteration_feedback",
         "post_merge_review",
