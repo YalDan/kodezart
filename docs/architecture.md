@@ -66,7 +66,7 @@ does not exist.
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
-| PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA and open/closed/merged lifecycle; refuses foreign or unavailable head repositories; no mutation authority |
+| PRStateReader | GitHubAPIClient | Reads exact native PR identity, head repository/branch/SHA, base repository/branch and open/closed/merged lifecycle; refuses foreign or unavailable head/base repositories; no mutation authority |
 | ForgeQuery | GitHubAPIClient | Reads the open pull request on a head ref for check-before-create, and composes a branch's web page from the origin's own host; no mutation authority |
 | CIMonitor         | GitHubAPIClient          | Polls checks and re-observes Actions attempts at one commit |
 | CIObservationReader | GitHubAPIClient        | Reads the completed watch's commit identity and structured verdict |

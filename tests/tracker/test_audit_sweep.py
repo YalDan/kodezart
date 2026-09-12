@@ -137,6 +137,8 @@ async def setup(tracker, server):
                 url=f"{REPO}/pull/7",
                 number=7,
                 head_repo_url=REPO,
+                base_repo_url=REPO,
+                base_branch="main",
                 head_branch="ordinary-name",
                 head_sha=HEAD,
                 lifecycle=PRLifecycle.OPEN,

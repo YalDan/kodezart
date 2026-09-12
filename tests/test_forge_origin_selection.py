@@ -507,15 +507,19 @@ def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
             )
 
 
-def test_only_the_engine_builder_binds_an_engine_forge_slot() -> None:
-    """One selection site for the set, findable by this test."""
+def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
+    """Authored and native builders receive the one selected capability set."""
     binding = sorted(
         module.name
         for module in COMPOSITION.glob("*.py")
         if _forge_slot_keywords(module)
     )
 
-    assert binding == ["engine.py"]
+    assert binding == ["delivery.py", "engine.py"]
+    assert {
+        ast.unparse(keyword.value)
+        for keyword in _forge_slot_keywords(COMPOSITION / "delivery.py")
+    } == {"forge"}
 
 
 def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:

@@ -490,26 +490,29 @@ class GitHubAPIClient:
             or observed.password is not None
         ):
             raise PRStateReadError("native PR identity differs from its address")
-        head_repo = native.head.repo
-        if head_repo is None:
-            raise PRStateReadError("native PR head repository is unavailable")
-        try:
-            head_origin = urlsplit(head_repo.html_url)
-        except ValueError as exc:
-            raise PRStateReadError(
-                "native PR head repository URL is malformed"
-            ) from exc
-        if (
-            head_origin.scheme != "https"
-            or head_origin.netloc.casefold() != expected.netloc.casefold()
-            or head_origin.path.casefold() != f"/{owner}/{repo}".casefold()
-            or head_origin.query
-            or head_origin.fragment
-            or head_origin.username is not None
-            or head_origin.password is not None
-            or head_repo.full_name.casefold() != f"{owner}/{repo}".casefold()
-        ):
-            raise PRStateReadError("native PR head belongs to another repository")
+        head_repo, base_repo = native.head.repo, native.base.repo
+        if head_repo is None or base_repo is None:
+            raise PRStateReadError("native PR head or base repository is unavailable")
+        for role, repository in (("head", head_repo), ("base", base_repo)):
+            try:
+                origin = urlsplit(repository.html_url)
+            except ValueError as exc:
+                raise PRStateReadError(
+                    f"native PR {role} repository URL is malformed"
+                ) from exc
+            if (
+                origin.scheme != "https"
+                or origin.netloc.casefold() != expected.netloc.casefold()
+                or origin.path.casefold() != f"/{owner}/{repo}".casefold()
+                or origin.query
+                or origin.fragment
+                or origin.username is not None
+                or origin.password is not None
+                or repository.full_name.casefold() != f"{owner}/{repo}".casefold()
+            ):
+                raise PRStateReadError(
+                    f"native PR {role} belongs to another repository"
+                )
         lifecycle = (
             PRLifecycle.MERGED
             if native.merged
@@ -523,6 +526,8 @@ class GitHubAPIClient:
             head_repo_url=head_repo.html_url,
             head_branch=native.head.ref,
             head_sha=native.head.sha,
+            base_repo_url=base_repo.html_url,
+            base_branch=native.base.ref,
             lifecycle=lifecycle,
         )
 

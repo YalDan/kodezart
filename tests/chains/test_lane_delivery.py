@@ -22,6 +22,7 @@ from kodezart.types.domain.native_delivery import (
 )
 from kodezart.types.domain.operation import CheckPrerequisite, CheckStep, RepoEntry
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.types.domain.workflow import ExecutionContext
 from tests.chains.test_native_fire import (
     SUBJECT,
@@ -36,6 +37,7 @@ from tests.fakes import (
     FakeForgeQuery,
     FakeGitService,
     FakePRCreator,
+    FakePRStateReader,
     PassThroughGate,
     make_prompt_provider,
 )
@@ -44,6 +46,19 @@ SHA = "a" * 40
 REPO = "https://github.com/owner/repo.git"
 HEAD = "lane-head"
 BASE = "blocker-branch"
+
+
+def pr_identity(*, head=HEAD, number=1, base=BASE):
+    return PRState(
+        url=f"https://github.com/owner/repo/pull/{number}",
+        number=number,
+        head_repo_url=REPO.removesuffix(".git"),
+        head_branch=head,
+        head_sha=SHA,
+        base_repo_url=REPO.removesuffix(".git"),
+        base_branch=base,
+        lifecycle=PRLifecycle.OPEN,
+    )
 
 
 async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
@@ -60,13 +75,15 @@ async def setup(*, monitor=None, git=None, repositories=(), bound=1, watches=2):
     context = context.model_copy(
         update={"base_spec": context.base_spec.model_copy(update={"base_branch": BASE})}
     )
-    creator = FakePRCreator()
+    creator = FakePRCreator(pr_url=pr_identity().url)
+    pr_reader = FakePRStateReader(records={(REPO, 1): pr_identity()})
     monitor = monitor or FakeCIMonitor()
     query = FakeForgeQuery()
     owner = LaneDeliveryCoordinator(
         service=fire.specification._service,
         git=git or FakeGitService(remote_branch_shas={HEAD: SHA, BASE: "b" * 40}),
         pr_creator=creator,
+        pr_state_reader=pr_reader,
         forge_query=query,
         ci=monitor,
         criteria_reader=criteria,
@@ -134,6 +151,7 @@ async def test_missing_resolved_base_never_falls_back_to_trunk():
 async def test_open_pr_replay_reuses_native_head_lookup_without_generation():
     parts = await setup()
     owner, state, context, creator, *_ = parts
+    owner._pr_state_reader.records[(REPO, 7)] = pr_identity(number=7)
     owner._forge_query = FakeForgeQuery(
         open_prs={(REPO, HEAD): ("https://github.com/owner/repo/pull/7", 7)}
     )
@@ -389,6 +407,16 @@ async def test_n_plus_one_lanes_share_the_configured_watch_bound(bound):
             return snapshots[spec.subject]
 
     owner._criteria_reader = CurrentCriteria()
+
+    class UniquePRs(FakePRCreator):
+        async def create_pr(self, **kwargs):
+            await super().create_pr(**kwargs)
+            number = len(self.calls)
+            record = pr_identity(head=kwargs["head"], number=number)
+            owner._pr_state_reader.records[(REPO, number)] = record
+            return record.url, number
+
+    owner._pr_creator = UniquePRs()
     tasks = [
         asyncio.create_task(
             owner.deliver(
