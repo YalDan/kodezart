@@ -10,10 +10,7 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
 from kodezart.chains.criteria import TrackerCriteria
-from kodezart.domain.amendment import (
-    AmendmentRequiresWriteError,
-    NativeWriteRefusalError,
-)
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import FireSpecEntryError
 from kodezart.domain.rulings import render_ruling
 from kodezart.services.agent_service import AgentService
@@ -22,6 +19,7 @@ from kodezart.types.domain.agent import NativeAmendmentEvent, ResultEvent, Rulin
 from kodezart.types.domain.amendment import AmendmentGround, UpheldReason
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
+from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from tests.chains.test_native_fire import DIRECT_OWED, SUBJECT, tracker
 from tests.chains.test_organize import result
@@ -108,6 +106,22 @@ class Executor:
             }
         elif title == "AcceptanceCriteriaOutput":
             payload = {}
+        elif title == "WriteBackFinding":
+            payload = {
+                "verdict": "holds",
+                "evidence": "Checked the actual record at the base.",
+                "cited_refs": ["policy.py"],
+            }
+        elif title == "AmendmentTextOutput":
+            payload = {
+                "replacement": {
+                    "kind": "criterion",
+                    "subject": self.subject,
+                    "check": "the amended observable Check",
+                    "do": "the amended implementation guidance",
+                },
+                "explanation": "The independently reproduced ground requires this text change.",
+            }
         elif title == "CommitMessageOutput":
             payload = {"title": "fix: implementation", "body": "Reviewed change."}
         else:
@@ -178,7 +192,12 @@ async def build(
         operation=OperationConfig(
             operation_name="fixture",
             workspace="fixture",
-            marker_prefixes={"ruling": "fixture-pinned"},
+            marker_prefixes={
+                "ruling": "fixture-pinned",
+                "amendment": "fixture-amendment",
+                "escalation": "fixture-escalation",
+            },
+            issue_labels={"decision": "decision"},
         ),
         criteria=criteria,
         git=git_service,
@@ -188,12 +207,18 @@ async def build(
         prompts=prompts,
         skills=SUPPRESS_ALL_SKILLS,
         repositories=(RepoEntry(url=REPO_URL, trunk="main"),),
+        gate=gate or PassThroughGate(),
+        max_verify_rounds=2,
+        lease_seconds=900,
     )
     guard = owner.for_writer(
         spec=spec,
         criteria=await criteria.read_current(spec=spec),
         base_ref=base,
         repo_url=REPO_URL,
+        holder="actual-parent-job",
+        visibility=RepoVisibility.PUBLIC,
+        stage=PromptKey.IMPLEMENTATION,
     )
     return service, guard, workspace, port
 
@@ -281,8 +306,10 @@ async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
     )
     assert report.upheld[0].reason is UpheldReason.GROUND_NOT_REPRODUCED
     assert not any(isinstance(event, ResultEvent) for event in events)
-    assert len(executor.calls) == 2
-    writer, judge = executor.calls
+    assert len(executor.calls) == 3
+    writer, judge, write_back = executor.calls
+    assert write_back["output_format"]["schema"]["title"] == "WriteBackFinding"
+    assert write_back["cwd"] != writer["cwd"]
     assert "Pinned rulings registry" in writer["prompt"]
     assert "Confirmed empty" in writer["prompt"]
     assert judge["cwd"] != writer["cwd"]
@@ -293,21 +320,33 @@ async def test_quote_exists_but_semantic_ground_is_false_upholds_before_commit(
     assert (
         await git(repository[0], "ls-remote", "origin", "refs/heads/native-test") == ""
     )
-    assert len(workspace.released) == 2
+    assert len(workspace.released) == 3
 
 
-async def test_reproduced_ground_is_not_an_applied_amendment(repository):
-    service, guard, workspace, _ = await build(repository, Executor(reproduced=True))
+async def test_reproduced_ground_is_applied_and_verified_before_persistence(repository):
+    executor = Executor(reproduced=True)
+    service, guard, workspace, port = await build(repository, executor)
+    prior = port.issues[DIRECT_OWED].body
     try:
-        with pytest.raises(AmendmentRequiresWriteError) as failure:
-            await drive(service, guard, repository)
-        assert failure.value.judgment.reproduced
-        assert "AMENDED" not in failure.value.judgment.model_dump_json()
-        assert Path(workspace.acquired[0][0], "change.py").exists()
-        assert (
-            await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
-            == ""
-        )
+        events = await drive(service, guard, repository)
+        report = next(e.report for e in events if isinstance(e, NativeAmendmentEvent))
+        amended = report.verdicts[0]
+        assert amended.verdict == "amended"
+        assert amended.archive.verdict.value == amended.applied.verdict.value == "holds"
+        import json
+
+        assert json.loads(amended.prior.content)[0]["body"] == prior
+        assert "the amended observable Check" in port.issues[DIRECT_OWED].body
+        assert any(isinstance(e, ResultEvent) and e.commit_sha for e in events)
+        assert await git(repository[0], "ls-remote", "origin", "refs/heads/native-test")
+        assert [c["output_format"]["schema"]["title"] for c in executor.calls] == [
+            "NativeWriterOutput",
+            "AmendmentJudgment",
+            "WriteBackFinding",
+            "AmendmentTextOutput",
+            "WriteBackFinding",
+            "CommitMessageOutput",
+        ]
     finally:
         await cleanup(workspace)
 
