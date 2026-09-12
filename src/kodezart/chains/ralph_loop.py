@@ -132,6 +132,7 @@ class RalphLoop:
         tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the quality-gating loop.
@@ -145,6 +146,7 @@ class RalphLoop:
             repo_url=repo_url,
             cache_key=cache_key,
             run_identity=run_identity,
+            surface_holder=surface_holder,
             base_spec=base_spec,
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,

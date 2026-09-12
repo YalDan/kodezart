@@ -220,6 +220,7 @@ keys = [
     "organize_assess",
     "organize_verify",
     "amendment_judge",
+    "amendment_author",
     "write_back_verify",
     "audit_claim",
     "audit_overclaim",

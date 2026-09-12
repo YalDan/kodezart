@@ -19,6 +19,7 @@ from kodezart.types.domain.amendment import (
     RepeatedUpheld,
 )
 from kodezart.types.domain.assertion_drift import ProtectedTestRef
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
 from kodezart.types.domain.audit import (
     AuditClaimJudgment,
     AuditMandateJudgment,
@@ -87,6 +88,7 @@ RaiseSite = Literal[
     "organize_criteria_author",
     "organize_verify",
     "amendment_judge",
+    "amendment_author",
     "write_back_verify",
     "audit_claim",
     "audit_overclaim",
@@ -1165,6 +1167,7 @@ DETECTOR_REMOVAL_SCHEMA: dict[str, object] = DetectorRemovalJudgment.model_json_
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
 NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
 AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
+AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
 ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
 WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 
@@ -1174,6 +1177,7 @@ WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "NATIVE_WRITER_SCHEMA": NATIVE_WRITER_SCHEMA,
     "AMENDMENT_JUDGMENT_SCHEMA": AMENDMENT_JUDGMENT_SCHEMA,
+    "AMENDMENT_TEXT_SCHEMA": AMENDMENT_TEXT_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
     "ACCEPTANCE_CRITERIA_SCHEMA": ACCEPTANCE_CRITERIA_SCHEMA,
     "BRANCH_NAME_SCHEMA": BRANCH_NAME_SCHEMA,
