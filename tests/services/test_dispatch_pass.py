@@ -889,20 +889,19 @@ async def test_a_pass_the_root_built_follows_the_run_it_enqueued() -> None:
 
     await built.passes[0].run(TICK_STARTED_AT)
     # The write-back runs in a background watch, so the test waits for the
-    # terminal chain it asserts on: the DONE transition, then the comment
+    # terminal chain it asserts on: the queue disposition, then the comment
     # that ``LifecycleWatcher`` posts after it.
     await settled(
         lambda: (
-            ("K-1", LifecycleStage.DONE) in tracker.workflow_writes
-            and bool(tracker.comments)
+            ("K-1", QueueState.DONE) in tracker.queue_writes and bool(tracker.comments)
         ),
     )
 
     assert queue.attached == ["job-0001"]
     assert tracker.workflow_writes == [
         ("K-1", LifecycleStage.IN_PROGRESS),
-        ("K-1", LifecycleStage.DONE),
     ]
+    assert ("K-1", LifecycleStage.DONE) not in tracker.workflow_writes
     assert tracker.queue_writes == [("K-1", QueueState.DONE)]
     assert [comment.issue_key for comment in tracker.comments] == ["K-1"]
 

@@ -177,12 +177,12 @@ async def test_an_approved_issue_walks_the_whole_chain_back_to_its_ticket() -> N
         # 2. the fire reached the queue, on the base the graph implied
         assert engine.base_branches == [operation_config().repos[0].trunk]
 
-        # 3. the lifecycle walked, in the run's own order
+        # 3. the lifecycle reached review; delivery retires only the queue label.
         assert tracker.workflow_writes == [
             (ISSUE, LifecycleStage.IN_PROGRESS),
             (ISSUE, LifecycleStage.IN_REVIEW),
-            (ISSUE, LifecycleStage.DONE),
         ]
+        assert (ISSUE, LifecycleStage.DONE) not in tracker.workflow_writes
         assert tracker.queue_writes == [(ISSUE, QueueState.DONE)]
 
         # 4. the terminal outcome is on the ticket, naming the run's outcome
