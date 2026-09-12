@@ -9,12 +9,18 @@ from langgraph.checkpoint.memory import InMemorySaver
 from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.delivery import build_native_lane_workflow
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import FireSpecEntryError, PRStateReadError
+from kodezart.domain.errors import (
+    FireSpecEntryError,
+    ForgeAPIError,
+    PRStateReadError,
+    TransientAPIError,
+)
 from kodezart.types.domain.agent import WorkflowCompleteEvent
 from kodezart.types.domain.consolidation import (
     ConsolidationOutcome,
     ConsolidationStatus,
 )
+from kodezart.types.domain.gating import OutboundDestination
 from kodezart.types.domain.native_delivery import (
     CompletedLaneDelivery,
     LaneDeliveryEvent,
@@ -67,6 +73,8 @@ class ForgeWire:
                 if (not self.damage_after_watch or self.watches)
                 else None
             )
+            if damage == "unavailable":
+                raise httpx.ConnectError("PR state unavailable", request=request)
             sha = self.current_sha()
             data = {
                 "number": 17,
@@ -90,6 +98,8 @@ class ForgeWire:
                     },
                 },
             }
+            if damage == "malformed":
+                del data["base"]
             return httpx.Response(200, json=data)
         if request.url.path.endswith("/pulls"):
             if request.method == "POST":
@@ -294,5 +304,67 @@ async def test_actual_pr_identity_refuses_reuse_or_drift(damage, after_watch):
             await run(lane, state, config)
         assert wire.creates == wire.comments == []
         assert len(wire.watches) == (1 if after_watch else 0)
+    finally:
+        await forge.close()
+
+
+async def test_current_check_change_during_comment_gate_refuses_before_post():
+    lane, state, config, wire, forge, _, tracker = composed(red=True)
+
+    class ChangedCriterion(PassThroughGate):
+        async def gate(self, **kwargs):
+            if kwargs["destination"] is OutboundDestination.PR_COMMENT:
+                change_tracker(tracker, "changed-check")
+            return await super().gate(**kwargs)
+
+    lane._delivery._gate = ChangedCriterion()
+    try:
+        with pytest.raises(FireSpecEntryError):
+            await run(lane, state, config)
+        assert wire.comments == []
+    finally:
+        await forge.close()
+
+
+@pytest.mark.parametrize(
+    "damage", ["base", "head", "sha", "closed", "malformed", "unavailable", None]
+)
+async def test_paused_terminal_requires_current_pr_without_repeating_delivery(damage):
+    lane, state, config, wire, forge, executor, _ = composed(saver=InMemorySaver())
+    try:
+        reports, _, _ = await run(lane, state, config, interrupt_before=["complete"])
+        assert reports == []
+        assert lane.graph.get_state(config).next == ("complete",)
+        before = (
+            len(wire.creates),
+            len(wire.watches),
+            len(wire.comments),
+            len(executor.execution_prompts),
+            len(executor.evaluation_prompts),
+        )
+        previous_reads = len(wire.pr_reads)
+        wire.identity_damage = damage
+        if damage is None:
+            resumed, _, final = await run(lane, None, config)
+            assert len(resumed) == 1
+            assert final["delivery"].result.outcome is WorkflowOutcome.ci_passed
+        else:
+            error = (
+                ForgeAPIError
+                if damage == "malformed"
+                else TransientAPIError
+                if damage == "unavailable"
+                else PRStateReadError
+            )
+            with pytest.raises(error):
+                await run(lane, None, config)
+        assert len(wire.pr_reads) > previous_reads
+        assert before == (
+            len(wire.creates),
+            len(wire.watches),
+            len(wire.comments),
+            len(executor.execution_prompts),
+            len(executor.evaluation_prompts),
+        )
     finally:
         await forge.close()
