@@ -102,6 +102,7 @@ from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
     marked_comment_body,
+    require_expected_comment,
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
@@ -1880,7 +1881,13 @@ class LinearMcpTracker:
         )
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str, holder: str | None = None
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Resolve the marker across the whole log before creating or editing."""
         content = marked_comment_body(marker=marker, body=body)
@@ -1900,6 +1907,19 @@ class LinearMcpTracker:
                     surface=surface, author=existing.author_key
                 )
         await self._require_surface_holder(surface=surface, holder=holder)
+        if expected is not None:
+            existing = comment_under_marker(
+                target=target,
+                marker=marker,
+                comments=await self.list_comments(issue_key=target),
+            )
+            require_expected_comment(
+                target=target,
+                marker=marker,
+                expected=expected,
+                current=existing,
+                replacement=content,
+            )
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
         if existing.body == content:

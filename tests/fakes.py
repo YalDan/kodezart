@@ -69,6 +69,7 @@ from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
     marked_comment_body,
+    require_expected_comment,
 )
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.services.prompt_pass import pass_render_bindings
@@ -3862,7 +3863,13 @@ class FakeTrackerPort:
         return comment
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str, holder: str | None = None
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
     ) -> TrackerComment:
         content = marked_comment_body(marker=marker, body=body)
         existing = comment_under_marker(
@@ -3891,6 +3898,19 @@ class FakeTrackerPort:
                 "the writing job does not hold this live surface",
                 surface=surface,
                 current_holder=owner,
+            )
+        if expected is not None:
+            existing = comment_under_marker(
+                target=target,
+                marker=marker,
+                comments=await self.list_comments(issue_key=target),
+            )
+            require_expected_comment(
+                target=target,
+                marker=marker,
+                expected=expected,
+                current=existing,
+                replacement=content,
             )
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
