@@ -124,6 +124,18 @@ class SurfaceLeaseLostError(Exception):
         super().__init__(f"run {job_id!r} lost its declared surface lease")
 
 
+class SurfaceWriteAttributionError(Exception):
+    """A protected record cannot be attributed to this tracker writer."""
+
+    def __init__(self, *, surface: WritableSurface, author: str | None) -> None:
+        self.surface = surface
+        self.author = author
+        super().__init__(
+            "the protected tracker record is not attributable to this writer "
+            f"(author: {author!r})"
+        )
+
+
 class DuplicateCommentMarkerError(Exception):
     """Several comments claim the same first-line marker on one target."""
 
