@@ -10,16 +10,19 @@ workspace anywhere in this module and none may be introduced.
 """
 
 import asyncio
+from collections.abc import Callable
 from datetime import timedelta
 
 import pytest
 
 from kodezart.core.errors import TrackerEnsureConflictError
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import DuplicateWorkRefError
+from kodezart.domain.errors import DuplicateWorkRefError, SurfaceLeaseError
 from kodezart.types.domain.branch import BaseInput, BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import LifecycleStage, QueueState
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimStatus,
@@ -49,6 +52,7 @@ from tests.tracker.conftest import (
     FOREIGN_REVIEW,
     SCOPE_DIAGNOSIS,
     TEAM_IDENTIFIERS,
+    FixtureClock,
 )
 
 LEASE_SECONDS = 600.0
@@ -347,7 +351,15 @@ class TestAtomicClaim:
         self,
         tracker: TrackerPort,
     ) -> None:
-        """AC: two simultaneous claimants -> one wins, the loser sees LOST."""
+        """AC: two simultaneous claimants -> one wins, the other holds nothing.
+
+        The loser is told which: ``LOST`` when the backend settled an
+        owner, naming it, and ``CONTENDED`` when it settled nobody — the
+        loser met the winner mid-race, before the winner's own read-back
+        had confirmed it, and neither of them owned the issue at the
+        instant the loser was weighed.  Both are refusals and neither is
+        ownership; what may never happen is two grants.
+        """
         first, second = await asyncio.gather(
             tracker.claim_issue(
                 issue_key=CLAIMED_ISSUE,
@@ -362,7 +374,65 @@ class TestAtomicClaim:
         )
         statuses = [first.status, second.status]
         assert statuses.count(ClaimStatus.GRANTED) == 1
-        assert statuses.count(ClaimStatus.LOST) == 1
+        granted = next(
+            one for one in (first, second) if one.status is ClaimStatus.GRANTED
+        )
+        refused = next(
+            one for one in (first, second) if one.status is not ClaimStatus.GRANTED
+        )
+        assert refused.status in {ClaimStatus.LOST, ClaimStatus.CONTENDED}
+        assert refused.current_holder == (
+            granted.holder if refused.status is ClaimStatus.LOST else None
+        )
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == granted.holder
+
+    async def test_one_holder_claiming_twice_at_once_ends_holding_the_issue(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """One identity cannot lose the issue to itself.
+
+        The realistic restart: a redeployed process claims what its
+        predecessor already holds, and both calls are in flight at once.
+        A holder identity is what the arbitration is over, so a second
+        grant to it is the same ownership observed twice rather than a
+        conflict to break: both are granted, the issue reads as that
+        holder's, and the holder can still renew — what may never happen
+        is that a holder meeting itself ends up owning nothing.
+        """
+        outcomes = await asyncio.gather(
+            tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            ),
+            tracker.claim_issue(
+                issue_key=CLAIMED_ISSUE,
+                holder="pass-a",
+                lease_seconds=LEASE_SECONDS,
+            ),
+        )
+
+        assert [one.status for one in outcomes] == [ClaimStatus.GRANTED] * 2
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == "pass-a"
+        rival = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-b",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert rival.status is ClaimStatus.LOST
+        assert rival.current_holder == "pass-a"
+        renewed = await tracker.renew_claim(
+            issue_key=CLAIMED_ISSUE,
+            holder="pass-a",
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert renewed is not None
+        assert renewed.status is ClaimStatus.GRANTED
 
     async def test_the_loser_observes_a_distinct_typed_result_not_an_exception(
         self,
@@ -380,6 +450,7 @@ class TestAtomicClaim:
         )
         assert loser.status is ClaimStatus.LOST
         assert loser.holder == "pass-b"
+        assert loser.current_holder == "pass-a"
 
     async def test_release_frees_the_issue_for_the_next_claimant(
         self,
@@ -1403,3 +1474,607 @@ class TestRecordedBaseSpec:
         assert [ref.role for ref in refs] == [WorkRefRole.DELIVERABLE]
         recorded = await tracker.read_base_spec(issue_key=APPROVED_ISSUE)
         assert recorded is not None and recorded.base_branch == "kodezart/blocker"
+
+
+class TestSurfaceLease:
+    """All-or-nothing exclusion over a SET of write surfaces.
+
+    Extends the claim cases directly above: a claim answers which
+    deployment may fire an issue, a lease answers which run may write a
+    surface. An implementation that cannot fence set ownership refuses
+    before it takes anything, which is what the refusal contract observes.
+    """
+
+    async def test_acquire_grants_the_whole_set_and_reads_back(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+
+        lease = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert lease.holder == JOB_A
+        assert lease.surfaces == requested
+        assert lease.expires_at == FIXTURE_NOW + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_an_intersecting_set_is_refused_naming_the_surface_and_holder(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_A, MARKER_B}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+        assert refused.value.surface_kind == "marker_comment"
+        assert refused.value.marker == "A"
+        assert refused.value.scope_key == CLAIMED_ISSUE
+        assert refused.value.current_holder == JOB_A
+
+    async def test_a_failed_acquisition_holds_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The refused holder took no part of the set it asked for."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        with pytest.raises(SurfaceLeaseError):
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_A, MARKER_B}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+
+        taken = await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_B}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert taken.holder == JOB_A
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_B}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+
+    async def test_two_holders_with_disjoint_sets_both_acquire(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        first = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        second = await tracker.acquire_surfaces(
+            surfaces=frozenset({APPROVED_DESCRIPTION}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert first.holder == JOB_A
+        assert second.holder == JOB_B
+
+    async def test_two_simultaneous_claimants_on_one_set_produce_exactly_one_lease(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        outcomes = await asyncio.gather(
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            ),
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            ),
+            return_exceptions=True,
+        )
+        assert sum(isinstance(one, SurfaceLease) for one in outcomes) == 1
+        assert sum(isinstance(one, SurfaceLeaseError) for one in outcomes) == 1
+
+    async def test_one_holder_acquiring_a_set_twice_at_once_ends_holding_it(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """The same identity rule over the lease vocabulary, all-or-nothing.
+
+        Two overlapping acquisitions for ONE holder over one set are one
+        ownership observed twice.  Both are leases, no other holder can
+        take any part of the set afterwards, and the holder can renew the
+        whole of it — the acquisition never leaves it holding nothing.
+        """
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+
+        outcomes = await asyncio.gather(
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            ),
+            tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            ),
+        )
+
+        assert [one.surfaces for one in outcomes] == [requested] * 2
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+        renewed = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert renewed is not None
+        assert renewed.surfaces == requested
+
+    async def test_one_marker_is_refused_while_the_rest_of_the_issue_stays_acquirable(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Surfaces on one issue are independent addresses, not one lock."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_A}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        rest = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_B}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert rest.holder == JOB_B
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({MARKER_A}),
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+
+    async def test_release_frees_the_set_for_the_next_holder(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        await tracker.release_surfaces(surfaces=requested, holder=JOB_A)
+
+        taken = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.holder == JOB_B
+
+    async def test_release_by_a_non_holder_is_a_no_op(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        await tracker.release_surfaces(surfaces=requested, holder=JOB_B)
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+
+    async def test_renewal_extends_a_lease_the_holder_holds(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        renewed = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert renewed is not None
+        assert renewed.expires_at == FIXTURE_NOW + timedelta(
+            seconds=LEASE_SECONDS * 2,
+        )
+
+    async def test_renewal_by_a_non_holder_renews_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        refused_renewal = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert refused_renewal is None
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+
+    async def test_renewal_of_a_partially_held_set_renews_nothing(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Renewal extends what the holder holds WHOLE, and never acquires."""
+        await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        renewed = await tracker.renew_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION, MARKER_A}),
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS * 2,
+        )
+
+        assert renewed is None
+        taken = await tracker.acquire_surfaces(
+            surfaces=frozenset({MARKER_A}),
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.holder == JOB_B
+
+    async def test_same_holder_reacquisition_is_not_contention(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        again = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert again.holder == JOB_A
+        assert again.surfaces == requested
+
+    async def test_a_non_default_duration_is_the_one_honored(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        """The duration the CALL supplies is the one the lease expires on."""
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        lease = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS * 3,
+        )
+
+        clock.advance(seconds=LEASE_SECONDS * 2)
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+        assert lease.expires_at == FIXTURE_NOW + timedelta(
+            seconds=LEASE_SECONDS * 3,
+        )
+
+    async def test_an_expired_lease_is_free_for_another_holder(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        clock.advance(seconds=LEASE_SECONDS + 1)
+
+        taken = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.holder == JOB_B
+
+    async def test_the_original_holder_reacquires_an_expired_lease_without_contention(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        """A run coming back to its own lapsed surfaces contends with nobody."""
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        clock.advance(seconds=LEASE_SECONDS + 1)
+
+        again = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert again.holder == JOB_A
+        assert again.expires_at == clock.now + timedelta(seconds=LEASE_SECONDS)
+
+    async def test_a_renewal_after_expiry_and_reacquisition_cannot_steal(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        """The delayed renewal arrives after the set changed hands, and loses."""
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        clock.advance(seconds=LEASE_SECONDS + 1)
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        stale = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert stale is None
+        held = await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert held is not None
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_B
+
+    async def test_a_renewal_before_expiry_keeps_the_holder_past_the_original_bound(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+        clock.advance(seconds=LEASE_SECONDS / 2)
+        await tracker.renew_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        clock.advance(seconds=LEASE_SECONDS / 2 + 1)
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=requested,
+                holder=JOB_B,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_A
+
+    async def test_a_lapsed_lease_is_not_renewable(
+        self,
+        tracker: TrackerPort,
+        clock: FixtureClock,
+    ) -> None:
+        """A lapse hands the surfaces back; renewal may not take them again."""
+        requested = frozenset({CLAIMED_DESCRIPTION, MARKER_A})
+        await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_A,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        clock.advance(seconds=LEASE_SECONDS + 1)
+
+        assert (
+            await tracker.renew_surfaces(
+                surfaces=requested,
+                holder=JOB_A,
+                lease_seconds=LEASE_SECONDS,
+            )
+            is None
+        )
+        taken = await tracker.acquire_surfaces(
+            surfaces=requested,
+            holder=JOB_B,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert taken.holder == JOB_B
+
+    async def test_a_fire_claim_and_a_write_lease_are_held_under_distinct_identities(
+        self,
+        tracker: TrackerPort,
+    ) -> None:
+        """Two questions, two vocabularies, neither derived from the other.
+
+        A claim answers which DEPLOYMENT may fire an issue and is held
+        under a process identity; a lease answers which RUN may write a
+        surface and is held under a job id. Holding one confers nothing
+        about the other, on the same issue.
+        """
+        claimed = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder=PROCESS_HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+        lease = await tracker.acquire_surfaces(
+            surfaces=frozenset({CLAIMED_DESCRIPTION}),
+            holder=JOB_HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+
+        assert claimed.status is ClaimStatus.GRANTED
+        held = await tracker.active_claim(issue_key=CLAIMED_ISSUE)
+        assert held is not None
+        assert held.holder == PROCESS_HOLDER
+        assert lease.holder == JOB_HOLDER
+
+        with pytest.raises(SurfaceLeaseError) as refused:
+            await tracker.acquire_surfaces(
+                surfaces=frozenset({CLAIMED_DESCRIPTION}),
+                holder=PROCESS_HOLDER,
+                lease_seconds=LEASE_SECONDS,
+            )
+        assert refused.value.current_holder == JOB_HOLDER
+        lost = await tracker.claim_issue(
+            issue_key=CLAIMED_ISSUE,
+            holder=JOB_HOLDER,
+            lease_seconds=LEASE_SECONDS,
+        )
+        assert lost.status is ClaimStatus.LOST
+
+
+class TestWriterIdentity:
+    """Who the backend attributes this adapter's writes to.
+
+    A boot-time read, compared there against the operation's declared
+    non-human writer. It is stated at the port so every implementation
+    answers the same question, and it is a READ: asking must change
+    nothing.
+    """
+
+    async def test_the_writer_identity_carries_both_spellings_of_the_actor(
+        self,
+        tracker: TrackerPort,
+        server: FakeLinearMcpServer,
+    ) -> None:
+        assert await tracker.writer_identity() == {
+            server.actor,
+            server.display_name(server.actor),
+        }
+
+    async def test_the_writer_identity_is_read_not_written(
+        self,
+        tracker: TrackerPort,
+        tracker_writes: Callable[[], tuple[object, ...]],
+    ) -> None:
+        before = tracker_writes()
+
+        await tracker.writer_identity()
+
+        assert tracker_writes() == before
+
+
+CLAIMED_REF = ScopeRef(kind=ScopeKind.ISSUE, key=CLAIMED_ISSUE)
+
+APPROVED_REF = ScopeRef(kind=ScopeKind.ISSUE, key=APPROVED_ISSUE)
+
+CLAIMED_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=CLAIMED_REF,
+)
+
+
+MARKER_A = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=CLAIMED_REF,
+    marker="A",
+)
+
+
+MARKER_B = WritableSurface(
+    kind=SurfaceKind.MARKER_COMMENT,
+    ref=CLAIMED_REF,
+    marker="B",
+)
+
+
+APPROVED_DESCRIPTION = WritableSurface(
+    kind=SurfaceKind.ISSUE_DESCRIPTION,
+    ref=APPROVED_REF,
+)
+
+
+JOB_A = "job-a"
+
+
+JOB_B = "job-b"
+
+
+PROCESS_HOLDER = "kodezart-process"
+
+
+JOB_HOLDER = "job-17"

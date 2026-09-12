@@ -32,6 +32,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
+from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
@@ -40,6 +41,7 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
+from kodezart.types.domain.surface import SurfaceLease, WritableSurface
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -696,8 +698,19 @@ class TrackerPort(Protocol):
         """Attempt an exactly-once claim.
 
         Concurrent claimants on one issue produce exactly one
-        ``GRANTED``; every other claimant observes ``LOST``.  Losing is a
-        value, never an exception.
+        ``GRANTED``; every other claimant observes ``LOST``, or
+        ``CONTENDED`` where the backend settled no order between them and
+        nobody holds the issue. Neither is an exception: both are values
+        the caller routes on. ``current_holder`` names an OWNER and
+        nothing else, so it carries the winner under ``LOST`` and is
+        absent under ``CONTENDED``: a race nobody won has no owner to
+        name, and naming the party met would report a refused claimant as
+        holding the issue.
+
+        *holder* is the deployment's PROCESS identity, the value
+        ``core/config.py::dispatch_holder`` carries. It answers which
+        deployment may fire an issue; a surface lease's holder answers
+        which run may write a surface. Neither is derived from the other.
         """
         ...
 
@@ -717,7 +730,8 @@ class TrackerPort(Protocol):
         Renewal EXTENDS and never acquires.  A claim that has already
         lapsed stays lapsed and the issue stays claimable: the lapse is how
         a process that died mid-run hands its work back, and a renewal that
-        could resurrect one would take that recovery away.
+        could resurrect one would take that recovery away — including a
+        renewal whose own write outlived the lease it was extending.
         """
         ...
 
@@ -844,6 +858,99 @@ class TrackerPort(Protocol):
         Milestone metadata carries no invented or containing-project URL.
         An issue-kind ref raises a typed domain error: an issue is read
         through ``read_issue``, never returned as an empty container.
+        """
+        ...
+
+    async def acquire_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease:
+        """Take the WHOLE set exclusively for *holder*, or take nothing.
+
+        Acquisition never blocks and never retries: on intersection with
+        another holder's live lease it raises ``SurfaceLeaseError`` naming
+        that surface and its current holder, releases whatever it took, and
+        holds nothing afterwards. A surface *holder* itself holds live is
+        not contention — re-acquisition succeeds and re-times the whole
+        set — and an expired lease is free to anyone.
+
+        *holder* is the writing run's job id (``JobRecord.job_id``), never
+        the claim's process identity.
+        """
+        ...
+
+    async def renew_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+        lease_seconds: float,
+    ) -> SurfaceLease | None:
+        """Extend a lease *holder* holds live on EVERY surface of the set.
+
+        Returns the lease as it now stands, expiring no earlier than
+        *lease_seconds* from now. Returns ``None``, writing NOTHING, when
+        *holder* does not hold every one of them live: renewal EXTENDS and
+        never acquires, so a lapsed lease stays lapsed and its surfaces stay
+        free.
+        """
+        ...
+
+    async def release_surfaces(
+        self,
+        *,
+        surfaces: frozenset[WritableSurface],
+        holder: str,
+    ) -> None:
+        """Release the surfaces *holder* holds.
+
+        A surface it does not hold is a no-op, live or expired.
+        """
+        ...
+
+    async def writer_identity(self) -> frozenset[str]:
+        """Every spelling the backend attributes this adapter's writes under.
+
+        Both the account name and the mention handle, because a configured
+        identity may legitimately be either and user resolution already
+        matches the union of the two.
+
+        Read once at boot and compared against the operation's declared
+        agent identities. It is never a flag a consumer reads: a deployment
+        whose credential no declared agent identity answers to does not
+        serve, so nothing downstream branches on the answer.
+        """
+        ...
+
+    async def read_issue_movement(self, *, issue_key: str) -> IssueMovementSnapshot:
+        """Stable native field projection and complete comments for receipt replay."""
+        ...
+
+    async def upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
+    ) -> TrackerComment:
+        """Create or edit the issue comment with *marker* as its first line.
+
+        *body* is the content following that line. An identical replay
+        writes nothing. Several comments under the marker raise
+        ``DuplicateCommentMarkerError`` before any write. Callers compose
+        the marker and serialize concurrent writers to the same target.
+        The writing queue job must hold its marker surface under ``holder``;
+        an absent, expired or different holder raises ``SurfaceLeaseError``
+        carrying the surface and the observed current holder.
+        When ``expected`` is supplied, re-read after authority waits and require
+        that exact native root comment/provenance and its expected or desired
+        body. Missing or changed records raise ``StaleCommentWriteError``;
+        absence never creates a replacement. This is not backend atomic CAS.
         """
         ...
 

@@ -119,6 +119,14 @@ done = "queue:done"
 decision = "queue:decision"
 
 # Lifecycle states, validated exactly parallel to queue_states.
+# Stable comment identity prefixes; preserve these when adopting existing records.
+[marker_prefixes]
+claim = "kodezart-claim"
+work_ref = "kodezart-workref"
+base_spec = "kodezart-basespec"
+repository = "kodezart-repo"
+run_outcome = "run-outcome"
+
 [workflow_states]
 in_progress = "In Progress"
 in_review = "In Review"

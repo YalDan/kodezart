@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.surface import WritableSurface
 
 
 class WorkspaceError(Exception):
@@ -324,3 +325,86 @@ class ScopeReadError(Exception):
     def __init__(self, message: str, *, ref: ScopeRef) -> None:
         super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
         self.ref: ScopeRef = ref
+
+
+class SurfaceLeaseError(Exception):
+    """A surface acquisition or write lacks the required live lease.
+
+    The address is snapshotted as primitive fields; no adapter object or
+    lease record crosses the boundary. ``current_holder=None`` reports that
+    no run currently holds the surface, including after a lease expired.
+    Contention is not transient: the caller decides its next action, and a
+    retry policy must not silently retry a failed acquisition.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        surface: WritableSurface,
+        current_holder: str | None,
+    ) -> None:
+        address = f"{surface.kind.value}:{surface.ref.kind.value}:{surface.ref.key}"
+        if surface.marker is not None:
+            address = f"{address} (marker: {surface.marker})"
+        holder = "none" if current_holder is None else current_holder
+        super().__init__(f"{message} (surface: {address}; current holder: {holder})")
+        self.surface_kind: str = surface.kind.value
+        self.scope_kind: str = surface.ref.kind.value
+        self.scope_key: str = surface.ref.key
+        self.marker: str | None = surface.marker
+        self.current_holder: str | None = current_holder
+
+
+class SurfaceLeaseLostError(Exception):
+    """Renewal could not confirm the run's complete declared write set.
+
+    The renewal result does not identify a competing holder or prove that
+    the surfaces are unheld. Callers stop writing without inventing either
+    fact and must not reacquire as part of handling this failure.
+    """
+
+    def __init__(self, *, job_id: str, surfaces: frozenset[WritableSurface]) -> None:
+        self.job_id = job_id
+        self.surfaces = surfaces
+        super().__init__(f"run {job_id!r} lost its declared surface lease")
+
+
+class SurfaceWriteAttributionError(Exception):
+    """A protected record cannot be attributed to this tracker writer."""
+
+    def __init__(self, *, surface: WritableSurface, author: str | None) -> None:
+        self.surface = surface
+        self.author = author
+        super().__init__(
+            "the protected tracker record is not attributable to this writer "
+            f"(author: {author!r})"
+        )
+
+
+class DuplicateCommentMarkerError(Exception):
+    """Several comments claim the same first-line marker on one target."""
+
+    def __init__(
+        self, *, target: str, marker: str, comment_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate comment marker {marker!r} on {target!r}: "
+            f"{', '.join(comment_keys)}"
+        )
+        self.target = target
+        self.marker = marker
+        self.comment_keys = tuple(comment_keys)
+
+
+class StaleCommentWriteError(Exception):
+    """An asserted native comment changed before its amendment could be issued."""
+
+    def __init__(self, *, target: str, expected_comment_key: str, reason: str) -> None:
+        self.target = target
+        self.expected_comment_key = expected_comment_key
+        self.reason = reason
+        super().__init__(
+            f"comment {expected_comment_key!r} on {target!r} "
+            f"cannot be amended: {reason}"
+        )
