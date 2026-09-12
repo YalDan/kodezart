@@ -421,3 +421,28 @@ class CriterionReadError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
+
+
+class GitSourceReadError(Exception):
+    """The requested immutable repository object cannot supply source bytes."""
+
+    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
+        self.ref = ref
+        self.path = path
+        self.reason = reason
+        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
+
+
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
+        super().__init__(
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
+        )
