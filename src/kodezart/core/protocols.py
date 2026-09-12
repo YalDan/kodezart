@@ -1381,6 +1381,7 @@ class OutboundContentGate(Protocol):
         ...
 
 
+@runtime_checkable
 class GitSourceReader(Protocol):
     """Read pinned Git objects without checking out or running repository code."""
 
@@ -1401,6 +1402,7 @@ class GitSourceReader(Protocol):
         ...
 
 
+@runtime_checkable
 class TrackerCommentReader(Protocol):
     """Read complete native comments without granting a writer."""
 
