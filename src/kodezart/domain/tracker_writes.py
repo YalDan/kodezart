@@ -2,7 +2,11 @@
 
 from collections.abc import Sequence
 
-from kodezart.domain.errors import DuplicateCommentMarkerError, StaleWriteError
+from kodezart.domain.errors import (
+    DuplicateCommentMarkerError,
+    StaleCommentWriteError,
+    StaleWriteError,
+)
 from kodezart.types.domain.tracker import TrackerComment
 
 
@@ -56,3 +60,38 @@ def description_replacement(
     if body == expected:
         return replacement
     raise StaleWriteError(target=target, expected=expected)
+
+
+def require_expected_comment(
+    *,
+    target: str,
+    marker: str,
+    expected: TrackerComment,
+    current: TrackerComment | None,
+    replacement: str,
+) -> None:
+    """Validate an existing root comment or its exact lawful no-op replay.
+
+    The final reader supplies the native candidate after awaited authority
+    checks. Identical desired text never authorizes a replaced identity, changed
+    author or reply. This assertion is not a backend compare-and-swap.
+    """
+    reason = None
+    if (
+        expected.issue_key != target
+        or expected.reply_to is not None
+        or expected.body.splitlines()[:1] != [marker]
+    ):
+        reason = "the expected record does not address this root marker"
+    elif current is None:
+        reason = "the expected native comment is absent"
+    elif current.model_dump(exclude={"body"}) != expected.model_dump(exclude={"body"}):
+        reason = "the expected native identity or provenance changed"
+    elif current.body not in {expected.body, replacement}:
+        reason = "the expected comment body changed"
+    if reason is not None:
+        raise StaleCommentWriteError(
+            target=target,
+            expected_comment_key=expected.comment_key,
+            reason=reason,
+        )
