@@ -1354,6 +1354,28 @@ class LinearMcpTracker:
                 comments[wire.id] = field_values(raw)
         return tuple(sorted(comments.items()))
 
+    async def _unstarted_state_id(self, *, team_id: str, issue_key: str) -> str:
+        payload = await self._call(_TOOL_LIST_ISSUE_STATUSES, {"team": team_id})
+        try:
+            states = LINEAR_WORKFLOW_STATES.validate_python(payload)
+        except ValidationError as exc:
+            raise TrackerProtocolError(
+                "invalid initial state vocabulary",
+                tool=_TOOL_LIST_ISSUE_STATUSES,
+                detail=str(exc),
+            ) from exc
+        unstarted = [
+            state.id
+            for state in states
+            if state.type == WorkflowStateKind.UNSTARTED.value
+        ]
+        if len(unstarted) != 1:
+            raise CriterionReadError(
+                issue_key=issue_key,
+                reason="initialization requires exactly one unstarted team state",
+            )
+        return unstarted[0]
+
     async def create_criterion_if_absent(
         self, *, parent_key: str, title: str, check: str, do: str, holder: str
     ) -> TrackerIssue:
@@ -1384,25 +1406,7 @@ class LinearMcpTracker:
                 reason="criterion classification aliases human approval",
             )
         team = self._team_identifier(parent.team_key)
-        payload = await self._call(_TOOL_LIST_ISSUE_STATUSES, {"team": team})
-        try:
-            states = LINEAR_WORKFLOW_STATES.validate_python(payload)
-        except ValidationError as exc:
-            raise TrackerProtocolError(
-                "invalid initial state vocabulary",
-                tool=_TOOL_LIST_ISSUE_STATUSES,
-                detail=str(exc),
-            ) from exc
-        unstarted = [
-            state.name
-            for state in states
-            if state.type == WorkflowStateKind.UNSTARTED.value
-        ]
-        if len(unstarted) != 1:
-            raise CriterionReadError(
-                issue_key=parent_key,
-                reason="criterion creation requires exactly one unstarted team state",
-            )
+        state = await self._unstarted_state_id(team_id=team, issue_key=parent_key)
         surface = WritableSurface(
             kind=SurfaceKind.CRITERION_CHILD_SET,
             ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
@@ -1417,7 +1421,7 @@ class LinearMcpTracker:
                     "team": team,
                     "parentId": parent_key,
                     "labels": [label],
-                    "state": unstarted[0],
+                    "state": state,
                 },
             )
         )

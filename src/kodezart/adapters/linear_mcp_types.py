@@ -344,8 +344,9 @@ class LinearNamedWire(LinearWireModel):
 
 
 class LinearWorkflowStateWire(LinearNamedWire):
-    """Native status category, required when selecting initial criterion state."""
+    """Native status identity and category for exact team-state selection."""
 
+    id: str = Field(min_length=1, pattern=r"\S")
     type: str
 
 

@@ -2712,6 +2712,17 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
+        state = str(arguments.get("state", "Backlog"))
+        if "state" in arguments and state not in self.state_types:
+            matches = [
+                name
+                for team, names in self.statuses.items()
+                for name in names
+                if f"{team}-{name}-id" == state
+            ]
+            if len(matches) != 1:
+                raise LookupError(f"unknown or ambiguous native state {state!r}")
+            state = matches[0]
         if "id" not in arguments:
             self._sequence += 1
             created = FakeMcpIssue(
@@ -2724,8 +2735,8 @@ class FakeLinearMcpServer:
                 if "parentId" in arguments
                 else None,
                 labels=list(arguments.get("labels", [])),
-                status=str(arguments.get("state", "Backlog")),
-                status_type=self.state_types[str(arguments["state"])]
+                status=state,
+                status_type=self.state_types[state]
                 if "state" in arguments
                 else "backlog",
             )
@@ -2742,7 +2753,7 @@ class FakeLinearMcpServer:
         if "description" in arguments:
             issue.description = str(arguments["description"])
         if "state" in arguments:
-            issue.status = str(arguments["state"])
+            issue.status = state
             issue.status_type = self.state_types[issue.status]
         if "labels" in arguments:
             raw_labels = arguments["labels"]
