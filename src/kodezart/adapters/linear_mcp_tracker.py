@@ -70,6 +70,7 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
@@ -129,7 +130,12 @@ from kodezart.types.domain.self_writes import (
     field_value,
     field_values,
 )
-from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -1440,6 +1446,56 @@ class LinearMcpTracker:
             )
         return current
 
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_SUB_ISSUE,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
+        )
+
+        async def attempt() -> TrackerIssue:
+            current = await self.read_issue(issue_key=expected.issue_key)
+            require_criterion_source(
+                expected=expected, current=current, pending_replay=True
+            )
+            if current.team_key is None:
+                raise CriterionReadError(
+                    issue_key=expected.issue_key,
+                    reason="the criterion has no declared team",
+                )
+            state = await self._unstarted_state_id(
+                team_id=self._team_identifier(current.team_key),
+                issue_key=expected.issue_key,
+            )
+            markers = await self._markers_on(
+                _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+            )
+            current = await self.read_issue(issue_key=expected.issue_key)
+            require_criterion_source(
+                expected=expected, current=current, pending_replay=True
+            )
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+            if current.state_kind is WorkflowStateKind.UNSTARTED:
+                return current
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE, {"id": expected.issue_key, "state": state}
+            )
+            return self._saved_issue(payload, written={"state": state})
+
+        await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        # Outside the write retry: a failed read must never resend a completed move.
+        current = await self.read_issue(issue_key=expected.issue_key)
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=True
+        )
+        if current.state_kind is not WorkflowStateKind.UNSTARTED:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="the reset did not land in the native unstarted state",
+            )
+        return current
+
     async def create_issue(
         self,
         *,
@@ -1660,9 +1716,61 @@ class LinearMcpTracker:
         return matches[0] if matches else None
 
     async def edit_description(
-        self, *, target: str, expected: str, replacement: str
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
     ) -> DescriptionEditResult:
         """Assert the complete expected body before a description-only write."""
+        if authorization is not None:
+            surface = authorization.surface
+            if surface.ref.key != target:
+                raise ValueError("description authority addresses another target")
+            original = await self.read_issue(issue_key=target)
+
+            async def attempt() -> DescriptionEditResult:
+                markers = await self._markers_on(
+                    _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+                )
+                current = await self.read_issue(issue_key=target)
+                if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                    require_criterion_source(
+                        expected=original.model_copy(update={"body": current.body}),
+                        current=current,
+                    )
+                elif original.model_dump(
+                    exclude={"body", "updated_at"}
+                ) != current.model_dump(exclude={"body", "updated_at"}):
+                    raise TrackerProtocolError(
+                        "description target facts changed",
+                        tool=_TOOL_GET_ISSUE,
+                        detail=target,
+                    )
+                body = description_replacement(
+                    target=target,
+                    body=current.body,
+                    expected=expected,
+                    replacement=replacement,
+                )
+                self._assert_surface_holder(
+                    surface=surface, holder=authorization.holder, markers=markers
+                )
+                if body is None:
+                    return DescriptionEditResult.UNCHANGED
+                identity = self._issue_identity.decode(current.body, issue_key=target)
+                if identity is not None:
+                    body = self._issue_identity.encode(
+                        identity, body=body, issue_key=target
+                    )
+                payload = await self._send(
+                    _TOOL_SAVE_ISSUE, {"id": target, "description": body}
+                )
+                self._saved_issue(payload, written={"description": body})
+                return DescriptionEditResult.EDITED
+
+            return await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
         current = await self.read_issue(issue_key=target)
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement

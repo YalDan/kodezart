@@ -39,6 +39,7 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
+from kodezart.domain.criterion_amendment import require_criterion_source
 from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
@@ -151,7 +152,12 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -3649,6 +3655,48 @@ class FakeTrackerPort:
         self.issues[child.issue_key] = child
         return child
 
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        current = await self.read_issue(issue_key=expected.issue_key)
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=True
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_SUB_ISSUE,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
+        )
+        grant = self.leases.get(surface)
+        owner = (
+            grant.holder
+            if grant is not None and grant.expires_at > self._clock()
+            else None
+        )
+        if not holder.strip() or holder != owner:
+            raise SurfaceLeaseError(
+                "native criterion amendment requires its grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        if current.state_kind is WorkflowStateKind.UNSTARTED:
+            return current
+        pending = [
+            name
+            for name, kind in self._state_kinds.items()
+            if kind is WorkflowStateKind.UNSTARTED
+        ]
+        if len(pending) != 1:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="reset requires exactly one unstarted team state",
+            )
+        updated = current.model_copy(
+            update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED}
+        )
+        self.issues[expected.issue_key] = updated
+        self._wrote(expected.issue_key)
+        return self.issues[expected.issue_key]
+
     async def create_issue(
         self,
         *,
@@ -3779,9 +3827,32 @@ class FakeTrackerPort:
         return self.issues[issue_key]
 
     async def edit_description(
-        self, *, target: str, expected: str, replacement: str
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
     ) -> DescriptionEditResult:
+        if authorization is not None and authorization.surface.ref.key != target:
+            raise ValueError("description authority addresses another target")
         current = await self.read_issue(issue_key=target)
+        if authorization is not None:
+            surface = authorization.surface
+            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                require_criterion_source(expected=current, current=current)
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if authorization.holder != owner:
+                raise SurfaceLeaseError(
+                    "native criterion amendment requires its grant",
+                    surface=surface,
+                    current_holder=owner,
+                )
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement
         )

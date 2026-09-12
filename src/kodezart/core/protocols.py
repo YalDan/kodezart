@@ -56,7 +56,11 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from kodezart.types.domain.surface import SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -921,6 +925,18 @@ class TrackerPort(
         """
         ...
 
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        """Reset only this expected native criterion under CRITERION_SUB_ISSUE.
+
+        Resolve the team's unique actual unstarted state. Re-read expected
+        identity/body/state and the current holder on each unsent retry;
+        a matching already-unstarted replay writes nothing. Read back the
+        state separately from the write attempt. No body or evidence is edited.
+        """
+        ...
+
     async def create_issue(
         self,
         *,
@@ -991,7 +1007,12 @@ class TrackerPort(
         ...
 
     async def edit_description(
-        self, *, target: str, expected: str, replacement: str
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
     ) -> DescriptionEditResult:
         """Replace the complete expected description; state moves separately.
 
@@ -999,6 +1020,10 @@ class TrackerPort(
         Exact expected bytes return EDITED; any other current body raises
         StaleWriteError with no write. Substrings do not identify the target.
         Callers serialize writes; this is not an atomic compare-and-swap.
+
+        Explicit authorization selects its own ISSUE_DESCRIPTION or
+        CRITERION_SUB_ISSUE grant. Reject a target mismatch before reads,
+        and repeat expected source and lease checks on every unsent retry.
 
         No write on this port carries a body and a workflow state
         together, and a backend offering to do both in one act is refused

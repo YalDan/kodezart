@@ -262,6 +262,9 @@ class RalphLoop:
                 criteria=native_criteria,
                 base_ref=ctx.base_branch,
                 repo_url=ctx.repo_url,
+                holder=ctx.surface_holder,
+                visibility=ctx.repo_visibility,
+                stage=PromptKey.IMPLEMENTATION,
             )
             if reports:
                 prompt += "\n\nPrior independent amendment reports:\n" + "\n".join(
