@@ -1,5 +1,6 @@
 """Checkpoint the real native writer, reconciliation and persistence phases."""
 
+from collections.abc import Awaitable
 from typing import Literal, Protocol
 
 from langgraph.graph import END, START, StateGraph
@@ -46,6 +47,7 @@ class NativeExecutionGraph:
 
     def __init__(self, *, actions: NativeExecutionActions) -> None:
         self._actions = actions
+        self.failure: BaseException | None = None
         graph: StateGraph[
             NativeExecutionState, None, NativeExecutionState, NativeExecutionState
         ] = StateGraph(NativeExecutionState)
@@ -58,6 +60,15 @@ class NativeExecutionGraph:
         for node in ("prepare", "write", "reconcile", "persist"):
             graph.add_conditional_edges(node, self._next, destinations)
         self.graph = graph.compile()
+
+    async def _invoke[ResultT](self, action: Awaitable[ResultT]) -> ResultT:
+        try:
+            return await action
+        except BaseException as failure:
+            # The installed runner can suppress a child task's cancellation.
+            # Retain the actual exception for the owning stream, never state.
+            self.failure = failure
+            raise
 
     @staticmethod
     def _next(
@@ -77,19 +88,21 @@ class NativeExecutionGraph:
     async def _prepare(self, state: NativeExecutionState) -> dict[str, object]:
         if not isinstance(state.execution, NewNativeExecution):
             raise ValueError("workspace preparation requires a new native execution")
-        return {"execution": await self._actions.prepare()}
+        return {"execution": await self._invoke(self._actions.prepare())}
 
     async def _write(self, state: NativeExecutionState) -> dict[str, object]:
         if not isinstance(state.execution, PreparedNativeExecution):
             raise ValueError("native writing requires a prepared workspace")
-        return {"execution": await self._actions.write(state.execution)}
+        return {"execution": await self._invoke(self._actions.write(state.execution))}
 
     async def _reconcile(self, state: NativeExecutionState) -> dict[str, object]:
         if not isinstance(state.execution, WrittenNativeExecution):
             raise ValueError("reconciliation requires an actual completed writer")
-        return {"execution": await self._actions.reconcile(state.execution)}
+        return {
+            "execution": await self._invoke(self._actions.reconcile(state.execution))
+        }
 
     async def _persist(self, state: NativeExecutionState) -> dict[str, object]:
         if not isinstance(state.execution, ReconciledNativeExecution):
             raise ValueError("persistence requires actual reconciliation receipts")
-        return {"execution": await self._actions.persist(state.execution)}
+        return {"execution": await self._invoke(self._actions.persist(state.execution))}

@@ -79,7 +79,6 @@ class NativeExecution:
         self._persister, self._guard, self._request = persister, guard, request
         self._active_workspace: str | None = None
         self._release_incomplete_workspace = False
-        self._writer_failure: BaseException | None = None
         self._log = get_logger(__name__)
 
     async def _restore(self, phase: ActiveNativeExecution) -> None:
@@ -168,8 +167,7 @@ class NativeExecution:
                     result = event
                 else:
                     writer(event)
-        except BaseException as failure:
-            self._writer_failure = failure
+        except BaseException:
             # Preserve the original incomplete-writer cleanup contract. A saved
             # Prepared phase then refuses its missing workspace on resume; it
             # never silently opens a replacement writer. Completed phases and
@@ -275,9 +273,9 @@ class NativeExecution:
         completed = False
         report_emitted = False
         state = NativeExecutionState(execution=NewNativeExecution())
-        graph = NativeExecutionGraph(actions=self).graph
+        execution = NativeExecutionGraph(actions=self)
         try:
-            async for mode, value in graph.astream(
+            async for mode, value in execution.graph.astream(
                 state,
                 stream_mode=["custom", "values"],
             ):
@@ -293,10 +291,10 @@ class NativeExecution:
                 else:
                     state = NativeExecutionState.model_validate(value)
             # The installed framework can finish a stream after a child task
-            # cancels itself. Preserve the actual writer failure in this runtime
+            # cancels itself. Preserve the actual phase failure in this runtime
             # invocation; exceptions are never serialized as phase state.
-            if self._writer_failure is not None:
-                raise self._writer_failure
+            if execution.failure is not None:
+                raise execution.failure
             phase = state.execution
             if not isinstance(
                 phase,
