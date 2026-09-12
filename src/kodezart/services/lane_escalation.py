@@ -1,5 +1,7 @@
 """An escalation is durable before the raising operation returns."""
 
+from collections.abc import Awaitable, Callable
+
 from pydantic import ValidationError
 
 from kodezart.core.logging import get_logger
@@ -47,12 +49,15 @@ class LaneEscalationWriter:
         job_id: str,
         escalation: LaneEscalation,
         visibility: RepoVisibility,
+        before_write: Callable[[], Awaitable[None]] | None = None,
     ) -> TrackerComment:
         """Await both writes; a later reporting failure cannot erase the question.
 
         Writes to one occurrence are serialized by the caller. A failed hop
         propagates, and a retry completes the same occurrence through the
-        tracker's idempotent operations.
+        tracker's idempotent operations. A supplied policy guard runs after
+        internal waits and before each issued write. It cannot fence a write
+        already accepted by the backend.
         """
         if "decision" not in self._operation.issue_labels:
             raise OperationMemberAbsentError(
@@ -116,6 +121,8 @@ class LaneEscalationWriter:
             surfaces=surfaces,
             lease_seconds=self._surface_lease_seconds,
         ) as lease:
+            if before_write is not None:
+                await before_write()
             comment = await settle(
                 self._tracker.upsert_comment(
                     target=escalation.issue_id,
@@ -125,6 +132,8 @@ class LaneEscalationWriter:
                 )
             )
             await lease.renew()
+            if before_write is not None:
+                await before_write()
             await settle(
                 self._tracker.set_issue_classification(
                     issue_key=escalation.issue_id, classification="decision"

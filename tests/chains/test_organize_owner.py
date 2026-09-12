@@ -267,7 +267,7 @@ async def test_wrong_author_identity_refuses_before_native_issue_write():
 
 
 async def test_author_source_changed_during_session_cannot_be_overwritten(monkeypatch):
-    from kodezart.domain.errors import StaleWriteError
+    from kodezart.domain.errors import OrganizeWriteRefusalError
 
     owner, board, executor = factory()
     original = executor.stream
@@ -281,7 +281,7 @@ async def test_author_source_changed_during_session_cannot_be_overwritten(monkey
             yield event
 
     monkeypatch.setattr(executor, "stream", changed)
-    with pytest.raises(StaleWriteError):
+    with pytest.raises(OrganizeWriteRefusalError, match="source revision changed"):
         await run_owner(owner)
     assert (
         board.server.issues[CLAIMED_ISSUE].description
