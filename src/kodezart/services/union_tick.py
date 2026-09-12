@@ -1,7 +1,7 @@
 """Observe current lane heads around the existing pinned union composition."""
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from kodezart.core.config import AppConfig
 from kodezart.core.owned_tasks import settle
@@ -44,13 +44,24 @@ class UnionTick:
         self._tick = asyncio.Lock()
 
     async def verify(
-        self, *, lane_branches: Sequence[UnionLaneBranch]
+        self,
+        *,
+        lane_branches: Sequence[UnionLaneBranch],
+        validate_roster: Callable[[], Awaitable[None]] | None = None,
     ) -> UnionCompositionResult:
-        """Return a current observation or refuse continuously moving heads."""
+        """Return a current observation or refuse continuously moving heads.
+
+        A live-roster caller revalidates its facts before the head reads that
+        authorize reuse or return. A push during that read then follows this
+        tick's existing stale-head retry path. Direct pinned-roster callers
+        have no additional fact source to validate.
+        """
         plan = UnionTickPlan.model_validate(
             {"lanes": [lane.model_dump() for lane in lane_branches]}
         )
         async with self._tick:
+            if validate_roster is not None:
+                await validate_roster()
             heads = await self._read_heads(plan)
             previous = self._last_result
             if previous is not None and previous.lane_heads == heads:
@@ -70,6 +81,8 @@ class UnionTick:
                     base_sha=self._context.base_sha,
                     lane_heads=heads,
                 )
+                if validate_roster is not None:
+                    await validate_roster()
                 heads = await self._read_heads(plan)
                 if heads == result.lane_heads:
                     self._last_result = result

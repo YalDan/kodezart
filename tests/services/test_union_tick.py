@@ -395,3 +395,84 @@ def test_stale_attempt_bound_has_its_own_environment_name(monkeypatch):
     assert AppConfig().union_stale_max_attempts == 3
     monkeypatch.setenv("KODEZART_UNION_STALE_MAX_ATTEMPTS", "2")
     assert AppConfig().union_stale_max_attempts == 2
+
+
+async def test_roster_read_head_move_invalidates_cached_result(current):
+    tick = current.consumer()
+    first = await tick.verify(lane_branches=current.branches)
+    moved = []
+
+    async def validate_roster():
+        if not moved:
+            moved.append(await current.advance("move during cache roster read\n"))
+
+    second = await tick.verify(
+        lane_branches=current.branches, validate_roster=validate_roster
+    )
+    assert second is not first and second.lane_heads[-1].head_sha == moved[0]
+    assert len(current.runner.calls) == 2
+    assert current.git.removed == current.git.created
+    assert (
+        await tick.verify(
+            lane_branches=current.branches, validate_roster=validate_roster
+        )
+        is second
+    )
+    assert len(current.runner.calls) == 2
+
+
+async def test_roster_read_head_move_after_composition_retries(current):
+    validations = []
+    moved = []
+
+    async def validate_roster():
+        validations.append(len(current.runner.calls))
+        if validations == [0, 1]:
+            moved.append(await current.advance("move during final roster read\n"))
+
+    result = await current.consumer().verify(
+        lane_branches=current.branches, validate_roster=validate_roster
+    )
+    assert result.lane_heads[-1].head_sha == moved[0]
+    assert validations == [0, 1, 2]
+    assert current.git.removed == current.git.created
+    assert not any(Path(path).exists() for path in current.git.created)
+
+
+async def test_continuous_roster_read_head_moves_use_existing_retry_bound(current):
+    tick = current.consumer(attempts=2)
+
+    async def validate_roster():
+        if current.runner.calls:
+            await current.advance(f"move at roster read {len(current.runner.calls)}\n")
+
+    with pytest.raises(UnionUnstableError) as raised:
+        await tick.verify(
+            lane_branches=current.branches, validate_roster=validate_roster
+        )
+    assert raised.value.attempts == 2
+    assert raised.value.measured_shas != raised.value.current_shas
+    assert len(current.runner.calls) == 2
+    assert current.git.removed == current.git.created
+    assert not any(Path(path).exists() for path in current.git.created)
+    result = await tick.verify(lane_branches=current.branches)
+    assert result.outcome is UnionOutcome.GREEN and len(current.runner.calls) == 3
+
+
+async def test_changed_roster_refuses_cached_result_before_head_read(current):
+    tick = current.consumer()
+    await tick.verify(lane_branches=current.branches)
+    failure = UnionHeadReadError(
+        scope_key="scope/one", branch=None, reason="scope roster changed"
+    )
+
+    async def validate_roster():
+        raise failure
+
+    with pytest.raises(UnionHeadReadError) as raised:
+        await tick.verify(
+            lane_branches=current.branches, validate_roster=validate_roster
+        )
+    assert raised.value is failure
+    assert len(current.runner.calls) == 1
+    assert current.git.removed == current.git.created

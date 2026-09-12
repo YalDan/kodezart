@@ -1,6 +1,6 @@
 """Observe a scope's retained lane heads independently of dispatch readiness.
 
-Membership comes from the complete scope plan. The existing topology policy
+Membership comes from the coherent scope facts. The existing topology policy
 orders those participants; approval, criterion gaps and live blockers decide
 future dispatch, not whether a retained branch belongs in this measurement.
 The consumer holds tracker, Git and check-runner ports without forge or
@@ -12,7 +12,7 @@ from kodezart.core.protocols import CheckChainRunner, GitService, TrackerPort
 from kodezart.domain.errors import UnionHeadReadError
 from kodezart.domain.issue_tree import RECORD_KINDS
 from kodezart.domain.topology import plan_topology
-from kodezart.services.scope_planning import read_scope_plan
+from kodezart.services.scope_planning import read_scope_facts
 from kodezart.services.union_composition import UnionComposition
 from kodezart.services.union_tick import UnionTick
 from kodezart.types.domain.branch import WorkRefRole
@@ -58,14 +58,18 @@ class ScopeUnionCoordinator:
     async def verify(self) -> UnionCompositionResult:
         """Return an observation only while its participant roster remains current."""
         roster = await self._roster()
-        result = await self._tick.verify(lane_branches=roster)
-        if await self._roster() != roster:
-            raise UnionHeadReadError(
-                scope_key=self._scope.key,
-                branch=None,
-                reason="the scope union roster changed during verification",
-            )
-        return result
+
+        async def validate_roster() -> None:
+            if await self._roster() != roster:
+                raise UnionHeadReadError(
+                    scope_key=self._scope.key,
+                    branch=None,
+                    reason="the scope union roster changed during verification",
+                )
+
+        return await self._tick.verify(
+            lane_branches=roster, validate_roster=validate_roster
+        )
 
     async def _roster(self) -> tuple[UnionLaneBranch, ...]:
         """Rank complete ordinary membership without dispatch eligibility.
@@ -74,7 +78,7 @@ class ScopeUnionCoordinator:
         is blocked from another dispatch. Structural criterion and record
         issues are facts for planning, not independent delivery branches.
         """
-        plan = await read_scope_plan(ref=self._scope, tracker=self._tracker)
+        plan = await read_scope_facts(ref=self._scope, tracker=self._tracker)
         participants = frozenset(
             issue.issue_key
             for issue in plan.scope.issues

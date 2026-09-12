@@ -11,7 +11,7 @@ fixture here puts the offending key one level below the filter.
 import pytest
 
 from kodezart.domain.errors import ScopePlanRefusalError, ScopeReadError
-from kodezart.services.scope_planning import read_scope_plan
+from kodezart.services.scope_planning import read_scope_facts, read_scope_plan
 from kodezart.types.domain.operation import ScopeLabel
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind
 from kodezart.types.domain.tracker import WorkflowStateKind
@@ -124,7 +124,10 @@ async def test_a_refused_scope_dispatches_nothing():
     assert tracker.claims == {}
 
 
-async def test_a_member_absent_from_its_ancestors_subtree_refuses(monkeypatch):
+@pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
+async def test_a_member_absent_from_its_ancestors_subtree_refuses(
+    monkeypatch, read_scope
+):
     """A member the descendant read drops is never read as owing nothing."""
     tracker = board(
         deliverable("root"),
@@ -142,10 +145,13 @@ async def test_a_member_absent_from_its_ancestors_subtree_refuses(monkeypatch):
 
     monkeypatch.setattr(tracker, "scope_issues", scoped)
     with pytest.raises(ScopeReadError, match="nested"):
-        await read_scope_plan(ref=PROJECT, tracker=tracker)
+        await read_scope(ref=PROJECT, tracker=tracker)
 
 
-async def test_a_subtree_that_moves_during_planning_never_returns_a_plan(monkeypatch):
+@pytest.mark.parametrize("read_scope", [read_scope_plan, read_scope_facts])
+async def test_a_subtree_that_moves_during_planning_never_returns_a_plan(
+    monkeypatch, read_scope
+):
     """The subtree is read twice; a descendant that moved between them refuses.
 
     The moved descendant is the deliverable child itself, which no criterion
@@ -171,4 +177,4 @@ async def test_a_subtree_that_moves_during_planning_never_returns_a_plan(monkeyp
 
     monkeypatch.setattr(tracker, "scope_issues", scoped)
     with pytest.raises(ScopeReadError, match="member subtrees changed"):
-        await read_scope_plan(ref=PROJECT, tracker=tracker)
+        await read_scope(ref=PROJECT, tracker=tracker)
