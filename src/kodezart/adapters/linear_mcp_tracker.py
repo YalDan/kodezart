@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
+    LinearAddressedIssueWire,
     LinearCommentEntryWire,
     LinearCommentListWire,
     LinearCommentWire,
@@ -971,11 +972,24 @@ class LinearMcpTracker:
             "criterion", stops="criterion sub-issue membership cannot be read"
         )
         try:
-            parent = (
-                subject
-                if subject is not None
-                else await self.read_issue(issue_key=issue_key)
-            )
+            if subject is None:
+                payload = await self._call(
+                    _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+                )
+                wire = self._validate(
+                    LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE
+                )
+                if not wire.matches_requested(issue_key):
+                    raise CriterionReadError(
+                        issue_key=issue_key, reason="parent identity changed"
+                    )
+                parent = self._to_issue(wire)
+            else:
+                if subject.issue_key != issue_key:
+                    raise CriterionReadError(
+                        issue_key=issue_key, reason="supplied parent identity changed"
+                    )
+                parent = subject
             return parent, await self._read_criteria(parent=parent)
         except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(
