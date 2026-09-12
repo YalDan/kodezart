@@ -1259,5 +1259,3 @@ class AppConfig(BaseSettings):
         )
 
     organize: OrganizeSettings | None = None
-
-    write_back: WriteBackSettings | None = None
