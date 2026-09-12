@@ -54,6 +54,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.criteria import (
     CriteriaValidationOutput,
 )
+from kodezart.types.domain.fire_spec import AuthoredSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -243,7 +244,7 @@ class FireSpecification:
             msg = "Ticket generator did not emit a WorkflowTicketEvent."
             raise RuntimeError(msg)
 
-        return {"ticket": ticket_event.ticket}
+        return {"fire_spec": AuthoredSpec(ticket=ticket_event.ticket)}
 
     async def generate_criteria(
         self,
@@ -436,7 +437,7 @@ class FireSpecification:
 
         return {
             "criteria_validation": validation,
-            "criteria_artifact": build_artifact(criteria, validation),
+            "criterion_set": build_artifact(criteria, validation),
             "criteria_regeneration_rounds": (
                 rounds_used if bound_exhausted or not targets else rounds_used + 1
             ),

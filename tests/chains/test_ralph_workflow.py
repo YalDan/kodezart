@@ -2029,7 +2029,7 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
-        "ticket": None,
+        "fire_spec": None,
         "acceptance_criteria": [],
         "accepted": True,
         "total_iterations": 1,
@@ -3382,7 +3382,7 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
         "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
-        "ticket": None,
+        "fire_spec": None,
         "acceptance_criteria": ["Tests pass"],
         "accepted": True,
         "total_iterations": 1,
@@ -4467,7 +4467,7 @@ async def test_the_round_carries_the_original_ticket_not_its_own_replacement() -
 
     assert len(remediator.calls) == 2
     first, second = remediator.calls
-    assert first.original_ticket == second.original_ticket
+    assert first.original_spec == second.original_spec
     assert second.round_index == 1
 
 

@@ -15,7 +15,7 @@ produced, so the note cannot disagree with the run it describes.
 
 from collections.abc import Sequence
 
-from kodezart.types.domain.criteria import CriterionId, ValidatedCriterion
+from kodezart.types.domain.criteria import CriterionId, ExecutionCriterion
 from kodezart.types.domain.trajectory import LoopTrajectory
 
 DO_NOT_MERGE_PREFIX = "[do-not-merge]"
@@ -34,7 +34,7 @@ def stall_pr_title(ticket_title: str) -> str:
 
 def stall_pr_body(
     trajectory: LoopTrajectory,
-    criteria: Sequence[ValidatedCriterion],
+    criteria: Sequence[ExecutionCriterion],
     *,
     landed_commit: str,
 ) -> str:

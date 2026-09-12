@@ -10,12 +10,14 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
+from kodezart.chains.criteria import current_native_criteria
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.node_sessions import NodeSessionObserver
 from kodezart.core.protocols import (
     AgentRunner,
+    FireCriteriaReader,
     GitService,
     PromptSetProvider,
     RepoCache,
@@ -26,7 +28,10 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.accept_gate import gate_cleared
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.fan_in import fan_in_report, require_permutation
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    execution_criteria_variables,
+)
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
 from kodezart.types.domain.accept import AcceptVerdict
@@ -38,7 +43,8 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
+from kodezart.types.domain.criteria import ExecutionCriterion, FanInReport
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.prompts import PromptKey
@@ -76,8 +82,10 @@ class RalphLoop:
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
         fan_in_max_attempts: int,
+        criteria_reader: FireCriteriaReader | None = None,
     ) -> None:
         self._service = service
+        self._criteria_reader = criteria_reader
         self._max_iterations = max_iterations
         self._plateau_window = plateau_window
         self._fan_in_max_attempts = fan_in_max_attempts
@@ -113,7 +121,8 @@ class RalphLoop:
         work_base_ref: str,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
-        acceptance_criteria: list[ValidatedCriterion],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
@@ -136,6 +145,7 @@ class RalphLoop:
             ralph_branch=ralph_branch,
             work_base_ref=work_base_ref,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             repo_visibility=repo_visibility,
         )
         configurable: dict[str, object] = ctx.model_dump()
@@ -204,6 +214,14 @@ class RalphLoop:
         config: RunnableConfig,
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
+        native_criteria = (
+            None
+            if ctx.tracker_spec is None
+            else await current_native_criteria(
+                spec=ctx.tracker_spec,
+                reader=self._criteria_reader,
+            )
+        )
         writer = get_stream_writer()
         iteration = state["iteration"] + 1
         is_first = iteration == 1
@@ -215,6 +233,12 @@ class RalphLoop:
                     "prior_prompt": prompt,
                     "pending_failures": state["pending_failures"],
                 },
+            )
+
+        if native_criteria is not None:
+            prompt += "\n\n## Current tracker Checks\n" + "\n\n".join(
+                f"### {criterion.id}\n{criterion.text}"
+                for criterion in native_criteria.criteria
             )
 
         commit_sha: str | None = None
@@ -250,6 +274,13 @@ class RalphLoop:
         config: RunnableConfig,
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
+        criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
+        if ctx.tracker_spec is not None:
+            snapshot = await current_native_criteria(
+                spec=ctx.tracker_spec,
+                reader=self._criteria_reader,
+            )
+            criteria = list(snapshot.criteria)
         writer = get_stream_writer()
         cwd = (
             ctx.repo_path
@@ -266,7 +297,7 @@ class RalphLoop:
         )
         eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
             {
-                "criteria": ctx.acceptance_criteria,
+                **execution_criteria_variables(criteria),
                 **changeset_variables(changeset),
             },
         )
@@ -347,13 +378,13 @@ class RalphLoop:
         output, unresolved, attempts = await until_permutation(
             dispatch=evaluate,
             check=lambda candidate: require_permutation(
-                grade_iteration(ctx.acceptance_criteria, candidate),
+                grade_iteration(criteria, candidate),
             ),
             max_attempts=self._fan_in_max_attempts,
             site="ralph_evaluator",
             log=self._log,
         )
-        grade = grade_iteration(ctx.acceptance_criteria, output)
+        grade = grade_iteration(criteria, output)
         fan_in: FanInReport | None = None
         if unresolved is not None:
             # The bound is spent: grade what came back against the

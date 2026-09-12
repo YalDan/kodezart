@@ -27,6 +27,7 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
     {
         "tracker_criteria",
+        "swept_criteria",
         "task",
         "task_md",
         "task_description",

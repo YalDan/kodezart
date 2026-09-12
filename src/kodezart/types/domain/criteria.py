@@ -1,7 +1,8 @@
 """Typed shapes for the acceptance-criteria lifecycle.
 
-A criterion carries a stable identity (``AC-n``, minted at generation
-time) and — after the sweep — a three-state verdict with its evidence.
+A criterion carries a stable identity: authored ``AC-n`` minted at generation
+time, or the exact native tracker key. Authored criteria additionally carry
+a three-state sweep verdict with its evidence.
 
 ``infeasible`` and ``unverifiable`` differ in WHERE THE FAULT LIES: an
 ``infeasible`` criterion is at fault in its own text and is routed to an
@@ -32,15 +33,12 @@ CRITERION_ID_PATTERN = rf"^{CRITERION_ID_PREFIX}[1-9][0-9]*$"
 #:
 #: A ``NewType``: a constrained alias stays ``str`` to the type checker, so
 #: a union discriminating one minted identity from another collapses and
-#: admits any loose string.  Only the minting function constructs one.
+#: admits any loose string. Authored minting and native key capture construct it.
 CriterionId = NewType("CriterionId", str)
 
-#: A criterion identity carried INSIDE a list, format-checked per element.
-#:
-#: ``list[CriterionId]`` constrained nothing — the ``NewType`` validates as
-#: ``str`` and a field ``min_length`` constrains the LIST, not its members —
-#: so ``criterionIds: ["banana"]`` round-tripped intact.
-CriterionIdItem = Annotated[CriterionId, Field(pattern=CRITERION_ID_PATTERN)]
+#: Shared identity constraints apply per element, preserving exact tracker
+#: keys while refusing blank identities. AC-n is an authored minting rule.
+CriterionIdItem = Annotated[CriterionId, Field(min_length=1, pattern=r"\S")]
 
 
 class CriterionVerdict(StrEnum):
@@ -223,7 +221,7 @@ class GeneratedCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
 
 
@@ -463,9 +461,29 @@ class ValidatedCriterion(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
     feasibility: CriterionFeasibility
+
+
+class TrackerCriterion(CamelCaseModel):
+    """A live tracker obligation, without an invented authored sweep verdict."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
+
+    id: CriterionId = Field(min_length=1, pattern=r"\S")
+    text: str = Field(min_length=1)
+
+
+ExecutionCriterion = ValidatedCriterion | TrackerCriterion
+
+
+class TrackerCriterionSet(CamelCaseModel):
+    """The current Checks read at the native fire's execution barrier."""
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
+
+    criteria: list[TrackerCriterion] = Field(min_length=1)
 
 
 class CriteriaArtifact(CamelCaseModel):
@@ -493,7 +511,7 @@ class CriterionFailure(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
-    criterion_id: CriterionId = Field(pattern=CRITERION_ID_PATTERN)
+    criterion_id: CriterionId = Field(min_length=1, pattern=r"\S")
     text: str = Field(min_length=1)
     reasoning: str = Field(min_length=1)
 

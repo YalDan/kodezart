@@ -1,12 +1,22 @@
-"""The tracker-native criteria stage a fire runs before its loop."""
+"""Capture native subjects and read current obligations at fire barriers."""
 
 from langchain_core.runnables import RunnableConfig
 
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import InvalidFireCriterionError
+from kodezart.core.protocols import FireCriteriaReader, FireCriteriaSource, TrackerPort
+from kodezart.domain.errors import (
+    FireSpecEntryError,
+    InvalidFireCriterionError,
+    TransientAPIError,
+)
 from kodezart.domain.fire_spec import criterion_check
 from kodezart.services.scope_membership import read_scope_members
+from kodezart.types.domain.criteria import (
+    CriterionId,
+    TrackerCriterion,
+    TrackerCriterionSet,
+)
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 from kodezart.types.domain.workflow import WorkflowState
@@ -21,7 +31,7 @@ OWED_CRITERION_STATE = WorkflowStateKind.UNSTARTED
 
 
 class TrackerCriteria:
-    """A fire's criteria, read from the tracker at head, before the loop.
+    """A fire's criteria, read from the tracker at each execution barrier.
 
     The spec read IS the source: ``read_fire_spec`` establishes the
     subject's admission and lists its criterion sub-issues, and nothing a
@@ -52,7 +62,13 @@ class TrackerCriteria:
         what a previous run claimed, never part of what this one is
         graded against.
         """
-        spec = await self._tracker.read_fire_spec(issue_key=issue_key)
+        spec = await self.read_spec(issue_key=issue_key)
+        current = await self.read_current(spec=spec)
+        return {criterion.id: criterion.text for criterion in current.criteria}
+
+    async def _read_owed_criteria(self, spec: TrackerSpec) -> dict[str, str]:
+        """Refresh current criterion Checks without recapturing the subject."""
+        issue_key = spec.subject
         subtree = await read_scope_members(
             tracker=self._tracker,
             scope=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
@@ -83,25 +99,67 @@ class TrackerCriteria:
         )
         return owed
 
-    async def revalidate_criteria(
-        self,
-        state: WorkflowState,
-        config: RunnableConfig,
-    ) -> dict[str, object]:
-        """Re-read what this fire owes, at head, before the loop node runs.
+    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture the admitted subject; an outage is never cached authority."""
+        try:
+            return await self._tracker.read_fire_spec(issue_key=issue_key)
+        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
+            raise FireSpecEntryError(
+                issue_key=issue_key,
+                reason="the tracker subject spec could not be read",
+            ) from exc
 
-        A barrier node: what it establishes is that every criterion the
-        fire is about still states a Check the run can be graded against.
-        It writes no run state — the loop's own criterion identity is the
-        sub-issue key under the 2026-09-08 ruling, and the models that
-        carry identity into the loop are not this lane's surface — so a
-        criterion that has lost its Check stops the fire HERE rather than
-        after a loop has spent its budget on it.
-        """
-        _ = config
-        issue_key = state["issue_key"]
-        if issue_key is None:
-            msg = "A tracker-native fire carries its subject as issue_key"
-            raise ValueError(msg)
-        await self.read_owed_criteria(issue_key=issue_key)
-        return {}
+    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Refresh obligations without replacing the captured subject text."""
+        try:
+            owed = await self._read_owed_criteria(spec)
+        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason="current tracker criteria could not be read",
+            ) from exc
+        if not owed:
+            raise FireSpecEntryError(
+                issue_key=spec.subject,
+                reason="the subtree has no Todo criteria to execute",
+            )
+        return TrackerCriterionSet(
+            criteria=[
+                TrackerCriterion(id=CriterionId(key), text=check)
+                for key, check in owed.items()
+            ],
+        )
+
+
+async def current_native_criteria(
+    *, spec: TrackerSpec, reader: FireCriteriaReader | None
+) -> TrackerCriterionSet:
+    """Require live authority at the consuming node, including on replay."""
+    if reader is None:
+        raise FireSpecEntryError(
+            issue_key=spec.subject,
+            reason="the current tracker criteria reader is not configured",
+        )
+    return await reader.read_current(spec=spec)
+
+
+async def revalidate_criteria(
+    state: WorkflowState,
+    config: RunnableConfig,
+    *,
+    source: FireCriteriaSource,
+) -> dict[str, object]:
+    """Capture the subject once and carry current Checks into shared state."""
+    _ = config
+    issue_key = state["issue_key"]
+    if issue_key is None:
+        raise ValueError("A tracker-native fire carries its subject as issue_key")
+    spec = state["fire_spec"]
+    if spec is None:
+        spec = await source.read_spec(issue_key=issue_key)
+    if not isinstance(spec, TrackerSpec) or spec.subject != issue_key:
+        raise ValueError("The native fire spec must match its addressed subject")
+    return {
+        "fire_spec": spec,
+        "criterion_set": await source.read_current(spec=spec),
+    }

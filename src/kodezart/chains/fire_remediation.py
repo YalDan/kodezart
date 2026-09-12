@@ -9,14 +9,16 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.agent import generate_ralph_branch_name
 from kodezart.domain.workflow_state import (
-    original_ticket,
+    original_fire_spec,
     validated_criteria,
 )
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.agent import (
+    TicketDraftOutput,
     WorkflowRemediationEvent,
 )
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.workflow import (
     ExecutionContext,
     RemediationRequest,
@@ -58,7 +60,7 @@ class FireRemediation:
         request = RemediationRequest(
             entry=entry,
             round_index=state["remediation_rounds_used"],
-            original_ticket=original_ticket(state),
+            original_spec=original_fire_spec(state),
             work_branch=state["feature_branch"],
             work_base_ref=work_base_ref,
             total_iterations=state["total_iterations"],
@@ -134,6 +136,12 @@ class FireRemediation:
             msg = "Remediator did not emit a WorkflowRemediationEvent."
             raise RuntimeError(msg)
 
+        native = isinstance(request.original_spec, TrackerSpec)
+        if (native and not isinstance(remediation_event.ticket, RemediationPlan)) or (
+            not native and not isinstance(remediation_event.ticket, TicketDraftOutput)
+        ):
+            raise TypeError("The remediation output must match the fire spec arm")
+
         await self._log.ainfo(
             "remediation_round_opened",
             entry=entry.value,
@@ -149,7 +157,7 @@ class FireRemediation:
             "remediation_entry": entry,
             "ralph_branch": generate_ralph_branch_name(state["feature_branch"]),
             "acceptance_criteria": [],
-            "criteria_artifact": None,
+            "criterion_set": None,
             "criteria_validation": None,
             "criteria_regeneration_rounds": 0,
             "accept_verdict": AcceptVerdict.rejected,

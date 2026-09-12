@@ -119,13 +119,8 @@ def test_every_field_named_for_a_criterion_id_annotates_the_identity() -> None:
     assert offenders == []
 
 
-def test_the_minting_function_is_the_only_construction_site() -> None:
-    """Nothing outside the minting module may call `CriterionId(...)`.
-
-    Two construction sites is two places that know the `AC-n` shape, and
-    the second one is how a value that never passed the format check
-    acquires the type that says it did.
-    """
+def test_identity_construction_is_authored_mint_or_exact_tracker_key() -> None:
+    """Authored IDs are minted; the native reader carries the exact source key."""
     offenders: list[str] = []
     for path in Path("src").rglob("*.py"):
         tree = ast.parse(path.read_text())
@@ -134,10 +129,21 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
                 and node.func.id == "CriterionId"
-                and path != _MINTING_MODULE
+                and path
+                not in {_MINTING_MODULE, Path("src/kodezart/chains/criteria.py")}
             ):
                 offenders.append(f"{path}:{node.lineno}")
     assert offenders == []
+    source = Path("src/kodezart/chains/criteria.py").read_text()
+    native_calls = [
+        node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "CriterionId"
+    ]
+    assert len(native_calls) == 1
+    assert ast.unparse(native_calls[0]) == "CriterionId(key)"
 
 
 @pytest.mark.parametrize(
@@ -146,7 +152,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
         (
             Contradiction,
             "criterionIds",
-            {"criterionIds": ["banana", "AC-99"], "explanation": "conflict"},
+            {"criterionIds": [" ", "AC-99"], "explanation": "conflict"},
         ),
         (
             IterationGrade,
@@ -160,7 +166,7 @@ def test_the_minting_function_is_the_only_construction_site() -> None:
                         "reasoning": "r",
                     }
                 ],
-                "missingIds": ["not-an-id"],
+                "missingIds": ["\t\n"],
                 "dispatchedCount": 1,
                 "passedCount": 1,
                 "verdict": "accepted",
@@ -174,12 +180,7 @@ def test_a_malformed_element_of_an_identity_list_fails_closed(
     field: str,
     payload: dict[str, object],
 ) -> None:
-    """The pattern is on the ELEMENT, so the list cannot smuggle one in.
-
-    ``Field(min_length=...)`` constrains the list; the members went
-    unchecked, so a payload naming ``banana`` validated and the id reached
-    the regenerator's prompt and the pre-loop halt intact.
-    """
+    """Nonblank identity applies to each element, for either source arm."""
     with pytest.raises(ValidationError) as excinfo:
         record.model_validate(payload)
     locations = [error["loc"] for error in excinfo.value.errors()]
@@ -211,3 +212,9 @@ def test_authored_pattern_requires_authored_identity_even_on_native_shape():
         Annotated[CriterionRef, Field(pattern=CRITERION_ID_PATTERN)],
         (CriterionId,),
     )
+
+
+@pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
+def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
+    record = Contradiction(criterion_ids=[key, "another/key"], explanation="conflict")
+    assert record.criterion_ids[0] == key

@@ -1,6 +1,7 @@
 """Assemble and run the shared fire graph from its concrete phases."""
 
 from collections.abc import AsyncIterator
+from functools import partial
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -9,12 +10,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import RetryPolicy
 
-from kodezart.chains.criteria import TrackerCriteria
+from kodezart.chains.criteria import revalidate_criteria
 from kodezart.chains.fire_consolidation import FireConsolidation
 from kodezart.chains.fire_implementation import FireImplementation
 from kodezart.chains.fire_remediation import FireRemediation
 from kodezart.chains.fire_review import FireReview
 from kodezart.chains.fire_specification import FireSpecification
+from kodezart.core.protocols import FireCriteriaSource
 from kodezart.core.retry import DelayFloor, RetryFloor, should_retry
 from kodezart.domain.accept_gate import (
     gate_cleared,
@@ -73,7 +75,7 @@ class RalphWorkflowEngine:
         retry_max_attempts: int,
         retry_initial_interval: float,
         delay_floor_for: DelayFloor,
-        criteria: TrackerCriteria | None = None,
+        criteria: FireCriteriaSource | None = None,
     ) -> None:
         self.specification = specification
         self.implementation = implementation
@@ -165,7 +167,7 @@ class RalphWorkflowEngine:
     def _build_graph(
         self,
         *,
-        criteria: TrackerCriteria | None,
+        criteria: FireCriteriaSource | None,
     ) -> StateGraph[WorkflowState, None, WorkflowState, WorkflowState]:
         """One node set; *criteria* selects the tracker-native composition.
 
@@ -207,7 +209,7 @@ class RalphWorkflowEngine:
         else:
             graph.add_node(
                 "revalidate_criteria",
-                self.floor(criteria.revalidate_criteria),
+                self.floor(partial(revalidate_criteria, source=criteria)),
                 retry_policy=self.retry,
             )
         graph.add_node(
@@ -444,9 +446,9 @@ class RalphWorkflowEngine:
             "feature_branch": "",
             "ralph_branch": "",
             "work_base_ref": base_spec.base_branch,
-            "ticket": None,
+            "fire_spec": None,
             "acceptance_criteria": [],
-            "criteria_artifact": None,
+            "criterion_set": None,
             "criteria_validation": None,
             "criteria_regeneration_rounds": 0,
             "criteria_infeasible": False,

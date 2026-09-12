@@ -14,7 +14,7 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.authored_outcome import classify_authored_outcome
 from kodezart.domain.workflow_state import (
-    original_ticket,
+    original_fire_spec,
     validated_criteria,
 )
 from kodezart.types.domain.agent import (
@@ -213,7 +213,7 @@ class AuthoredDeliveryCoordinator:
         request = RemediationRequest(
             entry=RemediationEntry.ci_failure,
             round_index=state["remediation_rounds_used"],
-            original_ticket=original_ticket(state),
+            original_spec=original_fire_spec(state),
             work_branch=state["feature_branch"],
             work_base_ref=state["work_base_ref"],
             pr_url=state["pr_url"],

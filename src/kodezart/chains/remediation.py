@@ -18,13 +18,15 @@ from kodezart.core.stream_drain import drain
 from kodezart.domain.remediation import done_work_summary
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.agent import (
+    REMEDIATION_SCHEMA,
     TICKET_DRAFT_SCHEMA,
     AgentEvent,
     TicketDraftOutput,
     WorkflowRemediationEvent,
 )
-from kodezart.types.domain.fire_spec import AuthoredSpec
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
@@ -66,14 +68,13 @@ class RemediationChain:
         """Draft one remediation ticket for *request*."""
         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
             {
-                "original_ticket": format_fire_spec(
-                    AuthoredSpec(ticket=request.original_ticket)
-                ),
+                "original_ticket": format_fire_spec(request.original_spec),
                 "done_work": done_work_summary(request),
                 "failure_evidence": request.failure_evidence,
             },
         )
 
+        native = isinstance(request.original_spec, TrackerSpec)
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
                 prompt=prompt,
@@ -92,7 +93,7 @@ class RemediationChain:
                 ),
                 output_format={
                     "type": "json_schema",
-                    "schema": TICKET_DRAFT_SCHEMA,
+                    "schema": REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA,
                 },
                 cache_key=cache_key,
             ),
@@ -108,13 +109,17 @@ class RemediationChain:
                 rate_limit_rejected=rate_limit_rejected,
             )
 
-        ticket = TicketDraftOutput.model_validate(result_event.structured_output)
+        ticket = (
+            RemediationPlan.model_validate(result_event.structured_output)
+            if native
+            else TicketDraftOutput.model_validate(result_event.structured_output)
+        )
         await self._log.ainfo(
             "remediation_ticket_drafted",
             entry=request.entry.value,
             round_index=request.round_index,
             base_ref=request.work_base_ref,
-            title=ticket.title,
+            native=native,
         )
         yield WorkflowRemediationEvent(
             entry=request.entry,

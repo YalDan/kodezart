@@ -3,7 +3,7 @@
 from typing import NotRequired, Self, TypedDict
 
 from langchain_core.runnables import RunnableConfig
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
@@ -14,12 +14,15 @@ from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
     CriterionFailure,
+    ExecutionCriterion,
     GeneratedCriterion,
-    ValidatedCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
 )
 from kodezart.types.domain.delivery import CheckRedClass
+from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
@@ -124,13 +127,13 @@ class RemediationRequest(CamelCaseModel):
 
     entry: RemediationEntry
     round_index: int = Field(ge=0)
-    original_ticket: TicketDraftOutput
+    original_spec: FireSpec
     work_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
     pr_url: str | None = None
     total_iterations: int = Field(ge=0)
     trajectory: LoopTrajectory | None = None
-    criteria: list[ValidatedCriterion]
+    criteria: list[ExecutionCriterion]
     failure_evidence: str = Field(min_length=1)
 
 
@@ -148,8 +151,20 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
-    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
+    acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
+    tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
+
+    @model_validator(mode="after")
+    def _criteria_match_source(self) -> Self:
+        """A native checkpoint cannot fall back to the authored cached arm."""
+        native = self.tracker_spec is not None
+        if any(
+            isinstance(criterion, TrackerCriterion) != native
+            for criterion in self.acceptance_criteria
+        ):
+            raise ValueError("Loop criteria must match the frozen subject source")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +244,9 @@ class WorkflowState(TypedDict):
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
-    ticket: TicketDraftOutput | None
+    fire_spec: FireSpec | None
     acceptance_criteria: list[GeneratedCriterion]
-    criteria_artifact: CriteriaArtifact | None
+    criterion_set: CriteriaArtifact | TrackerCriterionSet | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool
@@ -246,7 +261,7 @@ class WorkflowState(TypedDict):
     review_passed: bool
     review_feedback: str | None
     remediation_rounds_used: int
-    remediation_ticket: TicketDraftOutput | None
+    remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
     repo_url: str | None

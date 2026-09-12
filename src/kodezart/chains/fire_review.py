@@ -3,12 +3,14 @@
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
+from kodezart.chains.criteria import current_native_criteria
 from kodezart.chains.fire_consolidation import resolve_workflow_cwd
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     AgentRunner,
+    FireCriteriaReader,
     GitService,
     PromptSetProvider,
     RepoCache,
@@ -23,8 +25,12 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.criteria_grading import grade_iteration
 from kodezart.domain.fan_in import fan_in_report, require_permutation
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    execution_criteria_variables,
+)
 from kodezart.domain.workflow_state import (
+    current_fire_spec,
     validated_criteria,
 )
 from kodezart.types.domain.agent import (
@@ -35,6 +41,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.criteria import (
     FanInReport,
 )
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
@@ -57,8 +64,10 @@ class FireReview:
         git: GitService,
         cache: RepoCache,
         fan_in_max_attempts: int,
+        criteria_reader: FireCriteriaReader | None = None,
     ) -> None:
         self._service = service
+        self._criteria_reader = criteria_reader
         self._prompts = prompts
         self._skills = skills
         self._git = git
@@ -84,6 +93,14 @@ class FireReview:
             )
             raise RuntimeError(msg)
 
+        spec = current_fire_spec(state)
+        criterion_set = state["criterion_set"]
+        if isinstance(spec, TrackerSpec):
+            criterion_set = await current_native_criteria(
+                spec=spec,
+                reader=self._criteria_reader,
+            )
+        criteria = validated_criteria({**state, "criterion_set": criterion_set})
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
         cwd = await resolve_workflow_cwd(ctx, self._cache)
@@ -94,7 +111,7 @@ class FireReview:
         )
         prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
             {
-                "criteria": validated_criteria(state),
+                **execution_criteria_variables(criteria),
                 **changeset_variables(changeset),
             },
         )
@@ -139,7 +156,6 @@ class FireReview:
                 result_event.structured_output,
             )
 
-        criteria = validated_criteria(state)
         output, unresolved, attempts = await until_permutation(
             dispatch=review,
             check=lambda candidate: require_permutation(
@@ -190,6 +206,7 @@ class FireReview:
         # promises them to.  They are appended, not substituted: the loop's
         # flagged items describe the work, these describe the review of it.
         return {
+            "criterion_set": criterion_set,
             "review_passed": passed,
             "review_feedback": feedback,
             "flagged_items": [

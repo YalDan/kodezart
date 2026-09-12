@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from kodezart.types.domain.agent import (
     WIRE_SCHEMAS,
@@ -41,9 +41,10 @@ from kodezart.types.domain.audit import (
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalJudgment
 from kodezart.types.domain.audit_overclaim import AuditOverclaimJudgment
 from kodezart.types.domain.criteria import (
-    CRITERION_ID_PATTERN,
+    CriterionIdItem,
 )
 from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.remediation import RemediationPlan
 from tests.types.schema_nodes import DEFS, schema_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +76,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "GENERATED_CRITERIA_SCHEMA": GeneratedCriteriaOutput,
     "CRITERIA_VALIDATION_SCHEMA": CriteriaValidationOutput,
     "TICKET_DRAFT_SCHEMA": TicketDraftOutput,
+    "REMEDIATION_SCHEMA": RemediationPlan,
     "TICKET_REVIEW_SCHEMA": TicketReviewOutput,
     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
@@ -260,7 +262,7 @@ def test_a_dispatched_schema_carries_its_constraints() -> None:
     assert isinstance(criterion_ids, dict)
     item = criterion_ids["items"]
     assert isinstance(item, dict)
-    assert item["pattern"] == CRITERION_ID_PATTERN
+    assert item == TypeAdapter(CriterionIdItem).json_schema()
 
     explanation = properties["explanation"]
     assert isinstance(explanation, dict)
@@ -506,3 +508,65 @@ def test_the_undispatched_critique_model_is_only_declared_in_the_model_module():
         and node.id in {"DRAFT_CRITIQUE_SCHEMA", "DraftCritiqueOutput"}
     }
     assert owners == {"types/domain/agent.py"}
+
+
+def test_remediation_dispatch_and_validation_select_the_same_registered_model():
+    source = source_files()["chains/remediation.py"]
+    calls = scoped_calls(source)
+    dispatches = [
+        keyword.value
+        for scope, call in calls
+        if scope == ("RemediationChain", "run")
+        and ast.unparse(call.func) == "self._service.stream"
+        for keyword in call.keywords
+        if keyword.arg == "output_format"
+    ]
+    assert len(dispatches) == 1
+    schema = [
+        value
+        for key, value in zip(dispatches[0].keys, dispatches[0].values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "schema"
+    ]
+    assert len(schema) == 1
+    assert ast.unparse(schema[0]) == (
+        "REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA"
+    )
+    assignments = {
+        target.id: ast.unparse(node.value)
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert assignments["native"] == "isinstance(request.original_spec, TrackerSpec)"
+    assert assignments["ticket"] == (
+        "RemediationPlan.model_validate(result_event.structured_output) if native "
+        "else TicketDraftOutput.model_validate(result_event.structured_output)"
+    )
+
+
+@pytest.mark.parametrize(
+    "old,new",
+    [
+        ("REMEDIATION_SCHEMA if native", "TICKET_DRAFT_SCHEMA if native"),
+        ("else TICKET_DRAFT_SCHEMA", "else REMEDIATION_SCHEMA"),
+        (
+            "REMEDIATION_SCHEMA if native",
+            "sanitize_schema(REMEDIATION_SCHEMA) if native",
+        ),
+        ("isinstance(request.original_spec, TrackerSpec)", "True"),
+        (
+            "if native\n            else TicketDraftOutput.model_validate",
+            "if not native\n            else TicketDraftOutput.model_validate",
+        ),
+    ],
+)
+def test_actual_remediation_schema_audit_rejects_damaged_source(monkeypatch, old, new):
+    test_remediation_dispatch_and_validation_select_the_same_registered_model()
+    sources = source_files()
+    path = "chains/remediation.py"
+    assert sources[path].count(old) == 1
+    sources[path] = sources[path].replace(old, new)
+    monkeypatch.setattr(sys.modules[__name__], "source_files", lambda: sources)
+    with pytest.raises(AssertionError):
+        test_remediation_dispatch_and_validation_select_the_same_registered_model()

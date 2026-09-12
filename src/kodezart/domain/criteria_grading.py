@@ -45,7 +45,7 @@ from kodezart.types.domain.agent import AcceptanceCriteriaOutput, CriterionResul
 from kodezart.types.domain.criteria import (
     CriterionFailure,
     CriterionId,
-    ValidatedCriterion,
+    ExecutionCriterion,
 )
 from kodezart.types.domain.grading import IterationGrade
 
@@ -61,7 +61,7 @@ DUPLICATE_RESULT_REASONING = (
 
 
 def grade_iteration(
-    criteria: Sequence[ValidatedCriterion],
+    criteria: Sequence[ExecutionCriterion],
     output: AcceptanceCriteriaOutput,
 ) -> IterationGrade:
     """Reconcile *output* against *criteria* and grade fail-closed."""

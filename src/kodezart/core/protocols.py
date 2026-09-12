@@ -14,7 +14,7 @@ from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.criteria import ExecutionCriterion, TrackerCriterionSet
 from kodezart.types.domain.dispatch import DispatchReport, PassSignal
 from kodezart.types.domain.escalation import EscalationResolution
 from kodezart.types.domain.fire_spec import TrackerSpec
@@ -1414,6 +1414,28 @@ class GitAuth(Protocol):
 
 
 @runtime_checkable
+class FireCriteriaReader(Protocol):
+    """Read current native obligations against the run's frozen subject spec.
+
+    This is a runtime dependency. Checkpoints carry the spec and criterion
+    data only; transport failures refuse instead of returning cached Checks.
+    """
+
+    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal."""
+        ...
+
+
+@runtime_checkable
+class FireCriteriaSource(FireCriteriaReader, Protocol):
+    """Capture an admitted native subject once and refresh its obligations."""
+
+    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture tracker-authored subject data or raise a typed refusal."""
+        ...
+
+
+@runtime_checkable
 class QualityGate(Protocol):
     """Iterates agent work until acceptance criteria pass or max iterations.
 
@@ -1435,7 +1457,8 @@ class QualityGate(Protocol):
         work_base_ref: str,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
-        acceptance_criteria: list[ValidatedCriterion],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
