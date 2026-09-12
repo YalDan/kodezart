@@ -4,6 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 
+import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -30,6 +31,10 @@ from kodezart.types.domain.agent import (
     WorkflowIterationEvent,
 )
 from kodezart.types.domain.branch import WorkRef, WorkRefRole, trunk_base
+from kodezart.types.domain.consolidation import (
+    ConsolidationOutcome,
+    ConsolidationStatus,
+)
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.native_delivery import LaneDeliveryEvent
 from kodezart.types.domain.operation import RepoEntry, ScopeLabel
@@ -97,13 +102,18 @@ def board(*, lanes=("A",), blocked=None, approved=True):
 class RemoteGit(FakeGitService):
     async def remote_branch_sha(self, cwd, remote, branch):
         self.calls.append(("remote_branch_sha", cwd, remote, branch))
-        return ("b" if branch == "trunk" else "a") * 40
+        return ("b" if branch in {"trunk", "main"} else "a") * 40
 
 
 class ObservedNativeExecutor(NativeExecutor):
     """Script the SDK's real opening/result pair for attributed node sessions."""
 
+    def __init__(self, evaluations):
+        super().__init__(evaluations)
+        self.run_identities = []
+
     async def stream(self, **kwargs):
+        self.run_identities.append(kwargs.get("run_identity"))
         async for event in super().stream(**kwargs):
             if isinstance(event, ResultEvent):
                 yield SystemEvent(subtype="init", data={"session_id": event.session_id})
@@ -120,7 +130,16 @@ class Harness:
     saver: InMemorySaver
 
 
-def runtime(*, port=None, lanes=("A",), saver=None, evaluations=None, trunk="trunk"):
+def runtime(
+    *,
+    port=None,
+    lanes=("A",),
+    saver=None,
+    evaluations=None,
+    trunk="trunk",
+    origin=ORIGIN,
+    forge=None,
+):
     port = port or board(lanes=lanes)
     executor = ObservedNativeExecutor(
         evaluations
@@ -146,18 +165,25 @@ def runtime(*, port=None, lanes=("A",), saver=None, evaluations=None, trunk="tru
             retry_max_attempts=1,
             retry_initial_interval=0.1,
         ),
-        repositories=(RepoEntry(url=ORIGIN, trunk=trunk),),
+        repositories=(RepoEntry(url=origin, trunk=trunk),),
         agent_service=service,
         git=RemoteGit(),
         cache=FakeRepoCache(),
         workspace=workspace,
-        merger=FakeBranchMerger(),
+        merger=FakeBranchMerger(
+            consolidation_outcomes=[
+                ConsolidationOutcome(
+                    status=ConsolidationStatus.FAST_FORWARDED, feature_tip_sha="a" * 40
+                )
+                for _ in lanes
+            ],
+        ),
         artifact_persister=artifacts,
         ref_publisher=FakeRefPublisher(),
         prompts=make_prompt_provider(),
         skills=SUPPRESS_ALL_SKILLS,
         gate=PassThroughGate(),
-        github_api=None,
+        github_api=forge,
         checkpointer=saver,
         criteria=TrackerCriteria(tracker=port),
         scope_tracker=port,
@@ -165,10 +191,10 @@ def runtime(*, port=None, lanes=("A",), saver=None, evaluations=None, trunk="tru
     return Harness(engine, port, executor, service, artifacts, saver)
 
 
-def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN):
+def drive(harness, *, job="scope-job", scope=SCOPE, origin=ORIGIN, path=None):
     return harness.engine.run(
         prompt="Request prose is not the native subject",
-        repo_path=None,
+        repo_path=path,
         repo_url=origin,
         base_spec=trunk_base("unused-request-default"),
         scope=scope,
@@ -207,7 +233,7 @@ async def test_request_queue_constructor_reaches_real_native_graph_without_child
         observations = [
             item["observation"] for item in payloads if item["type"] == "scope_walk"
         ]
-        assert observations[-1]["dispatched"] == ("A",)
+        assert observations[-1]["dispatched"] == ["A"]
         assert set(observations[-1]["unresolvedCriteria"]) == {"A/check", "B/check"}
         assert "workflow_complete" not in {item["type"] for item in payloads}
         finished = await queue.get(job_id=record.job_id)
@@ -603,3 +629,113 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
         assert all(event["type"] != "workflow_complete" for event in events)
         status = (await app.client.get(f"/api/v1/jobs/{job_id}")).json()
         assert status["state"] == "terminal" and status["outcome"] is None
+
+
+async def test_actual_scope_composition_retains_completed_native_delivery_record():
+    from kodezart.types.domain.native_delivery import CompletedLaneDelivery
+    from tests.adapters.test_github_api import _make_client
+    from tests.chains.test_native_delivery import ForgeWire
+
+    origin = "https://github.com/owner/repo"
+    wire = ForgeWire()
+
+    def scope_wire(request):
+        if (
+            request.method == "GET"
+            and request.url.path.endswith("/pulls")
+            and "head" not in request.url.params
+        ):
+            wire.requests.append(request)
+            return httpx.Response(200, json=[] if wire.pr is None else [wire.pr])
+        return wire(request)
+
+    forge = _make_client(scope_wire)
+    try:
+        harness = runtime(origin=origin, forge=forge, trunk="main")
+        events = [event async for event in drive(harness, origin=origin)]
+        deliveries = [
+            event.event.delivery
+            for event in events
+            if isinstance(event, ScopeLaneEvent)
+            and isinstance(event.event, LaneDeliveryEvent)
+        ]
+        assert len(deliveries) == len(wire.creates) == 1
+        phase = deliveries[0]
+        assert isinstance(phase, CompletedLaneDelivery)
+        assert phase.result.issue_id == phase.result.lane_key == "A"
+        assert phase.result.base_branch == "main"
+        assert phase.result.final_commit_sha == "a" * 40
+        assert phase.result.checks_passed is True
+        assert not phase.result.remediation_pending
+        lane = harness.engine._scoped_arm._lane_for(origin)
+        final = await lane.graph.aget_state(checkpoint_config())
+        assert final.values["delivery"] == phase
+        assert events[-1].observation.unresolved_criteria == ("A/check",)
+        assert harness.port.workflow_writes == []
+    finally:
+        await forge.close()
+
+
+@pytest.mark.parametrize("change", ["repository", "path", "scope"])
+async def test_same_job_checkpoint_refuses_incompatible_request_identity(change):
+    harness = runtime()
+    _ = [event async for event in drive(harness)]
+    origin = "file:///another-repository.git" if change == "repository" else ORIGIN
+    scope = (
+        ScopeRef(kind=ScopeKind.PROJECT, key="another-scope")
+        if change == "scope"
+        else SCOPE
+    )
+    harness.port.scope_memberships[scope] = ("A",)
+    fresh = runtime(port=harness.port, saver=harness.saver, origin=origin)
+    with pytest.raises(ScopeReadError, match="different scope request"):
+        _ = [
+            event
+            async for event in drive(
+                fresh,
+                origin=origin,
+                scope=scope,
+                path="/tmp/another-repo" if change == "path" else None,
+            )
+        ]
+    assert fresh.executor.schema_calls == []
+
+
+@pytest.mark.parametrize("amended", [False, True])
+async def test_nested_fire_resume_reuses_branch_and_original_attributed_run(amended):
+    harness = runtime()
+    lane = lane_of(harness)
+    lane.fire.native_graph.interrupt_before_nodes = ["review_against_ticket"]
+    before = []
+    with pytest.raises(ScopeReadError, match="no final delivery phase"):
+        async for event in drive(harness):
+            before.append(event)
+    paused = await lane.graph.aget_state(checkpoint_config(), subgraphs=True)
+    child = paused.tasks[0].state
+    assert child.next == ("review_against_ticket",)
+    branch = child.values["feature_branch"]
+    original_identity = RunIdentity.model_validate_json(
+        paused.metadata["scope_lane_run_identity"]
+    )
+    if amended:
+        harness.port.issues["A/check"] = harness.port.issues["A/check"].model_copy(
+            update={"body": "**Check:** amended before resumed review\n**Evidence:** —"}
+        )
+    harness.port.issues["A"] = harness.port.issues["A"].model_copy(
+        update={"body": "A later subject body must not replace the frozen subject"}
+    )
+    fresh = runtime(port=harness.port, saver=harness.saver)
+    after = [event async for event in drive(fresh)]
+    assert fresh.executor.execution_prompts == []
+    assert not any("slug" in props for props in fresh.executor.schema_calls)
+    reviews = fresh.executor.evaluation_prompts
+    assert len(reviews) == 1
+    assert "A later subject body" not in reviews[0]
+    if amended:
+        assert "amended before resumed review" in reviews[0]
+    identities = fresh.executor.run_identities
+    assert identities and all(identity == original_identity for identity in identities)
+    assert any(isinstance(event, ScopeLaneEvent) for event in after)
+    final = await lane_of(fresh).graph.aget_state(checkpoint_config())
+    assert final.next == () and final.values["feature_branch"] == branch
+    assert final.values["fire_spec"].body == "Exact native subject A  with spaces\n"
