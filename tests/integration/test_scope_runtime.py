@@ -604,6 +604,10 @@ async def test_actual_http_sse_preserves_nested_progress_and_delivery_discrimina
         assert not [event for event in events if event["type"] == "error"]
         lane_events = [event for event in events if event["type"] == "scope_lane"]
         assert lane_events and all(event["laneKey"] == "A" for event in lane_events)
+        assert all(
+            ScopeLaneEvent.model_validate_json(json.dumps(event)).lane_key == "A"
+            for event in lane_events
+        )
         iteration = next(
             event["event"]
             for event in lane_events
@@ -667,6 +671,12 @@ async def test_actual_scope_composition_retains_completed_native_delivery_record
         assert phase.result.final_commit_sha == "a" * 40
         assert phase.result.checks_passed is True
         assert not phase.result.remediation_pending
+        addressed = ScopeLaneEvent(
+            lane_key="A", event=LaneDeliveryEvent(delivery=phase)
+        )
+        assert (
+            ScopeLaneEvent.model_validate_json(addressed.model_dump_json()) == addressed
+        )
         lane = harness.engine._scoped_arm._lane_for(origin)
         final = await lane.graph.aget_state(checkpoint_config())
         assert final.values["delivery"] == phase

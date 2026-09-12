@@ -1076,6 +1076,36 @@ class WorkflowTicketEvent(AgentEvent):
     mode: TicketReviewMode
 
 
+# The native graph forwards SDK events and emits only these progress variants.
+# Terminal events are consumed by its caller; authored ticket/artifact events
+# belong to the authored composition. Reuse models so wire validation preserves
+# every field rather than deserializing the AgentEvent base alone.
+type NativeFireProgressEvent = Annotated[
+    UserMessageEvent
+    | AssistantTextEvent
+    | AssistantThinkingEvent
+    | ToolUseEvent
+    | ToolResultEvent
+    | SystemEvent
+    | TaskStartedEvent
+    | TaskProgressEvent
+    | TaskUpdatedEvent
+    | TaskNotificationEvent
+    | ResultEvent
+    | StreamDataEvent
+    | ErrorEvent
+    | RateLimitWarningEvent
+    | NodeSessionStartedEvent
+    | WorkflowIterationEvent
+    | WorkflowConsolidationEvent
+    | WorkflowReviewEvent
+    | WorkflowRemediationEvent
+    | WorkflowVisibilityEvent
+    | WorkflowScopeBaseEvent,
+    Field(discriminator="type"),
+]
+
+
 # Pre-computed WIRE schemas for structured agent output via output_format.
 # Each is the model's OWN schema: the contract the model is shown is the
 # contract its response is judged against, constraints included.

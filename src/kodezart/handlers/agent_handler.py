@@ -7,10 +7,11 @@ from collections.abc import AsyncGenerator
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, JobQueue
-from kodezart.types.domain.agent import JobAcceptedEvent
+from kodezart.types.domain.agent import AgentEvent, JobAcceptedEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.scope_runtime import ScopeLaneEvent
 from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import WorkflowSubmission
@@ -24,6 +25,13 @@ _HTTP_PERMISSIONS: dict[HttpPermissionMode, PermissionMode] = {
     "plan": PermissionMode.PLAN,
     "bypassPermissions": PermissionMode.UNATTENDED,
 }
+
+
+def _queued_event_payload(event: AgentEvent) -> dict[str, object]:
+    """Keep required nulls inside the new typed scope envelope on JSON egress."""
+    return event.model_dump(
+        mode="json", by_alias=True, exclude_none=not isinstance(event, ScopeLaneEvent)
+    )
 
 
 class AgentHandler:
@@ -159,7 +167,7 @@ class AgentHandler:
                 msg = "Job queue not configured"
                 raise RuntimeError(msg)
             async for event in self._queue.attach(job_id=job_id):
-                yield event.model_dump(mode="json", by_alias=True, exclude_none=True)
+                yield _queued_event_payload(event)
         except Exception as exc:
             yield await self._egress_error(exc)
 
@@ -175,12 +183,14 @@ class AgentHandler:
         if queue_position is None:
             msg = f"accepted job {record.job_id} carries no queue position"
             raise RuntimeError(msg)
-        yield JobAcceptedEvent(
-            job_id=record.job_id,
-            lane=record.lane,
-            queue_position=queue_position,
-            status_url=status_url,
-            stream_url=stream_url,
-        ).model_dump(mode="json", by_alias=True, exclude_none=True)
+        yield _queued_event_payload(
+            JobAcceptedEvent(
+                job_id=record.job_id,
+                lane=record.lane,
+                queue_position=queue_position,
+                status_url=status_url,
+                stream_url=stream_url,
+            )
+        )
         async for payload in self.attach_job(job_id=record.job_id):
             yield payload
