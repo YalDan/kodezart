@@ -23,7 +23,6 @@ from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
-    CRITERION_ID_PATTERN,
     ContractCorrection,
     CriteriaValidation,
     CriteriaValidationOutput,
@@ -41,7 +40,7 @@ from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
@@ -585,7 +584,8 @@ class CriterionResult(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     criterion_id: CriterionId = Field(
-        pattern=CRITERION_ID_PATTERN,
+        min_length=1,
+        pattern=r"\S",
         description=(
             "The dispatched criterion's id, echoed exactly. Return one result "
             "per dispatched id and invent none."
@@ -933,7 +933,7 @@ class WorkflowRemediationEvent(AgentEvent):
     type: Literal["workflow_remediation"] = "workflow_remediation"
     entry: RemediationEntry
     round_index: int
-    ticket: TicketDraftOutput
+    ticket: TicketDraftOutput | RemediationPlan
     base_ref: str
 
 
@@ -1096,6 +1096,7 @@ CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
 )
 # Schema for structured ticket draft output
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
+REMEDIATION_SCHEMA: dict[str, object] = RemediationPlan.model_json_schema()
 # Schema for structured ticket review output
 TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
@@ -1123,6 +1124,7 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "GENERATED_CRITERIA_SCHEMA": GENERATED_CRITERIA_SCHEMA,
     "CRITERIA_VALIDATION_SCHEMA": CRITERIA_VALIDATION_SCHEMA,
     "TICKET_DRAFT_SCHEMA": TICKET_DRAFT_SCHEMA,
+    "REMEDIATION_SCHEMA": REMEDIATION_SCHEMA,
     "TICKET_REVIEW_SCHEMA": TICKET_REVIEW_SCHEMA,
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,

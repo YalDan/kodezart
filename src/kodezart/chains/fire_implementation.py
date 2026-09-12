@@ -3,10 +3,12 @@
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
+from kodezart.chains.criteria import current_native_criteria
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.protocols import (
     ArtifactPersister,
+    FireCriteriaReader,
     OutboundContentGate,
     PromptSetProvider,
     QualityGate,
@@ -16,6 +18,7 @@ from kodezart.domain.accept_gate import (
 )
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.domain.workflow_state import (
+    current_fire_spec,
     current_ticket,
     validated_artifact,
     validated_criteria,
@@ -27,9 +30,11 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import (
-    ValidatedCriterion,
+    ExecutionCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
 )
-from kodezart.types.domain.fire_spec import AuthoredSpec
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     OutboundDestination,
@@ -37,6 +42,7 @@ from kodezart.types.domain.gating import (
     WriterShape,
 )
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.workflow import (
@@ -55,8 +61,10 @@ class FireImplementation:
         prompts: PromptSetProvider,
         artifact_persister: ArtifactPersister | None,
         gate: OutboundContentGate,
+        criteria_reader: FireCriteriaReader | None = None,
     ) -> None:
         self._quality_gate = quality_gate
+        self._criteria_reader = criteria_reader
         self._prompts = prompts
         self._artifact_persister = artifact_persister
         self._gate = gate
@@ -79,7 +87,8 @@ class FireImplementation:
         work_base_ref: str,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
-        acceptance_criteria: list[ValidatedCriterion],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility,
@@ -98,6 +107,7 @@ class FireImplementation:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             cache_key=cache_key,
             run_identity=run_identity,
             repo_visibility=repo_visibility,
@@ -125,11 +135,23 @@ class FireImplementation:
         """
         ctx = ExecutionContext.from_configurable(config)
 
-        ticket = current_ticket(state)
+        spec = current_fire_spec(state)
+        criterion_set = state["criterion_set"]
+        if isinstance(spec, TrackerSpec):
+            criterion_set = await current_native_criteria(
+                spec=spec,
+                reader=self._criteria_reader,
+            )
+        criteria = validated_criteria({**state, "criterion_set": criterion_set})
+
+        task_md = format_fire_spec(spec)
+        remediation = state["remediation_ticket"]
+        if isinstance(remediation, RemediationPlan):
+            task_md += "\n\n## Remediation\n" + remediation.instructions
 
         implementation_prompt = self._prompts.template_for(
             PromptKey.IMPLEMENTATION,
-        ).render({"task_md": format_fire_spec(AuthoredSpec(ticket=ticket))})
+        ).render({"task_md": task_md})
 
         last_iteration_event = await self.run_quality_gate(
             prompt=implementation_prompt,
@@ -141,18 +163,32 @@ class FireImplementation:
             work_base_ref=state["work_base_ref"],
             permission_mode=ctx.permission_mode,
             allowed_tools=ctx.allowed_tools,
-            acceptance_criteria=validated_criteria(state),
+            acceptance_criteria=criteria,
+            tracker_spec=spec if isinstance(spec, TrackerSpec) else None,
             cache_key=ctx.cache_key,
             run_identity=ctx.run_identity,
             repo_visibility=state["repo_visibility"],
         )
 
+        if isinstance(spec, TrackerSpec):
+            # The gate reconciles result text to its dispatched Check snapshot.
+            # Preserve that final iteration's snapshot for failure evidence;
+            # later execution/review still rereads the tracker at its barrier.
+            criterion_set = TrackerCriterionSet(
+                criteria=[
+                    TrackerCriterion(id=result.criterion_id, text=result.criterion)
+                    for result in last_iteration_event.evaluation.criteria_results
+                ],
+            )
+            criteria = list(criterion_set.criteria)
+
         # feature_tip_sha is left None here; merge_to_feature sets it
         # from the merger's outcome.feature_tip_sha (canonical, post-push).
         return {
+            "criterion_set": criterion_set,
             "accept_verdict": last_iteration_event.verdict,
             "flagged_items": flagged_items(
-                validated_criteria(state),
+                criteria,
                 last_iteration_event.evaluation.sherlock_flags,
             ),
             # A SUM, not a replacement: a remediation round runs its own

@@ -27,6 +27,7 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
+    FireCriteriaSource,
     GitService,
     OutboundContentGate,
     PromptSetProvider,
@@ -171,6 +172,7 @@ def build_workflow_engine(
     gate: OutboundContentGate,
     github_api: GitHubAPIClient | None,
     checkpointer: BaseCheckpointSaver[str] | None,
+    criteria: FireCriteriaSource | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
@@ -184,8 +186,11 @@ def build_workflow_engine(
     answers the narrow protocols used by specification, publication and
     checks; each receives the same selected adapter.
     """
+    # Authored construction needs no tracker. Native entry refuses without
+    # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
     ralph_loop = RalphLoop(
+        criteria_reader=criteria,
         service=agent_service,
         max_iterations=config.max_iterations,
         plateau_window=config.loop_plateau_window,
@@ -220,6 +225,7 @@ def build_workflow_engine(
     def arm(forge: GitHubAPIClient | None) -> AuthoredDeliveryCoordinator:
         return AuthoredDeliveryCoordinator(
             fire=RalphWorkflowEngine(
+                criteria=criteria,
                 specification=FireSpecification(
                     service=agent_service,
                     ticket_generator=ticket_generator,
@@ -231,6 +237,7 @@ def build_workflow_engine(
                     fan_in_max_attempts=config.fan_in_max_attempts,
                 ),
                 implementation=FireImplementation(
+                    criteria_reader=criteria,
                     quality_gate=ralph_loop,
                     prompts=prompts,
                     artifact_persister=artifact_persister,
@@ -244,6 +251,7 @@ def build_workflow_engine(
                     ref_publisher=ref_publisher if forge is not None else None,
                 ),
                 review=FireReview(
+                    criteria_reader=criteria,
                     service=agent_service,
                     prompts=prompts,
                     skills=skills,

@@ -95,6 +95,7 @@ from kodezart.types.domain.criteria import (
     CriterionFeasibility,
     CriterionVerdict,
     DraftedCriterion,
+    ExecutionCriterion,
     GeneratedCriterion,
     ValidatedCriterion,
 )
@@ -1533,7 +1534,8 @@ class FakeQualityGate:
         work_base_ref: str,
         permission_mode: PermissionMode,
         allowed_tools: list[str],
-        acceptance_criteria: list[ValidatedCriterion],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,

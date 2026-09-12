@@ -78,13 +78,13 @@ async def capture_prompts(family, ticket, monkeypatch):
     )
     state = {
         "issue_key": "subject/42",
-        "ticket": ticket,
+        "fire_spec": AuthoredSpec(ticket=ticket),
         "remediation_ticket": None,
         "feature_branch": "feature",
         "ralph_branch": "loop",
         "work_base_ref": "selected-base",
         "feature_tip_sha": "a" * 40,
-        "criteria_artifact": CriteriaArtifact(
+        "criterion_set": CriteriaArtifact(
             criteria=make_criteria("Recorded criterion"),
             conjunction=ConjunctionVerdict(satisfiable=True),
         ),
@@ -97,7 +97,9 @@ async def capture_prompts(family, ticket, monkeypatch):
     await engine.publication.open_pr(state, config)
 
     fix_runner = FakeAgentRunner([_ticket_result()])
-    request = _request().model_copy(update={"original_ticket": ticket})
+    request = _request().model_copy(
+        update={"original_spec": AuthoredSpec(ticket=ticket)}
+    )
     _ = [
         event
         async for event in _chain(fix_runner, provider).run(
