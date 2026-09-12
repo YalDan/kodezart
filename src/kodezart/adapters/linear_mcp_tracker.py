@@ -1169,7 +1169,7 @@ class LinearMcpTracker:
         )
         wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
         issue = self._to_issue(wire)
-        if issue.issue_key != issue_key:
+        if not wire.matches_requested(issue_key):
             raise ScopeReadError(
                 "scope label identity changed",
                 ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
@@ -1203,15 +1203,16 @@ class LinearMcpTracker:
             return issue, ScopeLabel.APPROVED in members
 
         subject = await hydrate(issue_key)
+        canonical_key = subject[0].issue_key
 
         async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
-            return subject if key == issue_key else await hydrate(key)
+            return subject if key == canonical_key else await hydrate(key)
 
         async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
             return await reader.approval_parent(ref=ref, approved_label=label)
 
         approved = await resolve_execution_approval(
-            issue_key=issue_key,
+            issue_key=canonical_key,
             read_issue=read_issue,
             read_container=read_container,
         )
@@ -1896,7 +1897,7 @@ class LinearMcpTracker:
                 criteria_stage_label_key=self._criteria_stage_label_key,
             )
             _, criteria = await self._read_criterion_family(
-                issue_key=issue_key, subject=subject
+                issue_key=subject.issue_key, subject=subject
             )
         except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(
