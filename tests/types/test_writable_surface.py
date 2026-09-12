@@ -59,6 +59,8 @@ def test_surface_vocabulary_is_closed() -> None:
         "issue_label_set",
         "criterion_sub_issue",
         "criterion_child_set",
+        "issue_graph",
+        "issue_split_set",
     }
     with pytest.raises(ValueError):
         SurfaceKind("issue")

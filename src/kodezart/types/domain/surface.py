@@ -17,6 +17,11 @@ class SurfaceKind(StrEnum):
     Creating a criterion has no child key yet. The parent's criterion-child
     set is the separate address for that membership-creation operation; it
     does not authorize modifying any existing child's body, state or labels.
+
+    Issue graph addresses cover parentage, dependency/related edges, priority
+    and milestone assignment. Inverse changes also require affected peers'
+    graph addresses. A split set addresses new membership and initial child
+    contents under its source issue, never edits to an existing child.
     """
 
     ISSUE_DESCRIPTION = "issue_description"
@@ -26,6 +31,8 @@ class SurfaceKind(StrEnum):
     ISSUE_LABEL_SET = "issue_label_set"
     CRITERION_SUB_ISSUE = "criterion_sub_issue"
     CRITERION_CHILD_SET = "criterion_child_set"
+    ISSUE_GRAPH = "issue_graph"
+    ISSUE_SPLIT_SET = "issue_split_set"
 
 
 _CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(

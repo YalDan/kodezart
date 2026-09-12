@@ -12,6 +12,7 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
+from kodezart.services.organize_context import OrganizeContextReader
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.organize_tick import OrganizeTarget, OrganizeTick
 from kodezart.types.domain.operation import OperationConfig, OperationMemberAbsentError
@@ -36,8 +37,10 @@ def build_organize_owner(
         raise OperationMemberAbsentError(
             missing="organize", stops="configured Organize owner"
         )
+    context = OrganizeContextReader(tracker=tracker, operation=operation)
     admission = OrganizeAdmission(
         tracker=tracker,
+        context=context,
         runner=runner,
         workspace=workspace,
         prompts=prompts,
@@ -45,6 +48,7 @@ def build_organize_owner(
     )
     author = OrganizeAuthor(
         tracker=tracker,
+        context=context,
         runner=runner,
         workspace=workspace,
         prompts=prompts,
@@ -61,6 +65,7 @@ def build_organize_owner(
     )
     return OrganizeOwner(
         tracker=tracker,
+        context=context,
         admission=admission,
         author=author,
         judge=judge,
