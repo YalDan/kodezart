@@ -695,7 +695,7 @@ class TestPriorityRanking:
         root = Path(__file__).resolve().parents[2] / "src" / "kodezart"
         allowed = {
             root / "adapters" / "linear_mcp_tracker.py",
-            root / "types" / "domain" / "linear_mcp.py",
+            root / "adapters" / "linear_mcp_types.py",
         }
         offenders: list[str] = []
         for path in sorted(root.rglob("*.py")):
