@@ -119,7 +119,10 @@ async def test_upheld_after_real_grade_preserves_criterion_history_and_plateau(
                 branch="native-loop",
                 commit_sha=previous_record.commit_sha,
                 verdict=previous_grade.verdict,
-                evaluation=AcceptanceCriteriaOutput.model_validate(observed),
+                evaluation=AcceptanceCriteriaOutput(
+                    criteria_results=previous_grade.results,
+                    sherlock_flags=previous_grade.sherlock_flags,
+                ),
                 trajectory=fold_trajectory(previous_records, plateau_window=2),
             ),
             criteria=tuple(current.criteria),
