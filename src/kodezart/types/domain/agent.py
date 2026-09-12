@@ -46,6 +46,11 @@ from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.session import SessionFailureKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
+from kodezart.types.job_acceptance import (
+    AcceptanceHandle,
+    AcceptedQueuePosition,
+    JobLink,
+)
 
 RulingId = NewType("RulingId", str)
 
@@ -1008,11 +1013,11 @@ class JobAcceptedEvent(AgentEvent):
     """
 
     type: Literal["job_accepted"] = "job_accepted"
-    job_id: str
-    lane: str
-    queue_position: int
-    status_url: str
-    stream_url: str
+    job_id: AcceptanceHandle
+    lane: AcceptanceHandle
+    queue_position: AcceptedQueuePosition
+    status_url: JobLink
+    stream_url: JobLink
 
 
 class WorkflowCriteriaEvent(AgentEvent):
