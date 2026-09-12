@@ -44,6 +44,7 @@ UTILITY_KEYS = (
     PromptKey.CONTENT_AUDIT,
     PromptKey.KNOWLEDGE_MAP,
     PromptKey.FIRE_RECORD,
+    PromptKey.NATIVE_WRITER_CONTRACT,
 )
 
 
