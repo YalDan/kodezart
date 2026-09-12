@@ -124,6 +124,7 @@ def factory(
     wrong_proposal=False,
     bound=2,
     convergence_bound=2,
+    write_back_bound=2,
     tick=False,
     settings=None,
 ):
@@ -163,7 +164,8 @@ def factory(
         or AppConfig(
             organize=OrganizeSettings(
                 max_admission_rounds=bound, max_convergence_rounds=convergence_bound
-            )
+            ),
+            write_back={"max_verify_rounds": write_back_bound},
         ),
         operation=operation,
         tracker=tracker,

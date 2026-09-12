@@ -20,6 +20,7 @@ from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging_settings import LoggingSettings
 from kodezart.core.organize_settings import OrganizeSettings
 from kodezart.core.tracker_settings import TrackerSettings
+from kodezart.core.write_back_settings import WriteBackSettings
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.ticket_review import (
     DEFAULT_MAX_REVIEWS,
@@ -81,6 +82,7 @@ class AppConfig(BaseSettings):
                 "tracker_surface_lease_seconds",
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
+                "write_back_max_verify_rounds",
                 "union_check_cleanup_poll_interval_seconds",
                 "git_remote",
                 "git_base_url",
@@ -142,6 +144,7 @@ class AppConfig(BaseSettings):
         )
 
     organize: OrganizeSettings | None = None
+    write_back: WriteBackSettings | None = None
 
     http: HttpSettings = Field(
         default_factory=HttpSettings,

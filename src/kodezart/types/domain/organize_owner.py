@@ -170,7 +170,11 @@ class StageHaltCause(StrEnum):
 
 class OrganizeBoundEvidence(CamelCaseModel):
     model_config = ConfigDict(frozen=True)
-    setting: Literal["organize.max_admission_rounds", "organize.max_convergence_rounds"]
+    setting: Literal[
+        "organize.max_admission_rounds",
+        "organize.max_convergence_rounds",
+        "write_back.max_verify_rounds",
+    ]
     value: int = Field(ge=1)
     rounds_used: int = Field(ge=1)
     loop: Literal["admission", "write_back", "convergence"]
@@ -182,6 +186,8 @@ class OrganizeBoundEvidence(CamelCaseModel):
         expected = (
             "organize.max_convergence_rounds"
             if self.loop == "convergence"
+            else "write_back.max_verify_rounds"
+            if self.loop == "write_back"
             else "organize.max_admission_rounds"
         )
         if self.setting != expected:

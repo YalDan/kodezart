@@ -48,7 +48,7 @@ async def test_criterion_mint_requires_the_parent_revision_its_author_read(
 
 
 async def test_writeback_exhaustion_retains_its_actual_cited_refutation(monkeypatch):
-    owner, _board, executor = factory(bound=1)
+    owner, _board, executor = factory(bound=1, write_back_bound=1)
     original = executor.stream
     checked_bad_body = []
 

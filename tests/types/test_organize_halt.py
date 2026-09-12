@@ -11,6 +11,8 @@ def bound(loop="admission"):
         "setting": (
             "organize.max_convergence_rounds"
             if loop == "convergence"
+            else "write_back.max_verify_rounds"
+            if loop == "write_back"
             else "organize.max_admission_rounds"
         ),
         "value": 2,

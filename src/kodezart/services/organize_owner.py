@@ -108,11 +108,13 @@ class OrganizeOwner:
         prompts: PromptSetProvider,
         operation: OperationConfig,
         policy: OrganizePolicy,
+        write_back_max_rounds: int,
         lease_seconds: float,
     ) -> None:
         self._tracker, self._admission, self._author = tracker, admission, author
         self._gate, self._prompts, self._operation = gate, prompts, operation
         self._policy, self._lease_seconds = policy, lease_seconds
+        self._write_back_max_rounds = write_back_max_rounds
         self._phases = tuple(
             sorted(
                 operation.resolve_organize_mandates(),
@@ -138,7 +140,7 @@ class OrganizeOwner:
             if phase.spec.kind is MandateKind.TICKET
         )
         self._verifier = WriteBackVerifier(
-            tracker=tracker, judge=judge, max_rounds=policy.max_admission_rounds
+            tracker=tracker, judge=judge, max_rounds=write_back_max_rounds
         )
         self._escalations = LaneEscalationWriter(
             tracker=tracker,
@@ -846,8 +848,8 @@ class OrganizeOwner:
                             halt = await self._halt(
                                 cause=StageHaltCause.ADMISSION_EXHAUSTED,
                                 bound=OrganizeBoundEvidence(
-                                    setting="organize.max_admission_rounds",
-                                    value=self._policy.max_admission_rounds,
+                                    setting="write_back.max_verify_rounds",
+                                    value=self._write_back_max_rounds,
                                     rounds_used=len(verified_write.rounds),
                                     loop="write_back",
                                 ),
