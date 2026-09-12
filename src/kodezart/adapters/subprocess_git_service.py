@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from kodezart.core.protocols import GitAuth
-from kodezart.domain.errors import MergeConflictError
+from kodezart.domain.errors import GitOperationError, MergeConflictError
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
@@ -200,7 +200,7 @@ class SubprocessGitService:
         """
         try:
             await self._run(["git", "merge", "--ff-only", source_branch], cwd=cwd)
-        except RuntimeError as exc:
+        except GitOperationError as exc:
             raise MergeConflictError(
                 f"merge of {source_branch} could not be completed",
                 source_branch=source_branch,
@@ -238,7 +238,7 @@ class SubprocessGitService:
                 cwd=cwd,
                 env=self._author_env(author_name, author_email),
             )
-        except RuntimeError as exc:
+        except GitOperationError as exc:
             unmerged = await self._run_output(
                 ["git", "diff", "--name-only", "--diff-filter=U"],
                 cwd=cwd,
@@ -352,7 +352,7 @@ class SubprocessGitService:
         parts = first_line.split("\t")
         if len(parts) != 2:
             msg = f"Unexpected ls-remote output: {first_line!r}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return parts[0]
 
     async def diff_summary(
@@ -449,7 +449,7 @@ class SubprocessGitService:
                 cwd=repo_path,
             )
             return True
-        except RuntimeError:
+        except GitOperationError:
             return False
 
     async def _run_output(
@@ -472,7 +472,7 @@ class SubprocessGitService:
         if proc.returncode != 0:
             detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return stdout.decode().strip()
 
     async def _run(
@@ -495,7 +495,7 @@ class SubprocessGitService:
         if proc.returncode != 0:
             detail = self._failure_detail(stdout, stderr, proc.returncode)
             msg = f"{' '.join(cmd[:3])} failed: {detail}"
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
 
     async def _run_with_exit_codes(
         self,
@@ -506,7 +506,7 @@ class SubprocessGitService:
     ) -> tuple[int, str]:
         """Run *cmd*, allow declared exit codes, return ``(exit_code, stdout)``.
 
-        Raises ``RuntimeError`` if the exit code is not in *allowed*.  Used
+        Raises ``GitOperationError`` if the exit code is not in *allowed*.  Used
         by ``is_ancestor`` (exit 1 valid) and ``remote_branch_sha``
         (exit 2 valid) — the existing ``_run`` and ``_run_output`` continue
         to raise on any non-zero exit.
@@ -531,5 +531,5 @@ class SubprocessGitService:
                 f"{' '.join(cmd[:3])} exited {returncode} "
                 f"(allowed {sorted(allowed)}): {detail}"
             )
-            raise RuntimeError(msg)
+            raise GitOperationError(msg)
         return returncode, stdout.decode().strip()
