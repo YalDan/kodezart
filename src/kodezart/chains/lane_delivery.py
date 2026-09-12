@@ -210,6 +210,7 @@ class LaneDeliveryCoordinator:
                 destination=OutboundDestination.PR_COMMENT,
                 content_class=ContentClass.AUTHORED,
             )
+            await self._require_pr_identity(pr, state, context)
             try:
                 await self._pr_creator.comment_on_pr(
                     repo_url=repo_url, pr_number=pr.number, body=body
