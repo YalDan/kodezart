@@ -210,6 +210,28 @@ def test_retired_tracker_fields_refuse(source, field, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+@pytest.mark.parametrize("value", [321.5, 0])
+def test_retired_surface_duration_cannot_silently_select_default(
+    source, value, tmp_path, monkeypatch
+):
+    field = "tracker_surface_lease_seconds"
+    with pytest.raises(ValidationError, match="Extra inputs") as caught:
+        _from_source(source, field, value, tmp_path, monkeypatch)
+    assert field in str(caught.value).casefold()
+    assert "input_value" not in str(caught.value)
+
+
+@pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
+def test_current_surface_duration_preserves_explicit_override(
+    source, tmp_path, monkeypatch
+):
+    config = _from_source(
+        source, "tracker", {"surface_lease_seconds": 321.5}, tmp_path, monkeypatch
+    )
+    assert config.tracker.surface_lease_seconds == 321.5
+
+
+@pytest.mark.parametrize("source", ["init", "env", "dotenv", "secret"])
 def test_old_scalar_selector_refuses_as_group_shape(source, tmp_path, monkeypatch):
     with pytest.raises((ValidationError, SettingsError)) as caught:
         _from_source(source, "tracker", "linear", tmp_path, monkeypatch)
