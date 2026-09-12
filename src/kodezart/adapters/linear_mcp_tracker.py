@@ -47,7 +47,6 @@ from kodezart.adapters.linear_mcp_types import (
     LinearProjectWire,
     LinearTeamListWire,
     LinearTeamWire,
-    LinearThreadCommentListWire,
     LinearUserListWire,
     LinearUserWire,
     LinearWireModel,
@@ -1844,9 +1843,7 @@ class LinearMcpTracker:
         return lane_run_events(
             comments=tuple(
                 self._to_comment(wire, issue_key=issue_key)
-                for wire in await self._comment_wires(
-                    issue_key, require_reply_links=True
-                )
+                for wire in await self._comment_wires(issue_key)
             ),
             lane_key=lane_key,
             marker_prefixes=self._marker_prefixes,
@@ -1859,9 +1856,7 @@ class LinearMcpTracker:
         try:
             comments = tuple(
                 self._to_comment(wire, issue_key=issue_key)
-                for wire in await self._comment_wires(
-                    issue_key, require_reply_links=True
-                )
+                for wire in await self._comment_wires(issue_key)
             )
         except (
             TrackerUnavailableError,
@@ -3572,26 +3567,17 @@ class LinearMcpTracker:
         issue_key: str,
         *,
         parent_field: str = "issueId",
-        require_reply_links: bool = False,
     ) -> Sequence[LinearCommentEntryWire]:
         arguments: dict[str, object] = {parent_field: issue_key}
         comments: dict[str, LinearCommentEntryWire] = {}
 
         async def read(
             request: Mapping[str, object],
-        ) -> tuple[
-            LinearCommentListWire | LinearThreadCommentListWire, bool, str | None
-        ]:
+        ) -> tuple[LinearCommentListWire, bool, str | None]:
             payload = await self._call(_TOOL_LIST_COMMENTS, request)
-            listing: LinearCommentListWire | LinearThreadCommentListWire
-            if require_reply_links:
-                listing = self._validate(
-                    LinearThreadCommentListWire, payload, _TOOL_LIST_COMMENTS
-                )
-            else:
-                listing = self._validate(
-                    LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
-                )
+            listing = self._validate(
+                LinearCommentListWire, payload, _TOOL_LIST_COMMENTS
+            )
             return listing, listing.has_next_page, listing.cursor
 
         async for listing in cursor_pages(
@@ -3605,9 +3591,9 @@ class LinearMcpTracker:
         ):
             for comment in listing.comments:
                 previous = comments.get(comment.id)
-                if require_reply_links and previous is not None and previous != comment:
+                if previous is not None and previous != comment:
                     raise TrackerProtocolError(
-                        "comment changed across resolution pages",
+                        "comment changed across listing pages",
                         tool=_TOOL_LIST_COMMENTS,
                         detail=f"target={issue_key}; comment={comment.id}",
                     )
