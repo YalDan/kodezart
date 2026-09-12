@@ -147,12 +147,18 @@ class NativeLaneWorkflow:
     async def _complete(
         self, state: NativeDeliveryState, config: RunnableConfig
     ) -> dict[str, object]:
-        _ = config
-        await require_current_native_snapshot(state, reader=self.fire.criteria)
         phase = state["delivery"]
         if isinstance(phase, PendingLaneDelivery):
             raise ValueError(
                 "A native lane cannot terminate without a delivery disposition"
             )
+        if isinstance(phase, CompletedLaneDelivery):
+            if self._delivery is None:
+                raise ValueError("A completed delivery requires its coordinator")
+            await self._delivery._require_current(
+                state, ExecutionContext.from_configurable(config), phase.result.pr
+            )
+        else:
+            await require_current_native_snapshot(state, reader=self.fire.criteria)
         get_stream_writer()(LaneDeliveryEvent(delivery=phase))
         return {}
