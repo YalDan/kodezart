@@ -128,7 +128,8 @@ class GitService(Protocol):
 
     Unsuccessful command exits or invalid command responses raise the neutral
     ``GitOperationError``; merge conflicts retain ``MergeConflictError``.
-    Argument validation and process startup failures keep their own types.
+    Unavailable local repository paths raise ``GitRepositoryError``; other
+    argument validation and process startup failures keep their own types.
     """
 
     async def validate_repo(self, repo_path: str) -> None: ...

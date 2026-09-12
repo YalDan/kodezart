@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, RepoCache
 from kodezart.domain.agent import generate_workspace_id
-from kodezart.domain.errors import WorkspaceError
+from kodezart.domain.errors import GitOperationError, GitRepositoryError, WorkspaceError
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +90,7 @@ class GitWorktreeProvider:
             return wt_path
         except WorkspaceError:
             raise
-        except (ValueError, RuntimeError) as exc:
+        except (GitOperationError, GitRepositoryError) as exc:
             raise WorkspaceError(str(exc)) from exc
 
     async def release(self, workspace_path: str) -> None:

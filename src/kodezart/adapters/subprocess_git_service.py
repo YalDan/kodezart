@@ -9,7 +9,11 @@ import re
 from pathlib import Path
 
 from kodezart.core.protocols import GitAuth
-from kodezart.domain.errors import GitOperationError, MergeConflictError
+from kodezart.domain.errors import (
+    GitOperationError,
+    GitRepositoryError,
+    MergeConflictError,
+)
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
 
@@ -46,10 +50,10 @@ class SubprocessGitService:
         repo = Path(repo_path)
         if not repo.is_dir():
             msg = f"Repository path does not exist: {repo_path}"
-            raise ValueError(msg)
+            raise GitRepositoryError(msg)
         if not ((repo / ".git").exists() or (repo / "HEAD").exists()):
             msg = f"Not a git repository: {repo_path}"
-            raise ValueError(msg)
+            raise GitRepositoryError(msg)
 
     def is_repo(self, path: str) -> bool:
         """Check if path is an existing git repo (regular or bare)."""
