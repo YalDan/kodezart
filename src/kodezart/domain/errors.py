@@ -519,6 +519,27 @@ class AssetFetchError(Exception):
         self.asset_key: str | None = asset_key
 
 
+class DeliveryHeadError(Exception):
+    """A delivery branch no longer has the head whose evidence was supplied."""
+
+    def __init__(
+        self,
+        *,
+        issue_id: str,
+        branch: str,
+        expected_sha: str,
+        observed_sha: str | None,
+    ) -> None:
+        super().__init__(
+            f"Delivery head changed for {issue_id} on {branch}: "
+            f"expected {expected_sha}, observed {observed_sha!r}"
+        )
+        self.issue_id = issue_id
+        self.branch = branch
+        self.expected_sha = expected_sha
+        self.observed_sha = observed_sha
+
+
 class BaseResolutionError(Exception):
     """Raised when a lane's base cannot be resolved. The lane does not dispatch.
 
