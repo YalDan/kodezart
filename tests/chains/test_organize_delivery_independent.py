@@ -6,7 +6,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kodezart.domain.errors import OrganizeWriteRefusalError, SurfaceLeaseError
+from kodezart.domain.errors import (
+    OrganizeHaltError,
+    OrganizeWriteRefusalError,
+    SurfaceLeaseError,
+)
 from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -41,7 +45,7 @@ async def test_halted_first_binding_does_not_starve_second_binding(first_halts):
     )
     try:
         await tick.run(datetime(2026, 9, 12, tzinfo=UTC))
-    except OrganizeWriteRefusalError:
+    except OrganizeHaltError:
         pass  # A recorded first halt is allowed; starvation is the oracle.
     assert executor.calls, "the second independent binding never reaches its owner"
     assert "criteria complete" in board.server.issues[key].labels

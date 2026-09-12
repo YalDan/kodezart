@@ -755,7 +755,7 @@ class OrganizeWriteRefusalError(Exception):
         super().__init__(f"organize write for {issue_key!r} refused: {reason}")
 
 
-class OrganizeHaltError(OrganizeWriteRefusalError):
+class OrganizeHaltError(Exception):
     """A completed Organize tick retains its exact addressed halt report."""
 
     def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
@@ -764,8 +764,8 @@ class OrganizeHaltError(OrganizeWriteRefusalError):
         self.scope = scope
         self.report = report
         super().__init__(
-            issue_key=scope.key,
-            reason=f"Organize halted: {report.halt.cause.value}",
+            f"Organize for {scope.kind.value} {scope.key!r} halted: "
+            f"{report.halt.cause.value}"
         )
 
 
