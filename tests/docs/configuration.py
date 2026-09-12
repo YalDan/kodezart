@@ -1,4 +1,4 @@
-"""Extracted shared tracker rules."""
+"""Configuration names exposed by nested settings models."""
 
 from types import UnionType
 from typing import Annotated, Union, get_args, get_origin

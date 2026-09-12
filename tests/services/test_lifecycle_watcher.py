@@ -235,6 +235,7 @@ class TestTheTransitionsAJobStreamProduces:
         )
 
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -259,6 +260,7 @@ class TestTheTransitionsAJobStreamProduces:
         assert tracker.queue_writes == []
         exhausted = WorkflowOutcome.ci_failed_fix_budget_exhausted
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {exhausted.value}",
         ]
 
@@ -757,6 +759,7 @@ class TestTheFailureArm:
             (ISSUE, LifecycleStage.DONE),
         ]
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.ci_passed.value}",
         ]
 
@@ -782,6 +785,7 @@ class TestTheFailureArm:
 
         assert tracker.restored_states == []
         assert [comment.body for comment in tracker.comments] == [
+            f"[fixture-outcome:{ISSUE}:job-0001]\n"
             f"job job-0001 reached outcome {WorkflowOutcome.loop_not_accepted.value}",
         ]
 

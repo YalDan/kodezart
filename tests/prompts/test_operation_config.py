@@ -120,7 +120,7 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+def test_all_fields_are_present_with_the_stated_types() -> None:
     """Field-by-field census: exact equality, never a subset check.
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
@@ -138,6 +138,7 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
         "teams",
         "queue_states",
         "workflow_states",
+        "marker_prefixes",
         "repos",
         "documents",
         "records",
