@@ -394,58 +394,79 @@ class AuditReadSweep:
         ):
             raise AuditClaimReadError("observed branch changed during the read sweep")
 
-    async def run(self) -> AuditReadSweepResult:
-        """Read and judge actual scoped inputs, preserving every unavailable entry."""
-        snapshot = await self._requests.read(scope=self._scope)
-        surfaces = _body_surfaces(snapshot)
-        observations: list[AuditReadObservation] = []
-        for target in snapshot.targets:
-            try:
-                observation = await self._observe(target, surfaces)
-            except Exception as exc:
-                observation = AuditReadObservation(
-                    target, unavailable_reason=f"{type(exc).__name__}: {exc}"
-                )
-            overclaims = None
-            overclaim_reason = None
-            removals = None
-            removal_reason = None
-            forge = None
-            forge_report = None
-            forge_reason = None
-            if "criterion" in target.issue.issue_labels:
-                try:
-                    overclaims = await self._observe_overclaims(target, surfaces)
-                except Exception as exc:
-                    overclaim_reason = f"{type(exc).__name__}: {exc}"
-                try:
-                    removals = await self._observe_removals(target, surfaces)
-                except Exception as exc:
-                    removal_reason = f"{type(exc).__name__}: {exc}"
-                try:
-                    forge, forge_report, forge_reason = await self._observe_forge(
-                        target, surfaces
-                    )
-                except Exception as exc:
-                    forge_reason = f"{type(exc).__name__}: {exc}"
-            observations.append(
-                AuditReadObservation(
-                    target=observation.target,
-                    claim=observation.claim,
-                    evidence=observation.evidence,
-                    terminal=observation.terminal,
-                    terminal_report=observation.terminal_report,
-                    unavailable_reason=observation.unavailable_reason,
-                    overclaims=overclaims,
-                    overclaim_unavailable_reason=overclaim_reason,
-                    detector_removal=removals,
-                    removal_unavailable_reason=removal_reason,
-                    forge=forge,
-                    forge_report=forge_report,
-                    forge_unavailable_reason=forge_reason,
-                )
-            )
+    async def prepare(self) -> AuditRequestSnapshot:
+        """Read the complete current native candidate and source snapshot."""
+        return await self._requests.read(scope=self._scope)
+
+    async def require_current(
+        self,
+        snapshot: AuditRequestSnapshot,
+        observations: tuple[AuditReadObservation, ...],
+    ) -> None:
+        """Refuse head/source drift before publication or coverage completion."""
         for observation in observations:
             await self._require_current(observation)
         await self._requests.require_unchanged(snapshot)
-        return AuditReadSweepResult(snapshot, surfaces, tuple(observations))
+
+    async def observe_target(
+        self, *, snapshot: AuditRequestSnapshot, target: AuditRequestTarget
+    ) -> AuditReadObservation:
+        """Observe one selected native target with every existing applicable arm."""
+        if target not in snapshot.targets:
+            raise AuditClaimReadError("selected audit target is outside its snapshot")
+        surfaces = _body_surfaces(snapshot)
+        try:
+            observation = await self._observe(target, surfaces)
+        except Exception as exc:
+            observation = AuditReadObservation(
+                target, unavailable_reason=f"{type(exc).__name__}: {exc}"
+            )
+        overclaims = None
+        overclaim_reason = None
+        removals = None
+        removal_reason = None
+        forge = None
+        forge_report = None
+        forge_reason = None
+        if "criterion" in target.issue.issue_labels:
+            try:
+                overclaims = await self._observe_overclaims(target, surfaces)
+            except Exception as exc:
+                overclaim_reason = f"{type(exc).__name__}: {exc}"
+            try:
+                removals = await self._observe_removals(target, surfaces)
+            except Exception as exc:
+                removal_reason = f"{type(exc).__name__}: {exc}"
+            try:
+                forge, forge_report, forge_reason = await self._observe_forge(
+                    target, surfaces
+                )
+            except Exception as exc:
+                forge_reason = f"{type(exc).__name__}: {exc}"
+        return AuditReadObservation(
+            target=observation.target,
+            claim=observation.claim,
+            evidence=observation.evidence,
+            terminal=observation.terminal,
+            terminal_report=observation.terminal_report,
+            unavailable_reason=observation.unavailable_reason,
+            overclaims=overclaims,
+            overclaim_unavailable_reason=overclaim_reason,
+            detector_removal=removals,
+            removal_unavailable_reason=removal_reason,
+            forge=forge,
+            forge_report=forge_report,
+            forge_unavailable_reason=forge_reason,
+        )
+
+    async def run(self) -> AuditReadSweepResult:
+        """Read every current target without claiming publication or coverage."""
+        snapshot = await self.prepare()
+        observations = tuple(
+            [
+                await self.observe_target(snapshot=snapshot, target=target)
+                for target in snapshot.targets
+            ]
+        )
+        await self.require_current(snapshot, observations)
+        return AuditReadSweepResult(snapshot, _body_surfaces(snapshot), observations)

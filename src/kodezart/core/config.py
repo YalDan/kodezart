@@ -19,6 +19,7 @@ from kodezart.core.job_queue_settings import JobQueueSettings
 from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging_settings import LoggingSettings
 from kodezart.core.organize_settings import OrganizeSettings
+from kodezart.core.audit_settings import AuditSettings
 from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.ticket_review import (
@@ -142,6 +143,7 @@ class AppConfig(BaseSettings):
         )
 
     organize: OrganizeSettings | None = None
+    audit: AuditSettings | None = None
 
     http: HttpSettings = Field(
         default_factory=HttpSettings,

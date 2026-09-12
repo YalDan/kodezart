@@ -82,9 +82,8 @@ class DocumentSystem(StrEnum):
 class RunKind(StrEnum):
     """Every kind of run the operation records — the record registry's keys.
 
-    Three members because the operation runs three kinds of thing worth a
-    record row: the two scheduled judgment passes and the fire a dispatch
-    starts.  ``records`` is keyed by these values, one declared destination
+    Each native or prompt-driven run owns a distinct record kind, including
+    the standing audit and the fire a dispatch starts.  ``records`` is keyed by these values, one declared destination
     per kind, so which log a run reports to is configuration rather than a
     name a session invents — and a key outside this vocabulary is a typo
     refused at load, not a destination nothing will ever write to
@@ -94,6 +93,7 @@ class RunKind(StrEnum):
     FIRE_PREP = "fire_prep"
     GROOMING = "grooming"
     FIRE = "fire"
+    AUDIT = "audit"
 
 
 class ConfigOwnership(StrEnum):
@@ -539,6 +539,15 @@ class OrganizeScopeBinding(OperationModel):
     repo_url: str = Field(min_length=1)
 
 
+class AuditScopeBinding(OperationModel):
+    """An explicit audit scope, declared repository and native report destination."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1, pattern=r"\S")
+    report_issue_key: str = Field(min_length=1, pattern=r"\S")
+
+
 class OperationConfig(OperationModel):
     """The whole operation configuration, validated structurally at load.
 
@@ -569,6 +578,7 @@ class OperationConfig(OperationModel):
     issue_labels: dict[str, str] = Field(default_factory=dict)
     organize_mandates: tuple[MandateSpec, ...] = ()
     organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
+    audit_scopes: tuple[AuditScopeBinding, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
         default_factory=dict
@@ -615,6 +625,17 @@ class OperationConfig(OperationModel):
                 if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
                     failures.append(
                         "each organize scope requires exactly one matching "
+                        "declared repository"
+                    )
+
+        if self.audit_scopes:
+            audit_refs = [binding.scope for binding in self.audit_scopes]
+            if len(audit_refs) != len(set(audit_refs)):
+                failures.append("audit_scopes repeats or ambiguously binds one scope")
+            for binding in self.audit_scopes:
+                if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
+                    failures.append(
+                        "each audit scope requires exactly one matching "
                         "declared repository"
                     )
 
@@ -1045,6 +1066,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "issue_labels": ConfigOwnership.OWNED,
     "organize_mandates": ConfigOwnership.LOCAL,
     "organize_scopes": ConfigOwnership.LOCAL,
+    "audit_scopes": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "run_event_states": ConfigOwnership.LOCAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
