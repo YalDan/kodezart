@@ -6,7 +6,9 @@ from typing import Annotated, Literal, Self
 from pydantic import ConfigDict, Field, RootModel, model_validator
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.organize import AdmissionResult, MandateKind, SpecFinding
+from kodezart.types.domain.write_back import WriteBackResult
 
 
 class CriterionProposal(CamelCaseModel):
@@ -105,6 +107,7 @@ class StageHaltReport(CamelCaseModel):
     bound: OrganizeBoundEvidence | None = None
     admission_results: tuple[AdmissionResult, ...] = ()
     surviving_findings: tuple[SpecFinding, ...] = ()
+    write_back_results: tuple[WriteBackResult, ...] = ()
     questions: tuple[UnresolvedProposal, ...] = ()
     unrecorded_escalation_issue_ids: tuple[str, ...] = ()
 
@@ -126,6 +129,18 @@ class StageHaltReport(CamelCaseModel):
             convergence = self.cause is StageHaltCause.CONVERGENCE_EXHAUSTED
             if convergence != (self.bound.loop == "convergence"):
                 raise ValueError("the exhausted bound must match the halt cause")
+            if self.bound.loop == "write_back" and (
+                not self.write_back_results
+                or any(
+                    len(result.rounds) != self.bound.rounds_used
+                    for result in self.write_back_results
+                )
+            ):
+                raise ValueError("write-back exhaustion retains its actual rounds")
+        if any(
+            result.verdict is AuditVerdict.HOLDS for result in self.write_back_results
+        ):
+            raise ValueError("a halted write-back must retain an unsettled result")
         return self
 
 
