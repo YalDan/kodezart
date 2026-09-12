@@ -118,3 +118,47 @@ async def test_stream_propagates_executor_error() -> None:
                 allowed_tools=["Bash"],
             )
         ]
+
+
+async def test_authored_persistence_failure_keeps_workspace_cleanup(monkeypatch):
+    workspace = FakeWorkspaceProvider()
+    persister = FakeChangePersister()
+    failure = RuntimeError("authored persistence failed")
+
+    async def refuse(**kwargs):
+        raise failure
+
+    monkeypatch.setattr(persister, "persist", refuse)
+    service = AgentService(
+        git_base_url="https://github.com",
+        executor=FakeAgentExecutor(
+            events=[
+                ResultEvent(
+                    subtype="result",
+                    duration_ms=10,
+                    duration_api_ms=5,
+                    is_error=False,
+                    num_turns=1,
+                    session_id="s1",
+                )
+            ]
+        ),
+        workspace=workspace,
+        persister=persister,
+    )
+    with pytest.raises(RuntimeError) as caught:
+        [
+            event
+            async for event in service.stream_workflow(
+                skills=SUPPRESS_ALL_SKILLS,
+                session_type=FAKE_SESSION_TYPE,
+                prompt="fix it",
+                repo_path="/tmp/fake",
+                branch_name="authored",
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=["Bash"],
+                visibility=RepoVisibility.UNKNOWN,
+            )
+        ]
+    assert caught.value is failure
+    assert workspace.calls[-1] == ("release", "/tmp/fake-workspace")
