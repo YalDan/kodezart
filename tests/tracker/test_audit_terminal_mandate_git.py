@@ -16,7 +16,7 @@ from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_terminal import TerminalDiscrepancy
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from kodezart.types.domain.pr_state import PRLifecycle
+from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
@@ -54,10 +54,12 @@ async def test_native_terminal_mandate_observes_current_head_without_criterion_c
             "repos": [operation.repos[0].model_copy(update={"url": remote.as_uri()})]
         }
     )
-    forge.records[(remote.as_uri(), 7)] = forge.records[(REPO, 7)].model_copy(
-        update={
+    forge.records[(remote.as_uri(), 7)] = PRState.model_validate(
+        {
+            **forge.records[(REPO, 7)].model_dump(),
             "head_sha": head,
             "head_repo_url": remote.as_uri(),
+            "base_repo_url": remote.as_uri(),
             "lifecycle": PRLifecycle.OPEN if case == "open" else PRLifecycle.CLOSED,
         }
     )
