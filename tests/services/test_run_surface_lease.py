@@ -212,11 +212,32 @@ async def test_terminal_outcome_replay_updates_the_same_comment_and_releases():
     assert not board.grants()
 
 
-async def test_missing_marker_purpose_refuses_before_any_tracker_mutation():
+def test_missing_marker_purpose_refuses_at_construction_before_any_tracker_mutation():
     board = _Board()
     with pytest.raises(OperationMemberAbsentError, match="run_outcome"):
-        await writer(board, prefixes={}).on_terminal_outcome(
-            issue_key=CLAIMED_ISSUE, job_id=JOB, outcome=OUTCOME
+        writer(board, prefixes={})
+    assert not board.calls
+
+
+async def test_composed_writer_missing_marker_purpose_refuses_before_tracker_mutation():
+    board = _Board()
+    config = AppConfig()
+    queue = build_job_queue(settings=config.queue, workflow_engine=_CompletedEngine())
+    operation = operation_config().model_copy(update={"marker_prefixes": {}})
+    with pytest.raises(OperationMemberAbsentError, match="run_outcome"):
+        await build_dispatch_passes(
+            recorder=RunRecorder(records={}, sinks={}),
+            config=config,
+            operation=operation,
+            tracker=board.tracker(),
+            ledger=board.ledger,
+            delivery=FakeDeliveryProbe(),
+            queue=queue,
+            registry=queue,
+            gate=PassThroughGate(),
+            git=FakeGitService(),
+            cache=FakeRepoCache(),
+            integration_workspace_dir=INTEGRATION_DIR,
         )
     assert not board.calls
 

@@ -30,7 +30,10 @@ from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
-from kodezart.domain.comment_markers import compose_comment_marker
+from kodezart.domain.comment_markers import (
+    compose_comment_marker,
+    configured_marker_prefix,
+)
 from kodezart.domain.errors import DuplicateWorkRefError
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import RaiseSite
@@ -79,6 +82,7 @@ class TrackerLifecycleWriter:
         surface_lease_seconds: float,
         clock: Callable[[], datetime] = _now,
     ) -> None:
+        configured_marker_prefix(marker_prefixes, purpose="run_outcome")
         self._tracker: TrackerPort = tracker
         self._gate: OutboundContentGate = gate
         self._marker_prefixes = dict(marker_prefixes)
