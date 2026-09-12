@@ -745,7 +745,9 @@ def test_each_missing_organize_fact_puts_only_its_issue_in_gap(missing):
         admissions = tuple(a for a in admissions if a.issue_id != SUBJECT)
     elif missing == "liveness":
         admissions = tuple(
-            a.model_copy(update={"admitted_body_digest": "old body"})
+            AdmissionResult.model_validate(
+                {**a.model_dump(), "admitted_body_digest": "old body"}
+            )
             if a.issue_id == SUBJECT
             else a
             for a in admissions

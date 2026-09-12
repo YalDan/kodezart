@@ -12,72 +12,38 @@ ceremony: the artifact a consumer will read is the one the backend now
 holds, which is not necessarily the string the writing step composed.
 """
 
+import re
 from collections.abc import Sequence
-from typing import Protocol, Self, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from pydantic import ConfigDict, Field, model_validator
-
-from kodezart.core.protocols import TrackerPort
+from kodezart.core.owned_tasks import settle
+from kodezart.core.protocols import (
+    AgentRunner,
+    GitService,
+    PromptSetProvider,
+    TrackerPort,
+    WorkspaceProvider,
+)
+from kodezart.domain.errors import WriteBackReadError
+from kodezart.services.audit_sessions import judge_in_workspace
+from kodezart.services.git_observations import read_workspace_head
+from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.tracker_artifacts import (
     read_tracker_artifact,
     require_artifact_read,
 )
-from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.agent import WRITE_BACK_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict, TrackerArtifact
+from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.surface import WritableSurface
-
-
-class WriteBackFinding(CamelCaseModel):
-    """One round's judgment of the artifact that actually landed.
-
-    ``cited_refs`` are the references the judgment turned on — the test
-    paths, files or shas the artifact named and the judgment checked.  A
-    refutation must name at least one: a repair round is driven by what
-    the previous round found wrong, and a refutation citing nothing
-    leaves the writing step guessing at its own defect.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    verdict: AuditVerdict
-    evidence: str = Field(min_length=1, pattern=r"\S")
-    cited_refs: tuple[str, ...] = ()
-
-    @model_validator(mode="after")
-    def _refutation_names_something(self) -> Self:
-        if self.verdict is AuditVerdict.REFUTED and not self.cited_refs:
-            raise ValueError("a refuted write-back must cite what it refutes")
-        return self
-
-
-class WriteBackResult(CamelCaseModel):
-    """What the loop settled, and the artifact a consumer will now read.
-
-    ``rounds`` is every round's finding in order, so the count of them is
-    what the loop spent and the last of them is why it stopped.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    verdict: AuditVerdict
-    artifact: TrackerArtifact
-    rounds: tuple[WriteBackFinding, ...] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _verdict_follows_the_rounds(self) -> Self:
-        """The loop settles in two states, and each has to have happened.
-
-        ``refuted`` is not one of them: a refutation is what a repair
-        round answers, so the loop either repaired it or ran out of
-        rounds with it unsettled, and reporting the artifact itself as
-        refuted would hide which of the two occurred.
-        """
-        holds = self.rounds[-1].verdict is AuditVerdict.HOLDS
-        if self.verdict is AuditVerdict.REFUTED:
-            raise ValueError("a refuted round is either repaired or left unsettled")
-        if (self.verdict is AuditVerdict.HOLDS) is not holds:
-            raise ValueError("the result must agree with its own last round")
-        return self
+from kodezart.types.domain.write_back import (
+    WriteBackFinding as WriteBackFinding,
+)
+from kodezart.types.domain.write_back import (
+    WriteBackResult as WriteBackResult,
+)
 
 
 @runtime_checkable
@@ -177,3 +143,65 @@ class WriteBackVerifier:
         rounds: Sequence[WriteBackFinding],
     ) -> WriteBackResult:
         return WriteBackResult(verdict=verdict, artifact=artifact, rounds=tuple(rounds))
+
+
+class FreshWriteBackJudge:
+    """Judge landed claims at an exact clean commit in a fresh read-only session."""
+
+    def __init__(
+        self,
+        *,
+        runner: AgentRunner,
+        workspace: WorkspaceProvider,
+        git: GitService,
+        prompts: PromptSetProvider,
+        skills: SkillsSelection,
+        repo_url: str,
+        session_type: SessionType,
+    ) -> None:
+        self._runner, self._workspace, self._git = runner, workspace, git
+        self._prompts, self._skills = prompts, skills
+        self._repo_url, self._session_type = repo_url, session_type
+
+    async def _require_head(self, workspace: str, ref: str) -> None:
+        if await settle(
+            self._git.has_replace_refs(workspace)
+        ) or await read_workspace_head(git=self._git, workspace=workspace) != (
+            ref,
+            False,
+        ):
+            raise WriteBackReadError(
+                "write-back verification requires a clean repository "
+                "at the exact commit"
+            )
+
+    async def judge(self, *, artifact: TrackerArtifact, ref: str) -> WriteBackFinding:
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", ref) is None:
+            raise WriteBackReadError(
+                "write-back verification requires a complete commit SHA"
+            )
+        key = PromptKey.WRITE_BACK_VERIFY
+        prompt = self._prompts.template_for(key).render(
+            {
+                "written_artifact": artifact.model_dump_json(by_alias=True),
+                "base_ref": ref,
+            }
+        )
+        async with owned_workspace(
+            self._workspace, repo_url=self._repo_url, ref=ref
+        ) as workspace:
+            await self._require_head(workspace, ref)
+            structured = await judge_in_workspace(
+                runner=self._runner,
+                prompts=self._prompts,
+                skills=self._skills,
+                workspace=workspace,
+                key=key,
+                prompt=prompt,
+                output_schema=WRITE_BACK_SCHEMA,
+                site="write_back_verify",
+                session_type=self._session_type,
+                failure_message="Write-back verifier produced no structured judgment.",
+            )
+            await self._require_head(workspace, ref)
+        return WriteBackFinding.model_validate(structured)

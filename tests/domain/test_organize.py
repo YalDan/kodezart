@@ -357,7 +357,7 @@ def test_not_buildable_requires_an_explicit_refusal_kind(extra_fields):
 
     from kodezart.types.domain.organize import AdmissionResult
 
-    with pytest.raises(ValidationError, match="NOT_BUILDABLE requires refusal_kind"):
+    with pytest.raises(ValidationError, match=r"refusal_kind|refusalKind"):
         AdmissionResult.model_validate(
             {
                 "issue_id": "ISSUE-1",
@@ -377,7 +377,7 @@ def test_only_not_buildable_can_carry_a_refusal_kind(verdict, refusal_kind):
 
     from kodezart.types.domain.organize import AdmissionResult
 
-    with pytest.raises(ValidationError, match="refusal_kind must be None"):
+    with pytest.raises(ValidationError, match="Extra inputs"):
         AdmissionResult.model_validate(
             {
                 "issue_id": "ISSUE-1",
@@ -400,8 +400,11 @@ def test_non_refusals_round_trip_with_no_refusal_kind(verdict):
             "issue_id": "ISSUE-1",
             "verdict": verdict,
             "admitted_body_digest": "revision:one",
-            "missing_artifact": "schema",
-            "pending_blocker_id": "ISSUE-9",
+            **(
+                {"missing_artifact": "schema", "pending_blocker_id": "ISSUE-9"}
+                if verdict == "unverifiable"
+                else {}
+            ),
             "evidence": "Observed on the issue body.",
         }
     )

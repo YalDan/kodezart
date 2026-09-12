@@ -53,6 +53,14 @@ def test_the_queue_terminal_turns_on_demonstration_and_not_on_a_merge():
     assert "PR merged →" not in text
     assert "the work demonstrated in the branch that carries it" in text
     assert (
-        "Demonstration is a fact about the branch and never about the branch's fate"
+        "Demonstration remains independent of whether the branch is later merged"
         in text
     )
+
+    assert "never written from a green build or a merged branch" in text
+    assert (
+        "Only the fresh independent evaluation step may mark criterion leaves finished"
+        in text
+    )
+    assert "queue disposition and cannot establish subtree completion" in text
+    assert "workflow_states.done" not in text

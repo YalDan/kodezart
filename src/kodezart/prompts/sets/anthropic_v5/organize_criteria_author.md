@@ -16,6 +16,14 @@ when re-graining an undemonstrable check. For adoption of an existing artifact,
 require rendered byte identity to the recorded source/version with any explicit
 configuration substitutions; semantic coverage cannot establish identity.
 
+The current owner can edit the addressed issue's body and create criterion
+children. It cannot change graph parentage, blockedBy, relatedTo, priority,
+milestone, splits or an existing criterion's body. If one of those operations
+is necessary, return the unavailable proposal with its exact capability and
+evidence. A missing write capability is not a human decision; reserve the
+unresolved proposal for a real unruled decision. Never hide structural changes
+inside a body-only proposal or claim that description prose changed the graph.
+
 Use the supplied mandate rubric to judge the issue. Read repository evidence
 at the supplied base ref before making repository claims.
 

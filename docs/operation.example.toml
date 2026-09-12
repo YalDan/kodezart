@@ -26,6 +26,10 @@ workspace = "example-workspace"
 # and issue_labels references. See docs/configuration.md for its five fields.
 # Empty declares no table and does not schedule an organize pass.
 organize_mandates = []
+# Explicit scope-to-repository bindings for the native Organize owner.
+# Each row names scope = { kind = "issue", key = "native-parent-key" }
+# and repo_url matching one declared [[repos]] URL; no cross-product is inferred.
+organize_scopes = []
 
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not

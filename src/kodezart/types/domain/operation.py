@@ -37,6 +37,7 @@ from kodezart.types.domain.run_event import (
     RunEventKind,
     RunEventTableError,
 )
+from kodezart.types.domain.scope_address import ScopeRef
 
 #: The one stable document key the structure validators below and the pass
 #: templates address by name; it carries no accessor that refuses on absence,
@@ -530,6 +531,14 @@ def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
     return failures
 
 
+class OrganizeScopeBinding(OperationModel):
+    """One explicit writable scope and the declared repository it is judged against."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1)
+
+
 class OperationConfig(OperationModel):
     """The whole operation configuration, validated structurally at load.
 
@@ -559,6 +568,7 @@ class OperationConfig(OperationModel):
     scope_labels: dict[str, str] = Field(default_factory=dict)
     issue_labels: dict[str, str] = Field(default_factory=dict)
     organize_mandates: tuple[MandateSpec, ...] = ()
+    organize_scopes: tuple[OrganizeScopeBinding, ...] = ()
     workflow_states: dict[LifecycleStage, str] = Field(default_factory=dict)
     run_event_states: dict[str, LifecycleStage | RunEventEffect] = Field(
         default_factory=dict
@@ -592,6 +602,21 @@ class OperationConfig(OperationModel):
             self.resolve_organize_mandates()
         except ValueError as exc:
             failures.append(str(exc))
+
+        if self.organize_scopes:
+            if not self.organize_mandates:
+                failures.append("organize_scopes requires configured organize_mandates")
+            refs = [binding.scope for binding in self.organize_scopes]
+            if len(refs) != len(set(refs)):
+                failures.append(
+                    "organize_scopes repeats or ambiguously binds one scope"
+                )
+            for binding in self.organize_scopes:
+                if sum(repo.url == binding.repo_url for repo in self.repos) != 1:
+                    failures.append(
+                        "each organize scope requires exactly one matching "
+                        "declared repository"
+                    )
 
         if self.principals:
             approvers = [
@@ -1019,6 +1044,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "scope_labels": ConfigOwnership.OWNED,
     "issue_labels": ConfigOwnership.OWNED,
     "organize_mandates": ConfigOwnership.LOCAL,
+    "organize_scopes": ConfigOwnership.LOCAL,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "run_event_states": ConfigOwnership.LOCAL,
     "marker_prefixes": ConfigOwnership.LOCAL,

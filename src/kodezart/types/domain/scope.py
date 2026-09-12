@@ -1,29 +1,15 @@
 """Vendor-neutral addresses for scopes the tracker resolves."""
 
-from enum import StrEnum
-
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
 
 from kodezart.types.base import CamelCaseModel
+from kodezart.types.domain.scope_address import (
+    ScopeKind as ScopeKind,
+)
+from kodezart.types.domain.scope_address import (
+    ScopeRef as ScopeRef,
+)
 from kodezart.types.domain.tracker import TrackerIssue
-
-
-class ScopeKind(StrEnum):
-    """The four kinds of scope an operation can address."""
-
-    INITIATIVE = "initiative"
-    PROJECT = "project"
-    MILESTONE = "milestone"
-    ISSUE = "issue"
-
-
-class ScopeRef(CamelCaseModel):
-    """A scope's kind and opaque key; the adapter resolves its address."""
-
-    model_config = ConfigDict(frozen=True)
-
-    kind: ScopeKind
-    key: str = Field(min_length=1)
 
 
 class ScopeContainer(CamelCaseModel):

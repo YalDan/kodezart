@@ -90,7 +90,6 @@ registries.
 | scope_labels.approved | scope_labels |
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
-| workflow_states.done | workflow_states |
 | run_event_states | run_event_states |
 | marker_prefixes.repository | marker_prefixes |
 | repos | repos |
@@ -124,3 +123,12 @@ registries.
   the next pass reads (KOD-245); no separate checkpoint document carries it,
   in any prompt set (KOD-306). `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.
+
+## Native OperationConfig consumers
+
+These fields have native typed consumers rather than template placeholders. The field census remains total across both tables.
+
+| Field | Consumer |
+| --- | --- |
+| organize_scopes | composition/organize.py::build_organize_tick |
+| workflow_states.done | adapters/linear_mcp_tracker.py::set_workflow_state |

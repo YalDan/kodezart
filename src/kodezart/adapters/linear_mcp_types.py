@@ -359,6 +359,15 @@ class LinearNamedWire(LinearWireModel):
     team_id: str | None = None
 
 
+class LinearWorkflowStateWire(LinearNamedWire):
+    """Native status category, required when selecting initial criterion state."""
+
+    type: str
+
+
+LINEAR_WORKFLOW_STATES = TypeAdapter(list[LinearWorkflowStateWire])
+
+
 class LinearLabelWire(LinearNamedWire):
     """One label, carrying the id that says WHICH label it is.
 

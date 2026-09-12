@@ -320,8 +320,10 @@ Every prompt set supplies a separate data file for each organize role:
 The registry resolves each role independently. Removing any required file
 from the selected set aborts prompt boot and names the missing key. The
 roles inherit the set's existing authoring or judgment session policy.
-These templates supply prompt content; organizer session dispatch and
-tracker mutation remain the caller's responsibility.
+The configured native Organize owner dispatches these roles and owns tracker
+mutation through the narrow declared surfaces. The shared `write_back_verify`
+role independently checks the exact reread artifact through the canonical
+write-back repair loop.
 
 The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
 `linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and
@@ -335,8 +337,9 @@ issues and criterion children through the tracker port on every call. The
 source `issue_key` is supplied separately from the verbatim bodies. Each
 call acquires the requested repository base and starts a read-only
 `organize_pass` session, with no prior session or author transcript. These
-entry points return an admission result; they do not write phase markers or
-run the full organizer convergence loop. Caller cancellation waits for an
+entry points return typed admission results to the configured owner. That
+owner bounds admission repair separately from full-scope convergence, and
+writes phase markers only from fresh current evidence. Caller cancellation waits for an
 in-flight workspace acquisition or release to settle. A cancellation during
 acquisition releases the resulting workspace without starting the session;
 repeated cancellation cannot interrupt that cleanup.
@@ -732,3 +735,18 @@ Replace the former uppercase flat assignments (with the `KODEZART` prefix and
 separator). They now refuse in constructor input, environment, dotenv and file
 secrets. A file secret named `KODEZART_LOGGING` holds a JSON object with `level` and
 `pretty`. Standard settings-source precedence is unchanged.
+
+The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
+`scope = { kind = "issue", key = "<native key>" }` (or another supported scope
+kind) and `repo_url` matching exactly one declared repository. A scope has one
+repository binding; duplicates and ambiguous mappings refuse configuration.
+These bindings require the full configured mandate table. No team/repository
+cross-product is inferred.
+
+When those bindings are configured, set both
+`KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
+`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
+has a default. Partial owner configuration refuses scheduling. The retired flat
+`KODEZART_ORGANIZE_MAX_*` spellings remain rejected. Each native tick uses the
+existing grooming run identity and resolves the configured repository trunk to
+a fresh immutable remote commit before assessment.

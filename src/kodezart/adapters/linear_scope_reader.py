@@ -86,6 +86,12 @@ class LinearScopeReader:
     async def approval_parent(
         self, *, ref: ScopeRef, approved_label: str
     ) -> tuple[bool, ScopeRef | None]:
+        labels, parent = await self.labels_parent(ref=ref)
+        return approved_label in labels, parent
+
+    async def labels_parent(
+        self, *, ref: ScopeRef
+    ) -> tuple[frozenset[str], ScopeRef | None]:
         """Read labels and the same native parent edge used by metadata.
 
         Display URLs are not approval evidence. Milestones have no label
@@ -112,7 +118,7 @@ class LinearScopeReader:
                 assert_never(ref.kind)
         if key != ref.key:
             raise ScopeReadError("container approval identity changed", ref=ref)
-        return approved_label in labels, parent
+        return frozenset(labels), parent
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         if ref.kind is ScopeKind.ISSUE:
