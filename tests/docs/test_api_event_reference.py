@@ -26,6 +26,8 @@ import re
 from pathlib import Path
 
 from kodezart.types.domain import agent as agent_module
+from kodezart.types.domain import native_delivery as native_delivery_module
+from kodezart.types.domain import scope_runtime as scope_runtime_module
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
 
 API_DOC = Path(__file__).resolve().parents[2] / "docs" / "api.md"
@@ -39,12 +41,13 @@ FIELD = re.compile(r"`(\w+)`")
 def event_models() -> dict[str, type[AgentEvent]]:
     """Every concrete event model, keyed by its wire ``type``."""
     models: dict[str, type[AgentEvent]] = {}
-    for obj in vars(agent_module).values():
-        if not isinstance(obj, type) or not issubclass(obj, AgentEvent):
-            continue
-        if obj is AgentEvent:
-            continue
-        models[str(obj.model_fields["type"].default)] = obj
+    for module in (agent_module, scope_runtime_module, native_delivery_module):
+        for obj in vars(module).values():
+            if not isinstance(obj, type) or not issubclass(obj, AgentEvent):
+                continue
+            if obj is AgentEvent or obj.__module__ != module.__name__:
+                continue
+            models[str(obj.model_fields["type"].default)] = obj
     return models
 
 
