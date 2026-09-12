@@ -159,6 +159,19 @@ class StaleWriteError(Exception):
         self.expected = expected
 
 
+class StaleCommentWriteError(Exception):
+    """An asserted native comment changed before its amendment could be issued."""
+
+    def __init__(self, *, target: str, expected_comment_key: str, reason: str) -> None:
+        self.target = target
+        self.expected_comment_key = expected_comment_key
+        self.reason = reason
+        super().__init__(
+            f"comment {expected_comment_key!r} on {target!r} "
+            f"cannot be amended: {reason}"
+        )
+
+
 class RulingRecordReadError(Exception):
     """The addressed issue's ruling records are unreadable or ambiguous."""
 
