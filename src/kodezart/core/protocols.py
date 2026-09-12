@@ -26,6 +26,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
@@ -879,6 +880,26 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         an existing definition raises ``TrackerEnsureConflictError`` and
         performs no write.  One outcome per ref, in the order given.
         """
+        ...
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        """Read configured labels on this exact scope, without approval cascade."""
+        ...
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
+        """
+        ...
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        """Read all native project milestones without selection policy."""
         ...
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:

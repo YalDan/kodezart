@@ -120,6 +120,51 @@ class LinearScopeReader:
             raise ScopeReadError("container approval identity changed", ref=ref)
         return frozenset(labels), parent
 
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+        project = await self._project(project_key)
+        if project.id != project_key:
+            raise ScopeReadError(
+                "project milestone lookup returned another identity", ref=ref
+            )
+        # This tool explicitly returns all milestones and has no cursor input.
+        listed = await self._read(
+            LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id}
+        )
+        keys = [item.id for item in listed.milestones]
+        if len(set(keys)) != len(keys):
+            raise ScopeReadError("project milestones repeat a native identity", ref=ref)
+        milestones: list[ScopeContainer] = []
+        for key in sorted(keys):
+            current = await self._read(
+                LinearScopeMetadataWire,
+                _TOOL_GET_MILESTONE,
+                {"project": project.id, "query": key},
+            )
+            if current.id != key:
+                raise ScopeReadError(
+                    "milestone detail returned another identity", ref=ref
+                )
+            milestones.append(
+                ScopeContainer(
+                    ref=ScopeRef(kind=ScopeKind.MILESTONE, key=key),
+                    name=current.name,
+                    description=current.description or "",
+                    url=None,
+                    parent=ref,
+                )
+            )
+        repeated = await self._read(
+            LinearScopeMilestonesWire, _TOOL_LIST_MILESTONES, {"project": project.id}
+        )
+        if sorted(item.id for item in repeated.milestones) != sorted(keys):
+            raise ScopeReadError(
+                "project milestone membership changed while reading", ref=ref
+            )
+        return tuple(milestones)
+
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         if ref.kind is ScopeKind.ISSUE:
             raise ScopeReadError(

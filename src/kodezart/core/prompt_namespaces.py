@@ -119,6 +119,13 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     }
     _bind_absentable(
         bindings,
+        "scope_labels",
+        dict(config.scope_labels),
+        absent=not config.scope_labels,
+    )
+
+    _bind_absentable(
+        bindings,
         "queue_states",
         dict(config.queue_states),
         absent=not config.queue_states,

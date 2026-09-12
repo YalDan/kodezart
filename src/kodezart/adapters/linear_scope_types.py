@@ -7,7 +7,10 @@ explicit here and is refused by the adapter's metadata capability.
 
 from pydantic import Field
 
-from kodezart.adapters.linear_mcp_types import LinearIssueDetailWire, LinearWireModel
+from kodezart.adapters.linear_mcp_types import (
+    LinearAddressedIssueWire,
+    LinearWireModel,
+)
 
 
 class LinearScopeIdentityWire(LinearWireModel):
@@ -63,7 +66,7 @@ class LinearScopeInitiativeWire(LinearScopeMetadataWire):
     sub_initiatives: list[LinearScopeIdentityWire]
 
 
-class LinearApprovalIssueWire(LinearIssueDetailWire):
+class LinearApprovalIssueWire(LinearAddressedIssueWire):
     """An approval read requires reported labels and issue parentage."""
 
     labels: list[str]

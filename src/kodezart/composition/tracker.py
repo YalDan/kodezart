@@ -113,6 +113,7 @@ def build_tracker(
                 caller=caller,
                 queue_state_labels=operation.queue_states,
                 issue_labels=operation.issue_labels,
+                scope_labels=operation.scope_labels,
                 workflow_state_names=operation.workflow_states,
                 marker_prefixes=operation.marker_prefixes,
                 team_identifiers={

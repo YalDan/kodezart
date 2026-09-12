@@ -137,6 +137,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "scope_labels",
         "issue_labels",
         "workflow_states",
         "marker_prefixes",
@@ -152,6 +153,7 @@ def test_all_fields_are_present_with_the_stated_types() -> None:
     assert isinstance(config.operation_name, str)
     assert isinstance(config.workspace, str)
     assert isinstance(config.queue_states, dict)
+    assert isinstance(config.scope_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
     assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
@@ -325,6 +327,7 @@ def test_no_label_or_status_literal_lives_in_source() -> None:
     src = REPO_ROOT / "src" / "kodezart"
     labels = {
         *example_config().queue_states.values(),
+        *example_config().scope_labels.values(),
         *example_config().workflow_states.values(),
     }
     for path in src.rglob("*.py"):
@@ -634,7 +637,10 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
     native = dict(markdown_rows("## Native OperationConfig consumers"))
-    assert native == {"issue_labels": "composition/tracker.py::build_tracker"}
+    assert native == {
+        "issue_labels": "composition/tracker.py::build_tracker",
+        "scope_labels": "composition/tracker.py::build_tracker",
+    }
     assert set(mapped).isdisjoint(native)
     assert set(mapped.values()) | set(native) == set(OperationConfig.model_fields)
 

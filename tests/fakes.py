@@ -45,6 +45,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
     comment_under_marker,
@@ -98,6 +99,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
@@ -2280,6 +2282,9 @@ class FakeLinearMcpServer:
         users: Sequence[str] = (),
         teams: Sequence[str] = (),
         labels: Sequence[str] = (),
+        project_labels: Sequence[str] = (),
+        initiative_labels: Sequence[str] = (),
+        label_page_size: int | None = None,
         team_labels: Mapping[str, Sequence[str]] | None = None,
         statuses: Mapping[str, Sequence[str]] | None = None,
         state_types: Mapping[str, str] | None = None,
@@ -2306,6 +2311,9 @@ class FakeLinearMcpServer:
         #: name is unique per CONTAINER and not per workspace: two boards
         #: routinely carry their own copy of one queue member (KOD-167).
         self.labels: list[str] = list(labels)
+        self.project_labels: list[str] = list(project_labels)
+        self.initiative_labels: list[str] = list(initiative_labels)
+        self.label_page_size = label_page_size
         self.team_labels: dict[str, list[str]] = {
             container: list(names) for container, names in (team_labels or {}).items()
         }
@@ -2717,7 +2725,75 @@ class FakeLinearMcpServer:
                 self._label_entry(name, container)
                 for name in self.team_labels.get(container, [])
             )
-        return {"labels": entries, "hasNextPage": False}
+        return self._label_page(entries, arguments)
+
+    def _label_page(
+        self,
+        entries: Sequence[Mapping[str, object]],
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Synthetic continuation pages under the declared list contract."""
+        name = arguments.get("name")
+        selected = [entry for entry in entries if name is None or entry["name"] == name]
+        start = int(str(arguments.get("cursor", 0)))
+        size = self.label_page_size
+        limit = arguments.get("limit")
+        if isinstance(limit, int):
+            size = limit if size is None else min(size, limit)
+        end = len(selected) if size is None else start + size
+        more = end < len(selected)
+        result: dict[str, object] = {
+            "labels": selected[start:end],
+            "hasNextPage": more,
+        }
+        if more:
+            result["cursor"] = str(end)
+        return result
+
+    def _tool_list_project_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._label_page(
+            [self._label_entry(name, "project") for name in self.project_labels],
+            arguments,
+        )
+
+    def _tool_list_initiative_labels(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        return self._label_page(
+            [self._label_entry(name, "initiative") for name in self.initiative_labels],
+            arguments,
+        )
+
+    def _tool_save_project_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Creation only: the adapter has no reason to update a definition."""
+        if "id" in arguments:
+            msg = "scope mapping must preserve existing project label definitions"
+            raise AssertionError(msg)
+        name = str(arguments["name"])
+        if name in self.project_labels:
+            msg = f"fake project label namespace already carries {name!r}"
+            raise LookupError(msg)
+        self.project_labels.append(name)
+        # Deliberately no guessed create response; the adapter must re-list.
+        return {}
+
+    def _tool_create_initiative_label(
+        self,
+        arguments: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        name = str(arguments["name"])
+        if name in self.initiative_labels:
+            msg = f"fake initiative label namespace already carries {name!r}"
+            raise LookupError(msg)
+        self.initiative_labels.append(name)
+        return {}
 
     def _label_entry(self, name: str, container: str | None) -> Mapping[str, object]:
         """One label entry, its id distinct per CONTAINER rather than per name.
@@ -2910,10 +2986,12 @@ class FakeTrackerPort:
         issues: Sequence[TrackerIssue] = (),
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
+        scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
         documents: Mapping[str, str] | None = None,
         document_titles: Mapping[str, str] | None = None,
         known_identifiers: Sequence[str] = (),
+        scope_label_identifiers: Sequence[str] = (),
         recorded_work_refs: Mapping[str, Sequence[WorkRef]] | None = None,
         recorded_base_specs: Mapping[str, BaseSpec] | None = None,
         recorded_repositories: Mapping[str, str] | None = None,
@@ -2931,6 +3009,7 @@ class FakeTrackerPort:
         self.scope_memberships: dict[ScopeRef, tuple[str, ...]] = {
             ref: tuple(keys) for ref, keys in (scope_memberships or {}).items()
         }
+        self.scope_label_members = dict(scope_label_members or {})
         self.recorded_work_refs: dict[str, list[WorkRef]] = {
             key: list(value) for key, value in (recorded_work_refs or {}).items()
         }
@@ -2972,6 +3051,7 @@ class FakeTrackerPort:
         #: so what a consumer spends on reads is only visible as a list of
         #: them (KOD-173).
         self.issue_reads: list[str] = []
+        self.issue_writes: list[tuple[str, str | None, str | None]] = []
         #: Every claim this double GRANTED, in order — kept past the release
         #: that deletes the claim itself, so a claim/release pair spent and
         #: undone is still visible as the write it was (KOD-173).
@@ -2999,6 +3079,8 @@ class FakeTrackerPort:
         #: one of them would leave the other untestable.
         self.document_titles: dict[str, str] = dict(document_titles or {})
         self.known_identifiers: set[str] = set(known_identifiers)
+        #: Scope definitions must exist in all native namespaces.
+        self.scope_label_identifiers: set[str] = set(scope_label_identifiers)
         #: Every container each INSTATED value is defined in, ``None`` being
         #: the workspace itself.  A SET per value, because one name is
         #: defined once per container and a two-board operation carries its
@@ -3006,7 +3088,8 @@ class FakeTrackerPort:
         #: knows about is workspace-level, which is what a listing carrying
         #: no container field reports.
         self.mapping_containers: dict[str, set[str | None]] = {
-            identifier: {None} for identifier in self.known_identifiers
+            identifier: {None}
+            for identifier in self.known_identifiers | self.scope_label_identifiers
         }
         self._clock: Callable[[], datetime] = clock
         self._sequence: int = 0
@@ -3152,6 +3235,7 @@ class FakeTrackerPort:
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
+        self.issue_writes.append((issue_key, title, body))
         issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={
@@ -3365,9 +3449,23 @@ class FakeTrackerPort:
         refs: Sequence[MappingRef],
     ) -> Sequence[MappingRef]:
         await asyncio.sleep(0)
-        return tuple(
-            ref for ref in refs if ref.identifier not in self.known_identifiers
-        )
+        unresolved: list[MappingRef] = []
+        for ref in refs:
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                identifier = ref.identifier
+                if (
+                    identifier is None
+                    or identifier not in self.scope_label_identifiers
+                    or ref.scope is not None
+                    or any(
+                        container is not None
+                        for container in self.mapping_containers.get(identifier, set())
+                    )
+                ):
+                    unresolved.append(ref)
+            elif ref.identifier not in self.known_identifiers:
+                unresolved.append(ref)
+        return tuple(unresolved)
 
     async def ensure_mappings(
         self,
@@ -3393,6 +3491,9 @@ class FakeTrackerPort:
                 )
             if ref.kind is MappingKind.DOCUMENT:
                 outcomes.append(self._ensure_document(ref))
+                continue
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                outcomes.append(self._ensure_scope_label(ref))
                 continue
             identifier = ref.identifier
             if identifier is None:
@@ -3438,6 +3539,34 @@ class FakeTrackerPort:
                 ),
             )
         return tuple(outcomes)
+
+    def _ensure_scope_label(self, ref: MappingRef) -> MappingOutcome:
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = sorted(
+            repr(container)
+            for container in self.mapping_containers.get(identifier, set())
+            if container is not None
+        )
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(held)}",
+                entry=ref.describe(),
+            )
+        action = (
+            EnsureAction.ADOPTED
+            if identifier in self.scope_label_identifiers
+            else EnsureAction.CREATED
+        )
+        self.scope_label_identifiers.add(identifier)
+        self.known_identifiers.add(identifier)
+        self.mapping_containers.setdefault(identifier, set()).add(None)
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
     def _ensure_document(self, ref: MappingRef) -> MappingOutcome:
         """The document arm of the ensure contract, held identically here.
@@ -3533,6 +3662,73 @@ class FakeTrackerPort:
                 path.add(current)
                 current = selected[current].parent_key
         return tuple(selected.values())
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+        project = await self.container_metadata(ref=ref)
+        if project.ref != ref:
+            raise ScopeReadError("project identity changed", ref=ref)
+        return tuple(
+            sorted(
+                [
+                    await self.container_metadata(ref=key)
+                    for key, value in self.scope_containers.items()
+                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
+                ],
+                key=lambda value: value.ref.key,
+            )
+        )
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
+            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
+            if key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            return (
+                await self.read_issue(issue_key=key),
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+            )
+
+        subject = await hydrate(issue_key)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == issue_key else await hydrate(key)
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            await asyncio.sleep(0)
+            if ref not in self.scope_containers:
+                raise ScopeReadError("container is missing", ref=ref)
+            container = self.scope_containers[ref]
+            if container.ref != ref:
+                raise ScopeReadError("container approval identity changed", ref=ref)
+            return (
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+                container.parent,
+            )
+
+        approved = await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
+        return subject[0], approved
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            issue = await self.read_issue(issue_key=ref.key)
+            if issue.issue_key != ref.key:
+                raise ScopeReadError("scope label identity changed", ref=ref)
+        else:
+            await self.container_metadata(ref=ref)
+        return self.scope_label_members.get(ref, frozenset())
 
     async def container_metadata(self, *, ref: ScopeRef) -> ScopeContainer:
         if ref.kind is ScopeKind.ISSUE:

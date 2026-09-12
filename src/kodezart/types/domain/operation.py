@@ -413,6 +413,18 @@ def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
     return failures
 
 
+class ScopeLabel(StrEnum):
+    """Scope admission vocabulary, resolved separately from the issue queue.
+
+    The operation maps each semantic member to its tracker label. Queue
+    writes continue to address only ``QueueState`` and its own mapping.
+    """
+
+    TRIAGE = "triage"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
+
+
 class OperationConfig(OperationModel):
     """The whole operation configuration, validated structurally at load.
 
@@ -459,6 +471,13 @@ class OperationConfig(OperationModel):
     def _check_structure(self) -> Self:
         """Collect EVERY structural failure into one error, never the first."""
         failures: list[str] = []
+
+        if self.scope_labels:
+            for scope_label in ScopeLabel:
+                if scope_label.value not in self.scope_labels:
+                    failures.append(
+                        f"scope_labels is missing required key {scope_label.value!r}"
+                    )
 
         if self.principals:
             approvers = [
@@ -748,6 +767,8 @@ class OperationConfig(OperationModel):
 
     marker_prefixes: dict[str, str] = Field(default_factory=dict)
 
+    scope_labels: dict[str, str] = Field(default_factory=dict)
+
 
 #: Which class every declared field belongs to, and therefore what boot does
 #: with it.  A fixed partition in the MODEL rather than a per-field flag,
@@ -782,6 +803,7 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "teams": ConfigOwnership.EXTERNAL,
     "queue_states": ConfigOwnership.OWNED,
     "issue_labels": ConfigOwnership.OWNED,
+    "scope_labels": ConfigOwnership.OWNED,
     "workflow_states": ConfigOwnership.EXTERNAL,
     "marker_prefixes": ConfigOwnership.LOCAL,
     "repos": ConfigOwnership.LOCAL,
