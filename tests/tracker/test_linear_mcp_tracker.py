@@ -81,6 +81,7 @@ def tracker_over(
     kwargs: dict[str, object] = {
         "caller": server,
         "issue_labels": {},
+        "scope_labels": {},
         "marker_prefixes": MARKER_PREFIXES,
         "queue_state_labels": QUEUE_STATE_LABELS,
         "workflow_state_names": WORKFLOW_STATE_NAMES,

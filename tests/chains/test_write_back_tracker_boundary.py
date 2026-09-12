@@ -42,6 +42,7 @@ def adapter():
         comment_clock=lambda: FIXTURE_NOW,
     )
     tracker = LinearMcpTracker(
+        scope_labels={},
         caller=server,
         issue_labels={},
         marker_prefixes={**MARKER_PREFIXES, "evidence": "fixture-evidence"},

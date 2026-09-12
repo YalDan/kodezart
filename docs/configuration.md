@@ -375,3 +375,18 @@ The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
 absent. A configured owner with no verification budget refuses at startup.
+
+### Scope admission labels
+
+`[scope_labels]` maps `triage`, `proposed`, and `approved` to tracker label
+names. An absent or empty table is valid; a populated table requires all
+three keys and may include additional keys. Templates receive the mapping
+through `scope_labels`, or `scope_labels_absent` when no mapping is declared.
+
+Tracker bootstrap creates missing definitions in the issue, project, and
+initiative namespaces and reads them back. It preserves existing definitions
+and does not apply approval to an entity. A conflicting team-scoped issue
+label is refused. Native approval reads use current issue ancestry and the
+addressed issue's project and initiative ancestry; a milestone inherits its
+project's approval. An absent approved-label mapping refuses the approval
+read at use. These primitives do not yet add scoped HTTP workflow submission.

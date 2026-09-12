@@ -47,7 +47,10 @@ from kodezart.adapters.linear_mcp_types import (
     LinearWireModel,
 )
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
-from kodezart.adapters.linear_scope_types import LinearScopeIssuesWire
+from kodezart.adapters.linear_scope_types import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -66,11 +69,13 @@ from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateWorkRefError,
     IssueLabelReadError,
+    ScopeReadError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
 )
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import (
     live_conflict,
     one_ownership,
@@ -90,6 +95,7 @@ from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationMemberAbsentError,
     QueueState,
+    ScopeLabel,
 )
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import (
@@ -137,7 +143,20 @@ _TOOL_GET_USER = "get_user"
 _TOOL_LIST_TEAMS = "list_teams"
 _TOOL_LIST_ISSUE_LABELS = "list_issue_labels"
 _TOOL_CREATE_ISSUE_LABEL = "create_issue_label"
+_TOOL_LIST_PROJECT_LABELS = "list_project_labels"
+_TOOL_SAVE_PROJECT_LABEL = "save_project_label"
+_TOOL_LIST_INITIATIVE_LABELS = "list_initiative_labels"
+_TOOL_CREATE_INITIATIVE_LABEL = "create_initiative_label"
 _TOOL_LIST_ISSUE_STATUSES = "list_issue_statuses"
+
+#: One configured scope label has a separate native definition per kind.
+#: Project creation uses the connected app's declared save tool with no id;
+#: its availability to the deployment's service credential is unverified.
+_SCOPE_LABEL_CREATORS: Final[dict[str, str]] = {
+    _TOOL_LIST_ISSUE_LABELS: _TOOL_CREATE_ISSUE_LABEL,
+    _TOOL_LIST_PROJECT_LABELS: _TOOL_SAVE_PROJECT_LABEL,
+    _TOOL_LIST_INITIATIVE_LABELS: _TOOL_CREATE_INITIATIVE_LABEL,
+}
 
 #: The tools that change nothing on the board.  A call the server may have
 #: performed is made again only if performing it twice is the same as once
@@ -156,6 +175,8 @@ _READ_TOOLS: Final[frozenset[str]] = frozenset(
         _TOOL_GET_USER,
         _TOOL_LIST_TEAMS,
         _TOOL_LIST_ISSUE_LABELS,
+        _TOOL_LIST_PROJECT_LABELS,
+        _TOOL_LIST_INITIATIVE_LABELS,
         _TOOL_LIST_ISSUE_STATUSES,
     },
 )
@@ -747,6 +768,7 @@ class LinearMcpTracker:
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
         issue_labels: Mapping[str, str],
+        scope_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         team_identifiers: Mapping[str, str],
         marker_prefixes: Mapping[str, str],
@@ -756,6 +778,7 @@ class LinearMcpTracker:
     ) -> None:
         self._caller: McpToolCaller = caller
         self._issue_labels = dict(issue_labels)
+        self._scope_labels = dict(scope_labels)
         self._markers = LinearMarkers(marker_prefixes)
         self._retry = retry
         self._clock: Callable[[], datetime] = clock
@@ -1549,6 +1572,9 @@ class LinearMcpTracker:
         unresolved: list[MappingRef] = []
         divergent: list[str] = []
         for ref in refs:
+            if ref.kind is MappingKind.SCOPE_LABEL and ref.scope is not None:
+                unresolved.append(ref)
+                continue
             if ref.kind is MappingKind.WORKFLOW_STATE:
                 if states_by_team is None:
                     states_by_team = await self._workflow_states_by_team()
@@ -1635,6 +1661,11 @@ class LinearMcpTracker:
         """
         outcomes: list[MappingOutcome] = []
         definitions = await self._label_definitions()
+        scope_definitions = (
+            await self._scope_label_definitions(definitions)
+            if any(ref.kind is MappingKind.SCOPE_LABEL for ref in refs)
+            else {}
+        )
         documents = (
             await self._document_definitions()
             if any(ref.kind is MappingKind.DOCUMENT for ref in refs)
@@ -1648,6 +1679,11 @@ class LinearMcpTracker:
                 )
             if ref.kind is MappingKind.DOCUMENT:
                 outcomes.append(await self._ensure_document(ref, documents))
+                continue
+            if ref.kind is MappingKind.SCOPE_LABEL:
+                outcomes.append(
+                    await self._ensure_scope_label(ref, definitions, scope_definitions),
+                )
                 continue
             identifier = ref.identifier
             if identifier is None:
@@ -1702,6 +1738,70 @@ class LinearMcpTracker:
                 team=ref.scope,
             )
         return tuple(outcomes)
+
+    async def _scope_label_definitions(
+        self,
+        issue_definitions: _LabelListings,
+    ) -> dict[str, set[str]]:
+        """Keep native namespaces apart: one label id cannot stand for all."""
+        return {
+            tool: (
+                issue_definitions.workspace
+                if tool == _TOOL_LIST_ISSUE_LABELS
+                else {entry.name for entry in await self._label_entries({}, tool=tool)}
+            )
+            for tool in _SCOPE_LABEL_CREATORS
+        }
+
+    async def _ensure_scope_label(
+        self,
+        ref: MappingRef,
+        issues: _LabelListings,
+        definitions: dict[str, set[str]],
+    ) -> MappingOutcome:
+        """Create missing definitions only; never apply approval to an entity.
+
+        Scope labels are workspace-level, including the issue namespace.
+        A declared team's own copy is refused before any namespace write:
+        preserving it and adding a workspace copy would leave issue writes
+        ambiguous. Undeclared teams remain unobservable, as for queue labels.
+
+        Create replies were not captured by the connected-app measurement.
+        Resolve the name through a fresh listing instead of inventing a
+        write-response schema or treating a successful call as readback.
+        """
+        identifier = ref.identifier
+        if identifier is None or ref.scope is not None:
+            raise TrackerEnsureConflictError(
+                "a scope label requires its configured identifier and workspace scope",
+                entry=ref.describe(),
+            )
+        held = issues.teams_holding(identifier)
+        if held:
+            raise TrackerEnsureConflictError(
+                "a workspace scope label conflicts with an existing team label; "
+                f"found {', '.join(repr(team) for team in held)}",
+                entry=ref.describe(),
+            )
+        action = EnsureAction.ADOPTED
+        for tool, creator in _SCOPE_LABEL_CREATORS.items():
+            names = definitions[tool]
+            if identifier in names:
+                continue
+            await self._call(creator, {"name": identifier})
+            observed = {
+                entry.name for entry in await self._label_entries({}, tool=tool)
+            }
+            if identifier not in observed:
+                raise TrackerProtocolError(
+                    "the created scope label is absent from its namespace readback",
+                    tool=tool,
+                    detail=ref.describe(),
+                )
+            names.clear()
+            names.update(observed)
+            action = EnsureAction.CREATED
+        return MappingOutcome(ref=ref, action=action, identifier=identifier)
 
     async def _ensure_document(
         self,
@@ -1824,11 +1924,30 @@ class LinearMcpTracker:
     async def _label_entries(
         self,
         arguments: Mapping[str, object],
+        *,
+        tool: str = _TOOL_LIST_ISSUE_LABELS,
     ) -> Sequence[LinearLabelWire]:
-        """One label listing, scoped by *arguments* or not scoped at all."""
-        tool = _MAPPING_TOOL_BY_KIND[MappingKind.QUEUE_STATE]
-        payload = await self._call(tool, arguments)
-        return self._validate(LinearLabelListWire, payload, tool).labels
+        """Every page of one label namespace, preserving the listing scope."""
+        entries: list[LinearLabelWire] = []
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearLabelListWire, bool, str | None]:
+            payload = await self._call(tool, request)
+            listing = self._validate(LinearLabelListWire, payload, tool)
+            return listing, listing.has_next_page, listing.cursor
+
+        async for listing in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda cursor: TrackerProtocolError(
+                "label pagination did not provide a new continuation cursor",
+                tool=tool,
+                detail=f"cursor={cursor!r}",
+            ),
+        ):
+            entries.extend(listing.labels)
+        return entries
 
     async def _team_listing(self) -> Sequence[LinearTeamWire]:
         """Every team the workspace holds, with the UUID it is addressed by."""
@@ -1900,6 +2019,13 @@ class LinearMcpTracker:
                 return frozenset(await self._document_definitions())
             case MappingKind.QUEUE_STATE | MappingKind.ISSUE_LABEL:
                 return (await self._label_definitions()).names()
+            case MappingKind.SCOPE_LABEL:
+                issues = await self._label_definitions()
+                definitions = await self._scope_label_definitions(issues)
+                shared = set.intersection(*definitions.values())
+                return frozenset(
+                    name for name in shared if not issues.teams_holding(name)
+                )
             case MappingKind.USER:
                 return frozenset(
                     identity
@@ -2159,6 +2285,82 @@ class LinearMcpTracker:
             body=wire.body,
             created_at=wire.created_at,
         )
+
+    def _scope_label_members(self, labels: Sequence[str]) -> frozenset[ScopeLabel]:
+        return frozenset(
+            member
+            for member in ScopeLabel
+            if self._scope_labels.get(member.value) in labels
+        )
+
+    async def _read_scope_issue(
+        self, issue_key: str
+    ) -> tuple[TrackerIssue, frozenset[ScopeLabel]]:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+        issue = self._to_issue(wire)
+        if not wire.matches_requested(issue_key):
+            raise ScopeReadError(
+                "scope label identity changed",
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            )
+        return issue, self._scope_label_members(wire.labels)
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            _, members = await self._read_scope_issue(ref.key)
+            return members
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        if ref.kind is ScopeKind.MILESTONE:
+            await reader.container_metadata(ref=ref)
+            return frozenset()
+        labels, _ = await reader.labels_parent(ref=ref)
+        return self._scope_label_members(tuple(labels))
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve configured label presence through fresh native ancestry."""
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
+        if not label:
+            raise OperationMemberAbsentError(
+                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
+                stops="cannot resolve scope approval",
+            )
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
+            issue, members = await self._read_scope_issue(key)
+            return issue, ScopeLabel.APPROVED in members
+
+        subject = await hydrate(issue_key)
+        canonical_key = subject[0].issue_key
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == canonical_key else await hydrate(key)
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            return await reader.approval_parent(ref=ref, approved_label=label)
+
+        approved = await resolve_execution_approval(
+            issue_key=canonical_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
+        return subject[0], approved
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        return await LinearScopeReader(
+            call=self._call, read_issue=self.read_issue
+        ).project_milestones(project_key=project_key)
 
     async def scope_issues(self, *, ref: ScopeRef) -> Sequence[TrackerIssue]:
         """Resolve live container membership or an issue's whole subtree."""
