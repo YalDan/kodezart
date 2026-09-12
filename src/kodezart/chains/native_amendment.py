@@ -1,6 +1,6 @@
 """The actual native claim-to-canonical-verdict graph before persistence."""
 
-from typing import Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -48,28 +48,37 @@ class NativeAmendmentGraph:
         graph.add_node("judge", self._judge)
         graph.add_node("canonical_write_back", self._write_back)
         graph.add_node("complete", self._complete)
-        graph.add_edge(START, "judge")
+        graph.add_conditional_edges(
+            START, self._next, {"judge": "judge", "complete": "complete"}
+        )
         graph.add_edge("judge", "canonical_write_back")
-        graph.add_edge("canonical_write_back", "complete")
+        graph.add_conditional_edges(
+            "canonical_write_back",
+            self._next,
+            {"judge": "judge", "complete": "complete"},
+        )
         graph.add_edge("complete", END)
         self.graph = graph.compile()
 
     async def _judge(self, state: AmendmentState) -> dict[str, object]:
-        judgments = []
-        for claim in state["output"].claims:
-            await self._actions.require_current()
-            judgments.append(await self._actions.judge_claim(claim))
+        claim = state["output"].claims[len(state["verdicts"])]
         await self._actions.require_current()
-        return {"judgments": tuple(judgments)}
+        judgment = await self._actions.judge_claim(claim)
+        await self._actions.require_current()
+        return {"judgments": (*state["judgments"], judgment)}
 
     async def _write_back(self, state: AmendmentState) -> dict[str, object]:
-        verdicts = []
-        for claim, judgment in zip(
-            state["output"].claims, state["judgments"], strict=True
-        ):
-            await self._actions.require_current()
-            verdicts.append(await self._actions.apply_judgment(claim, judgment))
-        return {"verdicts": tuple(verdicts)}
+        claim = state["output"].claims[len(state["verdicts"])]
+        await self._actions.require_current()
+        verdict = await self._actions.apply_judgment(claim, state["judgments"][-1])
+        return {"verdicts": (*state["verdicts"], verdict)}
+
+    def _next(self, state: AmendmentState) -> Literal["judge", "complete"]:
+        return (
+            "judge"
+            if len(state["verdicts"]) < len(state["output"].claims)
+            else "complete"
+        )
 
     async def _complete(self, state: AmendmentState) -> dict[str, object]:
         await self._actions.require_current()

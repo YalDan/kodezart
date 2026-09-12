@@ -7,7 +7,11 @@ from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.audit import AuditVerdict, TrackerArtifact
-from kodezart.types.domain.criteria import CriterionId, CriterionVerdict, FindingEvidence
+from kodezart.types.domain.criteria import (
+    CriterionId,
+    CriterionVerdict,
+    FindingEvidence,
+)
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.ruling_id import RulingId
 from kodezart.types.domain.surface import SurfaceKind
@@ -272,7 +276,7 @@ class UpheldAmendment(UpheldJudgment):
     def verified_publication(self) -> Self:
         results = [self.publication.record]
         escalated = isinstance(self.publication, EscalatedRefusal)
-        if escalated:
+        if isinstance(self.publication, EscalatedRefusal):
             results.append(self.publication.escalation)
         if escalated != (self.reason is UpheldReason.COST_MEASURED_UNECONOMIC):
             raise ValueError("only measured uneconomic refusals carry escalation")
@@ -349,6 +353,13 @@ class AmendmentReport(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
     verdicts: tuple[AmendmentVerdict, ...]
+
+    @model_validator(mode="after")
+    def unique_subjects(self) -> Self:
+        identities = [(v.subject.kind, v.subject.id) for v in self.verdicts]
+        if len(identities) != len(set(identities)):
+            raise ValueError("a completed amendment report addresses each subject once")
+        return self
 
     @property
     def upheld(self) -> tuple[UpheldAmendment, ...]:

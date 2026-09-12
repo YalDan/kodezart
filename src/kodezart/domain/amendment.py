@@ -14,6 +14,7 @@ from kodezart.types.domain.amendment import (
 )
 from kodezart.types.domain.criteria import CriterionVerdict
 from kodezart.types.domain.operation import CheckPrerequisite
+from kodezart.types.domain.write_back import WriteBackResult
 
 if TYPE_CHECKING:
     from kodezart.types.domain.agent import WorkflowIterationEvent
@@ -48,6 +49,16 @@ class AmendmentRequiresWriteError(NativeWriteRefusalError):
         super().__init__(
             "The ground was reproduced, but no confirmed amendment authorizes "
             "this departure; the harness will not commit or publish it."
+        )
+
+
+class AmendmentWriteBackRefusalError(NativeWriteRefusalError):
+    """An unsettled canonical write, retaining the actual artifact and all rounds."""
+
+    def __init__(self, *, result: WriteBackResult) -> None:
+        self.result = result
+        super().__init__(
+            "Canonical amendment write-back exhausted its configured bound"
         )
 
 

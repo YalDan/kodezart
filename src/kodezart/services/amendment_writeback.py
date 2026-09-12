@@ -23,11 +23,18 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.domain.amendment import NativeWriteRefusalError
+from kodezart.domain.amendment import (
+    AmendmentWriteBackRefusalError,
+    NativeWriteRefusalError,
+)
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.fire_spec import criterion_field_bodies, replace_criterion_fields
+from kodezart.domain.fire_spec import (
+    CriterionField,
+    criterion_field_bodies,
+    replace_criterion_fields,
+)
 from kodezart.domain.rulings import render_ruling
-from kodezart.domain.tracker_writes import marked_comment_body
+from kodezart.domain.tracker_writes import comment_under_marker, marked_comment_body
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.lane_escalation import LaneEscalationWriter
 from kodezart.services.owned_workspace import owned_workspace
@@ -54,6 +61,8 @@ from kodezart.types.domain.amendment_write import (
 from kodezart.types.domain.audit import AuditVerdict, TrackerArtifact
 from kodezart.types.domain.gating import (
     ContentClass,
+    GateDecision,
+    GateVerdict,
     OutboundDestination,
     RepoVisibility,
     WriterShape,
@@ -64,7 +73,11 @@ from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 
 
@@ -86,6 +99,53 @@ class AmendmentWriteAuthority(Protocol):
     ) -> TrackerComment:
         """Adopt the same native ruling occurrence after its expected edit."""
         ...
+
+    async def observe_decision(self, *, previous: TrackerIssue) -> None:
+        """Adopt only the actual escalation's authorized decision classification."""
+        ...
+
+
+@dataclass(frozen=True)
+class CriterionAmendmentSource:
+    issue: TrackerIssue
+
+
+@dataclass(frozen=True)
+class RulingAmendmentSource:
+    comment: TrackerComment
+    ruling: Ruling
+
+
+AmendmentSource = CriterionAmendmentSource | RulingAmendmentSource
+
+
+class _ExactEvidenceGate:
+    """Keep the configured gate while refusing altered immutable native evidence."""
+
+    def __init__(self, gate: OutboundContentGate) -> None:
+        self._gate = gate
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
+    ) -> GateDecision:
+        decision = await self._gate.gate(
+            content=content,
+            visibility=visibility,
+            shape=shape,
+            destination=destination,
+            content_class=content_class,
+        )
+        if decision.verdict is not GateVerdict.BLOCKED and decision.content != content:
+            raise NativeWriteRefusalError(
+                "The gate changed the recorded amendment evidence"
+            )
+        return decision
 
 
 @dataclass(frozen=True)
@@ -135,7 +195,7 @@ class AmendmentWriteBack:
         )
         self._escalations = LaneEscalationWriter(
             tracker=tracker,
-            gate=gate,
+            gate=_ExactEvidenceGate(gate),
             operation=operation,
             surface_lease_seconds=lease_seconds,
         )
@@ -154,7 +214,8 @@ class AmendmentWriteBack:
                 "claim": claim.model_dump_json(),
                 "judgment": judgment.model_dump_json(),
                 "prior": prior.model_dump_json(),
-                "finding": "No prior write-back finding." if finding is None
+                "finding": "No prior write-back finding."
+                if finding is None
                 else finding.model_dump_json(),
                 "preserve_subject": str(preserve).lower(),
             }
@@ -162,13 +223,16 @@ class AmendmentWriteBack:
         async with owned_workspace(
             self._workspace, repo_url=self._repo_url, ref=judgment.base_sha
         ) as workspace:
+
             async def require_base() -> None:
                 if (
                     await settle(self._git.current_sha(workspace)) != judgment.base_sha
                     or await settle(self._git.has_changes(workspace))
                     or await settle(self._git.has_replace_refs(workspace))
                 ):
-                    raise NativeWriteRefusalError("Amendment author changed its clean base")
+                    raise NativeWriteRefusalError(
+                        "Amendment author changed its clean base"
+                    )
 
             await require_base()
             payload = await judge_in_workspace(
@@ -186,11 +250,15 @@ class AmendmentWriteBack:
             output = AmendmentTextOutput.model_validate(payload)
             await require_base()
         if preserve != isinstance(output.replacement, PreservedSubject):
-            raise NativeWriteRefusalError("The amendment author exceeded its write role")
+            raise NativeWriteRefusalError(
+                "The amendment author exceeded its write role"
+            )
         if not isinstance(output.replacement, PreservedSubject) and (
             output.replacement.subject != claim.subject
         ):
-            raise NativeWriteRefusalError("The amendment author changed subject identity")
+            raise NativeWriteRefusalError(
+                "The amendment author changed subject identity"
+            )
         return output
 
     async def _gate_exact(
@@ -216,10 +284,16 @@ class AmendmentWriteBack:
     ) -> WriteBackResult:
         result = await self._verifier.write_back(step=step, ref=base)
         await authority.require_current()
-        if result.verdict is not AuditVerdict.HOLDS:
+        if (
+            await read_tracker_artifact(tracker=self._tracker, surface=step.surface)
+            != result.artifact
+        ):
             raise NativeWriteRefusalError(
-                "Canonical amendment write-back exhausted its configured bound"
+                "The canonical amendment artifact changed during independent verification"
             )
+        await authority.require_current()
+        if result.verdict is not AuditVerdict.HOLDS:
+            raise AmendmentWriteBackRefusalError(result=result)
         return result
 
     async def apply(
@@ -232,22 +306,20 @@ class AmendmentWriteBack:
         holder: str,
         visibility: RepoVisibility,
         authority: AmendmentWriteAuthority,
-        criterion: TrackerIssue | None,
-        ruling_record: tuple[TrackerComment, Ruling] | None,
+        source: AmendmentSource,
     ) -> AmendmentVerdict:
         """An actual claimed subject takes exactly one native surface branch."""
         if not holder.strip():
-            raise NativeWriteRefusalError("Native amendment writes require the parent job holder")
-        if (criterion is None) == (ruling_record is None):
-            raise NativeWriteRefusalError("The amendment requires one actual native subject")
-        if criterion is not None:
+            raise NativeWriteRefusalError(
+                "Native amendment writes require the parent job holder"
+            )
+        if isinstance(source, CriterionAmendmentSource):
             surface = WritableSurface(
                 kind=SurfaceKind.CRITERION_SUB_ISSUE,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key=criterion.issue_key),
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=source.issue.issue_key),
             )
         else:
-            assert ruling_record is not None
-            comment, _ = ruling_record
+            comment = source.comment
             surface = WritableSurface(
                 kind=SurfaceKind.MARKER_COMMENT,
                 ref=ScopeRef(kind=ScopeKind.ISSUE, key=comment.issue_key),
@@ -256,7 +328,11 @@ class AmendmentWriteBack:
         prior = await read_tracker_artifact(tracker=self._tracker, surface=surface)
         await authority.require_current()
         occurrence = sha256(
-            (claim.model_dump_json() + judgment.base_sha).encode()
+            (
+                claim.model_dump_json()
+                + judgment.model_dump_json()
+                + prior.model_dump_json()
+            ).encode()
         ).hexdigest()
         marker = compose_comment_marker(
             prefixes=self._operation.marker_prefixes,
@@ -280,17 +356,45 @@ class AmendmentWriteBack:
             explanation = judgment.finding.refutation or (
                 f"The independently judged departure remains {reason.value if reason else 'pending'}"
             )
+            existing_archive = comment_under_marker(
+                target=surface.ref.key,
+                marker=marker,
+                comments=await self._tracker.list_comments(issue_key=surface.ref.key),
+            )
+            if existing_archive is not None:
+                stored = AmendmentRecord.model_validate_json(
+                    existing_archive.body.partition("\n")[2]
+                )
+                if (
+                    stored.claim != claim
+                    or stored.judgment != judgment
+                    or stored.prior != prior
+                    or stored.disposition
+                    != (
+                        "proposed_amendment"
+                        if reason is None
+                        else "accepted_and_not_actioned"
+                    )
+                ):
+                    raise NativeWriteRefusalError(
+                        "The existing amendment record has different historical evidence"
+                    )
+                explanation = stored.explanation
 
             async def archive(finding: WriteBackFinding | None) -> None:
-                nonlocal explanation
+                nonlocal explanation, existing_archive
                 if finding is not None:
                     text = await self._author(
-                        claim=claim, judgment=judgment, prior=prior,
-                        finding=finding, preserve=True,
+                        claim=claim,
+                        judgment=judgment,
+                        prior=prior,
+                        finding=finding,
+                        preserve=True,
                     )
                     explanation = text.explanation
                 record = AmendmentRecord(
-                    disposition="proposed_amendment" if reason is None
+                    disposition="proposed_amendment"
+                    if reason is None
                     else "accepted_and_not_actioned",
                     claim=claim,
                     judgment=judgment,
@@ -305,124 +409,192 @@ class AmendmentWriteBack:
                 )
                 await lease.renew()
                 await authority.require_current()
-                await settle(self._tracker.upsert_comment(
-                    target=surface.ref.key, marker=marker, body=content, holder=holder
-                ))
+                existing_archive = await settle(
+                    self._tracker.upsert_comment(
+                        target=surface.ref.key,
+                        marker=marker,
+                        body=content,
+                        holder=holder,
+                        expected=existing_archive,
+                    )
+                )
 
             archive_result = await self._verify(
                 step=_Step(surface=archive_surface, apply=archive),
-                base=judgment.base_sha, authority=authority,
+                base=judgment.base_sha,
+                authority=authority,
             )
             if reason is not None:
                 publication = RecordedRefusal(record=archive_result)
                 if reason is UpheldReason.COST_MEASURED_UNECONOMIC:
                     escalation_result = await self._escalate(
-                        claim=claim, judgment=judgment, prior=prior,
-                        lane_key=lane_key, holder=holder, occurrence=occurrence,
-                        visibility=visibility, authority=authority,
+                        claim=claim,
+                        judgment=judgment,
+                        prior=prior,
+                        lane_key=lane_key,
+                        holder=holder,
+                        occurrence=occurrence,
+                        visibility=visibility,
+                        authority=authority,
                     )
                     return UpheldAmendment(
-                        claim=claim, reason=reason, judgment=judgment,
+                        claim=claim,
+                        reason=reason,
+                        judgment=judgment,
                         publication=EscalatedRefusal(
                             record=archive_result, escalation=escalation_result
                         ),
                     )
                 return UpheldAmendment(
-                    claim=claim, reason=reason, judgment=judgment, publication=publication
+                    claim=claim,
+                    reason=reason,
+                    judgment=judgment,
+                    publication=publication,
                 )
 
-            current_criterion = criterion
-            current_ruling = ruling_record
+            current_criterion = (
+                source.issue if isinstance(source, CriterionAmendmentSource) else None
+            )
+            current_ruling = (
+                (source.comment, source.ruling)
+                if isinstance(source, RulingAmendmentSource)
+                else None
+            )
 
             async def amend(finding: WriteBackFinding | None) -> None:
                 nonlocal current_criterion, current_ruling
                 text = await self._author(
-                    claim=claim, judgment=judgment, prior=prior,
-                    finding=finding, preserve=False,
+                    claim=claim,
+                    judgment=judgment,
+                    prior=prior,
+                    finding=finding,
+                    preserve=False,
                 )
                 await authority.require_current()
                 replacement = text.replacement
-                if current_criterion is not None and isinstance(replacement, CriterionReplacement):
-                    retired = {"Evidence": ""}
+                if current_criterion is not None and isinstance(
+                    replacement, CriterionReplacement
+                ):
+                    retired: dict[CriterionField, str] = {"Evidence": ""}
                     if criterion_field_bodies(current_criterion.body, field="Class"):
                         retired["Class"] = ""
-                    cleared = replace_criterion_fields(current_criterion.body, replacements=retired)
+                    cleared = replace_criterion_fields(
+                        current_criterion.body, replacements=retired
+                    )
                     await self._gate_exact(
-                        body=cleared, visibility=visibility,
+                        body=cleared,
+                        visibility=visibility,
                         destination=OutboundDestination.TRACKER_DESCRIPTION,
                     )
                     await lease.renew()
                     await authority.require_current()
-                    await settle(self._tracker.edit_description(
-                        target=current_criterion.issue_key,
-                        expected=current_criterion.body, replacement=cleared,
-                    ))
+                    await settle(
+                        self._tracker.edit_description(
+                            target=current_criterion.issue_key,
+                            expected=current_criterion.body,
+                            replacement=cleared,
+                            authorization=DescriptionWriteAuthority(
+                                holder=holder, surface=surface
+                            ),
+                        )
+                    )
                     current_criterion = await authority.observe_criterion(
                         previous=current_criterion, body=cleared, reset=False
                     )
                     await lease.renew()
                     await authority.require_current()
-                    await settle(self._tracker.reset_criterion_pending(
-                        expected=current_criterion, holder=holder
-                    ))
+                    await settle(
+                        self._tracker.reset_criterion_pending(
+                            expected=current_criterion, holder=holder
+                        )
+                    )
                     current_criterion = await authority.observe_criterion(
                         previous=current_criterion, body=cleared, reset=True
                     )
                     amended = replace_criterion_fields(
-                        cleared, replacements={"Check": replacement.check, "Do": replacement.do}
+                        cleared,
+                        replacements={"Check": replacement.check, "Do": replacement.do},
                     )
                     await self._gate_exact(
-                        body=amended, visibility=visibility,
+                        body=amended,
+                        visibility=visibility,
                         destination=OutboundDestination.TRACKER_DESCRIPTION,
                     )
                     await lease.renew()
                     await authority.require_current()
-                    await settle(self._tracker.edit_description(
-                        target=current_criterion.issue_key,
-                        expected=current_criterion.body, replacement=amended,
-                    ))
+                    await settle(
+                        self._tracker.edit_description(
+                            target=current_criterion.issue_key,
+                            expected=current_criterion.body,
+                            replacement=amended,
+                            authorization=DescriptionWriteAuthority(
+                                holder=holder, surface=surface
+                            ),
+                        )
+                    )
                     current_criterion = await authority.observe_criterion(
                         previous=current_criterion, body=amended, reset=False
                     )
-                elif current_ruling is not None and isinstance(replacement, RulingReplacement):
+                elif current_ruling is not None and isinstance(
+                    replacement, RulingReplacement
+                ):
                     comment, ruling = current_ruling
-                    changed = Ruling.model_validate({
-                        **ruling.model_dump(),
-                        "resolution": replacement.resolution,
-                        "rejected_alternative": replacement.rejected_alternative,
-                        "repo_evidence": replacement.repo_evidence,
-                        "authored_by": RulingAuthor.MACHINE,
-                    })
-                    native_lane = unquote(comment.body.partition("\n")[0][1:-1].split(":")[1])
+                    changed = Ruling.model_validate(
+                        {
+                            **ruling.model_dump(),
+                            "resolution": replacement.resolution,
+                            "rejected_alternative": replacement.rejected_alternative,
+                            "repo_evidence": replacement.repo_evidence,
+                            "authored_by": RulingAuthor.MACHINE,
+                        }
+                    )
+                    native_lane = unquote(
+                        comment.body.partition("\n")[0][1:-1].split(":")[1]
+                    )
                     body = render_ruling(
-                        ruling=changed, lane_key=native_lane,
+                        ruling=changed,
+                        lane_key=native_lane,
                         marker_prefixes=self._operation.marker_prefixes,
                     )
                     await self._gate_exact(
-                        body=body, visibility=visibility,
+                        body=body,
+                        visibility=visibility,
                         destination=OutboundDestination.TRACKER_COMMENT,
                     )
                     await lease.renew()
                     await authority.require_current()
                     marker, _, content = body.partition("\n")
-                    await settle(self._tracker.upsert_comment(
-                        target=comment.issue_key, marker=marker, body=content,
-                        holder=holder, expected=comment,
-                    ))
+                    await settle(
+                        self._tracker.upsert_comment(
+                            target=comment.issue_key,
+                            marker=marker,
+                            body=content,
+                            holder=holder,
+                            expected=comment,
+                        )
+                    )
                     current_ruling = (
-                        await authority.observe_ruling(previous=comment, ruling=changed, body=body),
+                        await authority.observe_ruling(
+                            previous=comment, ruling=changed, body=body
+                        ),
                         changed,
                     )
                 else:
-                    raise NativeWriteRefusalError("The replacement does not address this native subject")
+                    raise NativeWriteRefusalError(
+                        "The replacement does not address this native subject"
+                    )
 
             applied = await self._verify(
                 step=_Step(surface=surface, apply=amend),
-                base=judgment.base_sha, authority=authority,
+                base=judgment.base_sha,
+                authority=authority,
             )
             return AmendedAmendment(
-                claim=claim, judgment=judgment, prior=prior,
-                archive=archive_result, applied=applied,
+                claim=claim,
+                judgment=judgment,
+                prior=prior,
+                archive=archive_result,
+                applied=applied,
             )
 
     async def _escalate(
@@ -439,7 +611,9 @@ class AmendmentWriteBack:
     ) -> WriteBackResult:
         marker = compose_comment_marker(
             prefixes=self._operation.marker_prefixes,
-            purpose="escalation", lane=lane_key, occurrence_key=occurrence,
+            purpose="escalation",
+            lane=lane_key,
+            occurrence_key=occurrence,
         )
         surface = WritableSurface(
             kind=SurfaceKind.MARKER_COMMENT, ref=prior.surface.ref, marker=marker
@@ -450,8 +624,11 @@ class AmendmentWriteBack:
             nonlocal question
             if finding is not None:
                 text = await self._author(
-                    claim=claim, judgment=judgment, prior=prior,
-                    finding=finding, preserve=True,
+                    claim=claim,
+                    judgment=judgment,
+                    prior=prior,
+                    finding=finding,
+                    preserve=True,
                 )
                 question = text.explanation
             escalation = LaneEscalation(
@@ -463,12 +640,19 @@ class AmendmentWriteBack:
                 interim_basis=judgment.model_dump_json(),
                 raised_at_sha=judgment.base_sha,
             )
+            previous = await self._tracker.read_issue(issue_key=surface.ref.key)
+            await authority.require_current()
             await self._escalations.raise_escalation(
-                lane_key=lane_key, job_id=holder, escalation=escalation,
-                visibility=visibility, before_write=authority.require_current,
+                lane_key=lane_key,
+                job_id=holder,
+                escalation=escalation,
+                visibility=visibility,
+                before_write=authority.require_current,
             )
+            await authority.observe_decision(previous=previous)
 
         return await self._verify(
             step=_Step(surface=surface, apply=write),
-            base=judgment.base_sha, authority=authority,
+            base=judgment.base_sha,
+            authority=authority,
         )

@@ -70,6 +70,25 @@ class WritableSurface:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class DescriptionWriteAuthority:
+    """The actual holder and explicit independently leased description surface."""
+
+    holder: str
+    surface: WritableSurface
+
+    def __post_init__(self) -> None:
+        if not self.holder.strip():
+            raise ValueError("description authority requires a nonblank holder")
+        if self.surface.kind not in {
+            SurfaceKind.ISSUE_DESCRIPTION,
+            SurfaceKind.CRITERION_SUB_ISSUE,
+        }:
+            raise ValueError(
+                "description authority requires an issue or criterion description"
+            )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SurfaceLease:
     """One holder's exclusive grant over a whole declared surface set.
 

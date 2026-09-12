@@ -1,7 +1,9 @@
 """Independent native departure judgments before harness persistence."""
 
 from collections.abc import Sequence
+from typing import Final
 
+from kodezart.chains.native_amendment import NativeAmendmentGraph
 from kodezart.core.errors import (
     TrackerAccessDeniedError,
     TrackerProtocolError,
@@ -14,17 +16,29 @@ from kodezart.core.protocols import (
     GitService,
     GitSourceReader,
     NativeWriteGuard,
+    OutboundContentGate,
     PromptSetProvider,
     TrackerPort,
     WorkspaceProvider,
 )
-from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.amendment import (
-    AmendmentRequiresWriteError,
     NativeWriteRefusalError,
     upheld_reason,
 )
-from kodezart.domain.errors import RulingRecordReadError, ScopeReadError
+from kodezart.domain.comment_markers import configured_marker_prefix
+from kodezart.domain.criterion_amendment import require_criterion_source
+from kodezart.domain.errors import (
+    CriterionReadError,
+    RulingRecordReadError,
+    ScopeReadError,
+)
+from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.amendment_writeback import (
+    AmendmentSource,
+    AmendmentWriteBack,
+    CriterionAmendmentSource,
+    RulingAmendmentSource,
+)
 from kodezart.services.audit_sessions import judge_in_workspace
 from kodezart.services.owned_workspace import owned_workspace
 from kodezart.services.ruling_records import RulingRecordReader
@@ -34,30 +48,44 @@ from kodezart.types.domain.amendment import (
     AmendmentClaim,
     AmendmentJudgment,
     AmendmentReport,
+    AmendmentVerdict,
     CriterionSubject,
     NativeWriterOutput,
     NativeWriterStart,
-    UpheldAmendment,
 )
-from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
+from kodezart.types.domain.criteria import (
+    CriterionId,
+    TrackerCriterion,
+    TrackerCriterionSet,
+)
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
     CheckPrerequisite,
     OperationConfig,
+    OperationMemberAbsentError,
     RepoEntry,
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
-from kodezart.types.domain.tracker import TrackerComment, TrackerIssue, WorkflowStateKind
+from kodezart.types.domain.tracker import (
+    TrackerComment,
+    TrackerIssue,
+    WorkflowStateKind,
+)
+
+# The single branch-writing SDK stage is reused by implementation and both
+# remediation entries. Assembly consumes this registration before exposing it.
+NATIVE_WRITING_STAGES: Final = frozenset({PromptKey.IMPLEMENTATION})
 
 
 class NativeAmendments:
     """Bind one current native writer to the existing readers and session owner.
 
-    A reproduced semantic ground is not permission to claim AMENDED. Until its
-    canonical write/readback owner is supplied, that arm explicitly refuses.
+    A reproduced semantic ground reaches AMENDED only through the actual
+    canonical writer and its fresh independent verification graph.
     """
 
     def __init__(
@@ -73,6 +101,9 @@ class NativeAmendments:
         prompts: PromptSetProvider,
         skills: SkillsSelection,
         repositories: Sequence[RepoEntry],
+        gate: OutboundContentGate,
+        max_verify_rounds: int,
+        lease_seconds: float,
     ) -> None:
         self._tracker = tracker
         self._rulings = RulingRecordReader(tracker=tracker, operation=operation)
@@ -84,6 +115,8 @@ class NativeAmendments:
         self._prompts = prompts
         self._skills = skills
         self._repositories = tuple(repositories)
+        self._operation, self._gate = operation, gate
+        self._max_verify_rounds, self._lease_seconds = max_verify_rounds, lease_seconds
 
     def for_writer(
         self,
@@ -92,8 +125,30 @@ class NativeAmendments:
         criteria: TrackerCriterionSet,
         base_ref: str,
         repo_url: str | None,
+        holder: str | None,
+        visibility: RepoVisibility,
+        stage: PromptKey,
     ) -> NativeWriteGuard:
         """Create a runtime guard; no service or tracker enters graph state."""
+        if stage not in NATIVE_WRITING_STAGES:
+            raise NativeWriteRefusalError(
+                "The native writing stage has no amendment gate registration"
+            )
+        if holder is None or not holder.strip():
+            raise NativeWriteRefusalError(
+                "Native writing requires the actual parent job holder"
+            )
+        if repo_url is None:
+            raise NativeWriteRefusalError(
+                "Native amendment verification requires the actual repository"
+            )
+        for purpose in ("amendment", "escalation"):
+            configured_marker_prefix(self._operation.marker_prefixes, purpose=purpose)
+        if "decision" not in self._operation.issue_labels:
+            raise OperationMemberAbsentError(
+                missing="issue_labels['decision']",
+                stops="native amendment escalation is unavailable",
+            )
         matches = [repo for repo in self._repositories if repo.url == repo_url]
         if len(matches) > 1:
             raise NativeWriteRefusalError("The repository declaration is ambiguous")
@@ -104,6 +159,21 @@ class NativeAmendments:
             criteria=criteria,
             base_ref=base_ref,
             environment=environment,
+            write_back=AmendmentWriteBack(
+                tracker=self._tracker,
+                runner=self._runner,
+                workspace=self._workspace,
+                git=self._git,
+                prompts=self._prompts,
+                skills=self._skills,
+                operation=self._operation,
+                max_verify_rounds=self._max_verify_rounds,
+                gate=self._gate,
+                lease_seconds=self._lease_seconds,
+                repo_url=repo_url,
+            ),
+            holder=holder,
+            visibility=visibility,
         )
 
     async def _read_authority(
@@ -151,7 +221,9 @@ class NativeAmendments:
             raise NativeWriteRefusalError(
                 "The pinned ruling roster repeats an identity"
             )
-        return criterion_issues, tuple(sorted(rulings, key=lambda row: row[1].ruling_id))
+        return criterion_issues, tuple(
+            sorted(rulings, key=lambda row: row[1].ruling_id)
+        )
 
 
 class _NativeWriterGuard:
@@ -165,6 +237,9 @@ class _NativeWriterGuard:
         criteria: TrackerCriterionSet,
         base_ref: str,
         environment: dict[CheckPrerequisite, bool] | None,
+        write_back: AmendmentWriteBack,
+        holder: str,
+        visibility: RepoVisibility,
     ) -> None:
         self._owner = owner
         self._spec = spec
@@ -175,6 +250,11 @@ class _NativeWriterGuard:
         self._criterion_issues: tuple[TrackerIssue, ...] | None = None
         self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
         self._base_sha: str | None = None
+        self._write_back, self._holder, self._visibility = (
+            write_back,
+            holder,
+            visibility,
+        )
 
     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
         owner = self._owner
@@ -241,8 +321,21 @@ class _NativeWriterGuard:
             raise NativeWriteRefusalError(
                 "Pinned rulings changed during native writing"
             )
-        if current_issues != self._criterion_issues:
-            raise NativeWriteRefusalError("Native criterion facts changed during writing")
+        if self._criterion_issues is None or len(current_issues) != len(
+            self._criterion_issues
+        ):
+            raise NativeWriteRefusalError(
+                "Native criterion facts changed during writing"
+            )
+        for expected, current_issue in zip(
+            self._criterion_issues, current_issues, strict=True
+        ):
+            try:
+                require_criterion_source(expected=expected, current=current_issue)
+            except CriterionReadError as exc:
+                raise NativeWriteRefusalError(
+                    "Current Checks or native criterion facts changed during writing"
+                ) from exc
         current = await owner._criteria.read_current(spec=self._spec)
         if current != self._criteria:
             raise NativeWriteRefusalError(
@@ -363,11 +456,8 @@ class _NativeWriterGuard:
         await self.require_current(workspace_path=workspace_path, start=start)
         if self._rulings is None:
             raise NativeWriteRefusalError("The ruling registry has not been read")
-        criterion_ids = {
-            item.issue_key for item in self._criterion_issues or ()
-        }
+        criterion_ids = {item.issue_key for item in self._criterion_issues or ()}
         ruling_ids = {ruling.ruling_id for ruling in self._rulings}
-        upheld = []
         for claim in output.claims:
             roster = (
                 criterion_ids
@@ -376,18 +466,144 @@ class _NativeWriterGuard:
             )
             if claim.subject.id not in roster:
                 raise NativeWriteRefusalError("A claim names no current native subject")
-            judgment = await self._judge_claim(
-                workspace_path=workspace_path, claim=claim
+        return await NativeAmendmentGraph(
+            actions=_WriterActions(
+                guard=self, workspace_path=workspace_path, start=start
             )
-            await self.require_current(workspace_path=workspace_path, start=start)
-            reason = upheld_reason(claim, judgment, environment=self._environment)
-            if reason is None:
-                raise AmendmentRequiresWriteError(judgment)
-            upheld.append(
-                UpheldAmendment(
-                    claim=claim,
-                    reason=reason,
-                    judgment=judgment,
+        ).run(output=output)
+
+
+class _WriterActions:
+    """Bind graph behavior to the actual guarded writer without storing services."""
+
+    def __init__(
+        self,
+        *,
+        guard: _NativeWriterGuard,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        self._guard, self._workspace_path, self._start = guard, workspace_path, start
+
+    async def require_current(self) -> None:
+        await self._guard.require_current(
+            workspace_path=self._workspace_path, start=self._start
+        )
+
+    async def judge_claim(self, claim: AmendmentClaim) -> AmendmentJudgment:
+        return await self._guard._judge_claim(
+            workspace_path=self._workspace_path, claim=claim
+        )
+
+    async def apply_judgment(
+        self, claim: AmendmentClaim, judgment: AmendmentJudgment
+    ) -> AmendmentVerdict:
+        guard = self._guard
+        source: AmendmentSource
+        if isinstance(claim.subject, CriterionSubject):
+            criterion = next(
+                (
+                    i
+                    for i in guard._criterion_issues or ()
+                    if i.issue_key == claim.subject.id
+                ),
+                None,
+            )
+            if criterion is None:
+                raise NativeWriteRefusalError(
+                    "The claimed native criterion is no longer current"
                 )
+            source = CriterionAmendmentSource(issue=criterion)
+        else:
+            ruling = next(
+                (
+                    row
+                    for row in guard._ruling_records or ()
+                    if row[1].ruling_id == claim.subject.id
+                ),
+                None,
             )
-        return AmendmentReport(upheld=tuple(upheld))
+            if ruling is None:
+                raise NativeWriteRefusalError(
+                    "The claimed native ruling is no longer current"
+                )
+            source = RulingAmendmentSource(comment=ruling[0], ruling=ruling[1])
+        return await guard._write_back.apply(
+            claim=claim,
+            judgment=judgment,
+            reason=upheld_reason(claim, judgment, environment=guard._environment),
+            lane_key=guard._spec.subject,
+            holder=guard._holder,
+            visibility=guard._visibility,
+            authority=self,
+            source=source,
+        )
+
+    async def observe_criterion(
+        self, *, previous: TrackerIssue, body: str, reset: bool
+    ) -> TrackerIssue:
+        guard = self._guard
+        current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
+        expected = previous.model_copy(update={"body": body})
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=reset
+        )
+        if reset and current.state_kind is not WorkflowStateKind.UNSTARTED:
+            raise NativeWriteRefusalError("The amended criterion did not reset")
+        guard._criterion_issues = tuple(
+            current if i.issue_key == previous.issue_key else i
+            for i in guard._criterion_issues or ()
+        )
+        guard._criteria = TrackerCriterionSet(
+            criteria=[
+                TrackerCriterion(
+                    id=CriterionId(i.issue_key),
+                    text=criterion_check(criterion=i, issue_key=guard._spec.subject),
+                )
+                for i in guard._criterion_issues
+                if i.state_kind is WorkflowStateKind.UNSTARTED
+            ]
+        )
+        await self.require_current()
+        return current
+
+    async def observe_ruling(
+        self, *, previous: TrackerComment, ruling: Ruling, body: str
+    ) -> TrackerComment:
+        guard = self._guard
+        records = await guard._owner._rulings.read_issue(issue_key=previous.issue_key)
+        current = next((comment for comment, value in records if value == ruling), None)
+        if (
+            current is None
+            or current.model_dump(exclude={"body"})
+            != previous.model_dump(exclude={"body"})
+            or current.body != body
+        ):
+            raise NativeWriteRefusalError(
+                "The amended ruling changed native identity or text"
+            )
+        guard._ruling_records = tuple(
+            (current, ruling) if c.comment_key == previous.comment_key else (c, r)
+            for c, r in guard._ruling_records or ()
+        )
+        guard._rulings = tuple(r for _, r in guard._ruling_records)
+        await self.require_current()
+        return current
+
+    async def observe_decision(self, *, previous: TrackerIssue) -> None:
+        guard = self._guard
+        current = await guard._owner._tracker.read_issue(issue_key=previous.issue_key)
+        expected = previous.model_copy(
+            update={"issue_labels": previous.issue_labels | {"decision"}}
+        )
+        if expected.model_dump(exclude={"updated_at"}) != current.model_dump(
+            exclude={"updated_at"}
+        ):
+            raise NativeWriteRefusalError(
+                "The escalation changed more than its authorized decision classification"
+            )
+        guard._criterion_issues = tuple(
+            current if i.issue_key == previous.issue_key else i
+            for i in guard._criterion_issues or ()
+        )
+        await self.require_current()

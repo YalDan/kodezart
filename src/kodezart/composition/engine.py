@@ -215,10 +215,14 @@ def build_workflow_engine(
                 prompts=prompts,
                 skills=skills,
                 repositories=repositories,
+                gate=gate,
+                max_verify_rounds=config.write_back.max_verify_rounds,
+                lease_seconds=config.tracker.surface_lease_seconds,
             )
             if scope_tracker is not None
             and operation is not None
             and criteria is not None
+            and config.write_back is not None
             else None
         ),
         criteria_reader=criteria,

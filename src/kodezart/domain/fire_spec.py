@@ -40,9 +40,7 @@ def _without_comments(line: str, *, comment: bool) -> tuple[str, bool]:
     return "".join(parts), comment
 
 
-def criterion_field_bodies(
-    body: str, *, field: CriterionField
-) -> tuple[str, ...]:
+def criterion_field_bodies(body: str, *, field: CriterionField) -> tuple[str, ...]:
     """Read one template field, excluding quoted row labels and HTML comments."""
     checks: list[str] = []
     lines: list[str] = []
@@ -126,9 +124,7 @@ def replace_criterion_fields(
         for field, replacement in replacements.items():
             if field == name:
                 result = (
-                    result[:begin]
-                    + f"**{field}:** {replacement}\n\n"
-                    + result[end:]
+                    result[:begin] + f"**{field}:** {replacement}\n\n" + result[end:]
                 )
     for field, replacement in replacements.items():
         if field not in names:
