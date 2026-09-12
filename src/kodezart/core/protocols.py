@@ -1055,7 +1055,13 @@ class TrackerPort(
         ...
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str, holder: str | None = None
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Create or edit the issue comment with *marker* as its first line.
 
@@ -1066,6 +1072,10 @@ class TrackerPort(
         The writing queue job must hold its marker surface under ``holder``;
         an absent, expired or different holder raises ``SurfaceLeaseError``
         carrying the surface and the observed current holder.
+        When ``expected`` is supplied, re-read after authority waits and require
+        that exact native root comment/provenance and its expected or desired
+        body. Missing or changed records raise ``StaleCommentWriteError``;
+        absence never creates a replacement. This is not backend atomic CAS.
         """
         ...
 

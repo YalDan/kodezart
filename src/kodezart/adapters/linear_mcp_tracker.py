@@ -107,6 +107,7 @@ from kodezart.domain.tracker_writes import (
     comment_under_marker,
     description_replacement,
     marked_comment_body,
+    require_expected_comment,
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefLanding, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
@@ -1945,11 +1946,17 @@ class LinearMcpTracker:
         )
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str, holder: str | None = None
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None = None,
+        expected: TrackerComment | None = None,
     ) -> TrackerComment:
         """Resolve the marker through the single attributed, leased writer."""
         return await self._upsert_comment(
-            target=target, marker=marker, body=body, holder=holder
+            target=target, marker=marker, body=body, holder=holder, expected=expected
         )
 
     async def _upsert_comment(
@@ -1959,6 +1966,7 @@ class LinearMcpTracker:
         marker: str,
         body: str,
         holder: str | None,
+        expected: TrackerComment | None = None,
         validate_existing: Callable[[TrackerComment], None] | None = None,
     ) -> TrackerComment:
         """Validate the exact addressed snapshot before issuing its mutation.
@@ -1978,14 +1986,43 @@ class LinearMcpTracker:
             ref=ScopeRef(kind=ScopeKind.ISSUE, key=target),
             marker=marker,
         )
+        authors = None
         if existing is not None and existing.body != content:
-            if existing.author_key not in await self.writer_identity():
+            authors = await self.writer_identity()
+            if existing.author_key not in authors:
                 raise SurfaceWriteAttributionError(
                     surface=surface, author=existing.author_key
                 )
-        await self._require_surface_holder(surface=surface, holder=holder)
+        address = _LEASE_ADDRESSING.target(surface)
+        wires = await self._comment_wires(address.key, parent_field=address.field)
+        self._assert_surface_holder(
+            surface=surface,
+            holder=holder,
+            markers=self._markers_from_wires(
+                _GrantKind.LEASE, target=address, wires=wires
+            ),
+        )
+        current_comments = tuple(
+            self._to_comment(wire, issue_key=target) for wire in wires
+        )
+        existing = comment_under_marker(
+            target=target, marker=marker, comments=current_comments
+        )
+        if expected is not None:
+            require_expected_comment(
+                target=target,
+                marker=marker,
+                expected=expected,
+                current=existing,
+                replacement=content,
+            )
         if existing is not None and validate_existing is not None:
             validate_existing(existing)
+        if existing is not None and existing.body != content:
+            if authors is None or existing.author_key not in authors:
+                raise SurfaceWriteAttributionError(
+                    surface=surface, author=existing.author_key
+                )
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
         if existing.body == content:
@@ -2006,8 +2043,18 @@ class LinearMcpTracker:
         still in flight when its lease expires.
         """
         target = _LEASE_ADDRESSING.target(surface)
-        encoded = _LEASE_ADDRESSING.encode(surface)
         markers = await self._markers_on(_GrantKind.LEASE, targets=(target,))
+        self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+
+    def _assert_surface_holder(
+        self,
+        *,
+        surface: WritableSurface,
+        holder: str | None,
+        markers: Sequence[_GrantMarker],
+    ) -> None:
+        """Apply the existing lease arithmetic to the final native snapshot."""
+        encoded = _LEASE_ADDRESSING.encode(surface)
         now = self._clock()
         live = [
             entry
@@ -2708,17 +2755,28 @@ class LinearMcpTracker:
     ) -> tuple[_GrantMarker, ...]:
         """Every ownership marker of *kind* currently on these targets."""
         found: list[_GrantMarker] = []
-        pattern = self._markers.grant_pattern
         for target in targets:
-            for wire in await self._comment_wires(
-                target.key, parent_field=target.field
-            ):
-                match = pattern.search(wire.body)
-                if match is None:
-                    continue
-                marker = self._parsed_marker(match["payload"], wire=wire, target=target)
-                if marker.kind is kind:
-                    found.append(marker)
+            wires = await self._comment_wires(target.key, parent_field=target.field)
+            found.extend(self._markers_from_wires(kind, target=target, wires=wires))
+        return tuple(found)
+
+    def _markers_from_wires(
+        self,
+        kind: _GrantKind,
+        *,
+        target: _Target,
+        wires: Sequence[LinearCommentEntryWire],
+    ) -> tuple[_GrantMarker, ...]:
+        """Parse grants once; ordinary acquisition and final writes share this rule."""
+        found: list[_GrantMarker] = []
+        pattern = self._markers.grant_pattern
+        for wire in wires:
+            match = pattern.search(wire.body)
+            if match is None:
+                continue
+            marker = self._parsed_marker(match["payload"], wire=wire, target=target)
+            if marker.kind is kind:
+                found.append(marker)
         return tuple(found)
 
     def _parsed_marker(
