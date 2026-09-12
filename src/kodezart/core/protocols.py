@@ -39,6 +39,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
+from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
@@ -1059,6 +1060,24 @@ class TrackerPort(
         an absent, expired or different holder raises ``SurfaceLeaseError``
         carrying the surface and the observed current holder.
         """
+        ...
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Upsert the complete (subject, signal) record under its live marker lease.
+
+        The explicit issue_key is the carrier, not an inferred subject lane.
+        The actual writing job holds this exact marker through settlement.
+        Equal replay writes nothing; damaged or duplicate addressed records
+        refuse, as do missing, expired or foreign holders.
+        """
+        ...
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Read exactly this address; absence is None, damage is a typed refusal."""
         ...
 
     async def post_run_event(

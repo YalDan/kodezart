@@ -1,22 +1,24 @@
 """Contention is distinct run holders on one fully addressed surface."""
 
-import json
-
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_alarm_record import surface_alarm_member_id
 from kodezart.domain.run_shape import surface_contended
 from kodezart.services.run_shape import observe_surface_contention
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
-    AlarmSubjectKind,
+    CountEvidence,
+    ReferencesEvidence,
     RunAlarm,
-    surface_alarm_member_id,
+    ScopeSubject,
+    SurfaceEvidence,
+    SurfaceSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -38,10 +40,9 @@ def address(kind=SurfaceKind.MARKER_COMMENT, *, key="issue/42", marker="same:mar
 
 
 def subject(surface):
-    return AlarmSubject(
-        kind=AlarmSubjectKind.SURFACE,
+    return SurfaceSubject(
         scope_key="scope-a",
-        member_id=surface_alarm_member_id(surface),
+        surface=surface,
     )
 
 
@@ -50,15 +51,15 @@ def readings(surface, *, holders=("job/run-a", "job/run-b"), limit=1):
     return (
         AlarmReading(
             source_ref=source,
-            value=SURFACE_JSON.dump_json(surface, indent=2).decode(),
+            value=SurfaceEvidence(value=surface),
             at_sha="observed-sha",
         ),
         AlarmReading(
             source_ref=source,
-            value=json.dumps(holders, indent=2),
+            value=ReferencesEvidence(value=holders),
             at_sha="observed-sha",
         ),
-        AlarmReading(source_ref=FIELD, value=json.dumps(limit)),
+        AlarmReading(source_ref=FIELD, value=CountEvidence(value=limit)),
     )
 
 
@@ -105,7 +106,7 @@ def test_distinct_runs_under_the_same_marker_use_the_same_signal():
     assert alarm.signal is AlarmSignal.SURFACE_CONTENDED
     assert alarm.bound.observed_value == 2
     assert alarm.readings[1] == original[1]
-    assert alarm.subject.member_id == surface_alarm_member_id(surface)
+    assert alarm.subject.surface == surface
 
 
 @pytest.mark.parametrize(
@@ -172,14 +173,16 @@ def test_unreadable_provenance_is_not_a_clean_observation(slot, value):
     surface = address()
     original = readings(surface)
     altered = tuple(
-        reading.model_copy(update={"value": value}) if index == slot else reading
+        reading.model_copy(update={"value": TextEvidence(value=value)})
+        if index == slot
+        else reading
         for index, reading in enumerate(original)
     )
     with pytest.raises(RunShapeReadError) as raised:
         evaluate(surface, altered)
     assert raised.value.signal == "surface_contended"
     assert raised.value.source_ref == original[slot].source_ref
-    assert isinstance(raised.value.__cause__, ValidationError)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -187,14 +190,14 @@ def test_unreadable_provenance_is_not_a_clean_observation(slot, value):
 )
 def test_run_holders_cannot_be_inferred_from_invalid_or_vendor_shaped_rows(holders):
     surface = address()
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(surface, readings(surface, holders=holders))
 
 
 @pytest.mark.parametrize("limit", [-1, True, 1.5, "2"])
 def test_limit_is_a_recorded_nonnegative_integer(limit):
     surface = address()
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(surface, readings(surface, limit=limit))
 
 
@@ -236,7 +239,7 @@ def test_source_identity_and_bound_name_cannot_be_substituted(slot):
 def test_surface_observation_requires_a_surface_subject():
     with pytest.raises(RunShapeReadError, match="another surface"):
         surface_contended(
-            subject=AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope-a"),
+            subject=ScopeSubject(scope_key="scope-a"),
             readings=readings(address()),
             raised_at_sha="sha",
             raised_by="holder",

@@ -57,6 +57,11 @@ from kodezart.domain.errors import (
 from kodezart.domain.escalation_resolution import resolution_from_comments
 from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.run_alarm_record import (
+    parse_run_alarm,
+    render_run_alarm,
+    run_alarm_marker,
+)
 from kodezart.domain.run_event_stream import (
     LaneRunEvent,
     lane_run_events,
@@ -127,6 +132,7 @@ from kodezart.types.domain.operation import (
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.pr_state import PRState
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.run_alarm import AlarmSignal, AlarmSubject, RunAlarm
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
@@ -3895,6 +3901,52 @@ class FakeTrackerPort:
 
     async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
         return tuple(c for c in self.comments if c.issue_key == issue_key)
+
+    async def record_run_alarm(
+        self, *, issue_key: str, alarm: RunAlarm, holder: str
+    ) -> None:
+        """Keep one whole-subject record under the existing leased upsert policy."""
+        await self.read_run_alarm(
+            issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
+        )
+        await self.upsert_comment(
+            target=issue_key,
+            marker=run_alarm_marker(
+                subject=alarm.subject,
+                signal=alarm.signal,
+                marker_prefixes=self.marker_prefixes,
+            ),
+            body=render_run_alarm(alarm=alarm),
+            holder=holder,
+        )
+
+    async def read_run_alarm(
+        self, *, issue_key: str, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm | None:
+        """Resolve the full subject and signal across the native comment log."""
+        marker = run_alarm_marker(
+            subject=subject, signal=signal, marker_prefixes=self.marker_prefixes
+        )
+        stored = comment_under_marker(
+            target=issue_key,
+            marker=marker,
+            comments=await self.list_comments(issue_key=issue_key),
+        )
+        if stored is None:
+            return None
+        try:
+            return parse_run_alarm(
+                body=stored.body,
+                subject=subject,
+                signal=signal,
+                marker_prefixes=self.marker_prefixes,
+            )
+        except ValueError as exc:
+            raise TrackerProtocolError(
+                "run-alarm record does not match its declared shape",
+                tool="list_comments",
+                detail=stored.comment_key,
+            ) from exc
 
     async def post_run_event(
         self, *, issue_key: str, event: LaneRunEvent

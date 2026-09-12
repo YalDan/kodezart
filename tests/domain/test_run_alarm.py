@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from kodezart.types.domain.run_alarm import (
     AlarmBound,
@@ -11,8 +11,10 @@ from kodezart.types.domain.run_alarm import (
     AlarmSignal,
     AlarmSubject,
     AlarmSubjectKind,
+    CriterionSubject,
     RunAlarm,
-    surface_alarm_member_id,
+    SurfaceSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
@@ -68,19 +70,17 @@ def subject_data(kind):
     if kind is AlarmSubjectKind.ESCALATION:
         data["member_id"] = "question/opaque"
     if kind is AlarmSubjectKind.SURFACE:
-        data["member_id"] = surface_alarm_member_id(
-            WritableSurface(
-                kind=SurfaceKind.ISSUE_DESCRIPTION,
-                ref=ScopeRef(kind=ScopeKind.ISSUE, key="issue/opaque"),
-            )
+        data["surface"] = WritableSurface(
+            kind=SurfaceKind.ISSUE_DESCRIPTION,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key="issue/opaque"),
         )
     return data
 
 
 @pytest.mark.parametrize("kind", AlarmSubjectKind)
 def test_valid_required_region_round_trips(kind):
-    subject = AlarmSubject.model_validate(subject_data(kind))
-    assert AlarmSubject.model_validate_json(subject.model_dump_json()) == subject
+    subject = TypeAdapter(AlarmSubject).validate_python(subject_data(kind))
+    assert TypeAdapter(AlarmSubject).validate_json(subject.model_dump_json()) == subject
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def test_valid_required_region_round_trips(kind):
         (AlarmSubjectKind.ISSUE, "issue_id"),
         (AlarmSubjectKind.CRITERION, "issue_id"),
         (AlarmSubjectKind.CRITERION, "member_id"),
-        (AlarmSubjectKind.SURFACE, "member_id"),
+        (AlarmSubjectKind.SURFACE, "surface"),
         (AlarmSubjectKind.ESCALATION, "member_id"),
     ],
 )
@@ -100,7 +100,7 @@ def test_every_subject_rejects_a_missing_required_identity(kind, field, absent):
     data = subject_data(kind)
     data[field] = absent
     with pytest.raises(ValidationError):
-        AlarmSubject.model_validate(data)
+        TypeAdapter(AlarmSubject).validate_python(data)
 
 
 @pytest.mark.parametrize(
@@ -118,13 +118,12 @@ def test_broader_subject_cannot_smuggle_a_narrower_identity(kind, field):
     data = subject_data(kind)
     data[field] = "some/other/member"
     with pytest.raises(ValidationError):
-        AlarmSubject.model_validate(data)
+        TypeAdapter(AlarmSubject).validate_python(data)
 
 
 @pytest.mark.parametrize("criterion_key", ["EXT/42", "AC-7", "9f2d:child@other"])
 def test_criterion_uses_its_opaque_own_key(criterion_key):
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.CRITERION,
+    subject = CriterionSubject(
         scope_key="scope",
         issue_id="parent",
         member_id=criterion_key,
@@ -145,14 +144,9 @@ def test_surface_subject_preserves_every_address_kind(kind):
         ref=ScopeRef(kind=scope_kind, key="opaque/key:with:separator"),
         marker='marker:one"/two' if kind is SurfaceKind.MARKER_COMMENT else None,
     )
-    member = surface_alarm_member_id(surface)
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.SURFACE, scope_key="scope", member_id=member
-    )
-    assert subject.member_id == member
-    assert AlarmSubject.model_validate_json(subject.model_dump_json()) == subject
-    assert json.loads(member)["ref"]["key"] == surface.ref.key
-    assert json.loads(member)["marker"] == surface.marker
+    subject = SurfaceSubject(scope_key="scope", surface=surface)
+    assert subject.surface == surface
+    assert TypeAdapter(AlarmSubject).validate_json(subject.model_dump_json()) == subject
 
 
 @pytest.mark.parametrize(
@@ -169,14 +163,17 @@ def test_surface_subject_preserves_every_address_kind(kind):
 )
 def test_surface_subject_rejects_an_unreadable_or_invalid_address(member):
     with pytest.raises(ValidationError):
-        AlarmSubject(kind=AlarmSubjectKind.SURFACE, scope_key="scope", member_id=member)
+        SurfaceSubject(
+            scope_key="scope",
+            surface=json.loads(member) if member.startswith("{") else member,
+        )
 
 
-def test_surface_identity_has_one_canonical_spelling():
+def test_surface_identity_remains_typed_in_the_domain():
     data = subject_data(AlarmSubjectKind.SURFACE)
-    data["member_id"] = json.dumps(json.loads(data["member_id"]), indent=2)
-    with pytest.raises(ValidationError, match="canonical"):
-        AlarmSubject.model_validate(data)
+    data["surface"] = TypeAdapter(WritableSurface).dump_json(data["surface"]).decode()
+    with pytest.raises(ValidationError):
+        TypeAdapter(AlarmSubject).validate_python(data)
 
 
 def alarm_data():
@@ -186,10 +183,14 @@ def alarm_data():
         "readings": [
             {
                 "source_ref": "escalation/one",
-                "value": "UNRESOLVED\n",
+                "value": {"kind": "text", "value": "UNRESOLVED\n"},
                 "at_sha": "0000000",
             },
-            {"source_ref": "count/one", "value": " 004 ", "at_sha": None},
+            {
+                "source_ref": "count/one",
+                "value": {"kind": "text", "value": " 004 "},
+                "at_sha": None,
+            },
         ],
         "bound": {
             "config_field": "run_alarm_escalation_age_max_commits",
@@ -225,7 +226,7 @@ def test_alarm_rejects_empty_readings():
 
 def test_alarm_preserves_reading_order_and_verbatim_values():
     alarm = RunAlarm.model_validate(alarm_data())
-    assert tuple(reading.value for reading in alarm.readings) == (
+    assert tuple(reading.value.value for reading in alarm.readings) == (
         "UNRESOLVED\n",
         " 004 ",
     )
@@ -241,7 +242,7 @@ def test_readings_are_frozen_independently_of_the_input_list():
     data = alarm_data()
     alarm = RunAlarm.model_validate(data)
     data["readings"].clear()
-    assert tuple(reading.value for reading in alarm.readings) == (
+    assert tuple(reading.value.value for reading in alarm.readings) == (
         "UNRESOLVED\n",
         " 004 ",
     )
@@ -258,7 +259,9 @@ def test_readings_are_frozen_independently_of_the_input_list():
 def test_reading_collection_cannot_be_changed_through_the_frozen_alarm():
     alarm = RunAlarm.model_validate(alarm_data())
     before = alarm.model_dump_json()
-    replacement = AlarmReading(source_ref="other/reading", value="changed")
+    replacement = AlarmReading(
+        source_ref="other/reading", value=TextEvidence(value="changed")
+    )
     with pytest.raises(TypeError):
         alarm.readings[0] = replacement
     assert alarm.model_dump_json() == before
@@ -268,8 +271,10 @@ def test_reading_collection_cannot_be_changed_through_the_frozen_alarm():
 
 
 def test_empty_read_value_is_a_valid_verbatim_reading():
-    reading = AlarmReading(source_ref="record/empty", value="", at_sha=None)
-    assert reading.value == ""
+    reading = AlarmReading(
+        source_ref="record/empty", value=TextEvidence(value=""), at_sha=None
+    )
+    assert reading.value == TextEvidence(value="")
 
 
 @pytest.mark.parametrize("field", ["configured_value", "observed_value"])

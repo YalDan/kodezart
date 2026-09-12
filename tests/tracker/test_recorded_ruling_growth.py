@@ -1,6 +1,5 @@
 """Full recorded authorship feeds the existing ruling and closure observation."""
 
-import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,8 +13,12 @@ from kodezart.services.mandate_graph import (
     read_lane_rulings,
 )
 from kodezart.types.domain.agent import Ruling
-from kodezart.types.domain.mandate_graph import LaneRulingSnapshot
-from kodezart.types.domain.run_alarm import AlarmReading, AlarmSubject, AlarmSubjectKind
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    IssueSubject,
+    LaneSubject,
+    ReferencesEvidence,
+)
 from tests.domain.test_rulings import LANE, PREFIXES, ruling_data
 from tests.fakes import FakeMcpIssue
 from tests.tracker.conftest import APPROVED_ISSUE, CLAIMED_ISSUE, fixture_server
@@ -52,12 +55,12 @@ async def observe(tracker, baseline, **changes):
     values = {
         "operation": OPERATION,
         "config": AppConfig(_env_file=None, run_alarm_max_rulings_without_closure=1),
-        "subject": AlarmSubject(
-            kind=AlarmSubjectKind.LANE, scope_key="scope", lane_key=LANE
-        ),
+        "subject": LaneSubject(scope_key="scope", lane_key=LANE),
         "issue_keys": KEYS,
         "baseline_rulings": baseline,
-        "previous_open": AlarmReading(source_ref=SOURCE, value='["criterion/open"]'),
+        "previous_open": AlarmReading(
+            source_ref=SOURCE, value=ReferencesEvidence(value=("criterion/open",))
+        ),
         "supersession_refs": {},
         "raised_at_sha": "supervisor-sha",
         "raised_by": "supervisor-holder",
@@ -89,7 +92,7 @@ async def test_actual_records_on_all_lane_issues_raise_replayable_alarm_without_
     assert alarm.bound.configured_value == 1
     assert alarm.raised_at_sha == "supervisor-sha"
     assert alarm.raised_by == "supervisor-holder"
-    current = LaneRulingSnapshot.model_validate_json(alarm.readings[1].value)
+    current = alarm.readings[1].value.value
     assert current.issue_keys == KEYS
     assert tuple(row.ruling_id for row in current.rulings) == (
         first.ruling_id,
@@ -175,9 +178,7 @@ async def test_nonlane_subject_refuses_before_record_read(tracker, monkeypatch):
         await observe(
             tracker,
             baseline,
-            subject=AlarmSubject(
-                kind=AlarmSubjectKind.ISSUE, scope_key="scope", issue_id=APPROVED_ISSUE
-            ),
+            subject=IssueSubject(scope_key="scope", issue_id=APPROVED_ISSUE),
         )
     listing.assert_not_called()
 
@@ -186,7 +187,7 @@ async def test_the_retained_baseline_is_not_rebuilt_from_current_records(tracker
     baseline = await capture(tracker)
     await seed(tracker)
     await write_on_second_issue(tracker)
-    assert json.loads(baseline.value)["rulings"] == []
+    assert baseline.value.value.rulings == ()
     assert await observe(tracker, baseline) is not None
     later = await capture(tracker)
     assert await observe(tracker, later) is None

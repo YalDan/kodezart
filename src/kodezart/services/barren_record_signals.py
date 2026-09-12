@@ -8,7 +8,12 @@ from kodezart.domain.errors import RunShapeReadError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.services.run_shape import read_barren_tick
 from kodezart.types.domain.operation import OperationConfig
-from kodezart.types.domain.run_alarm import AlarmReading, AlarmSignal, RunAlarm
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    AlarmSignal,
+    CountEvidence,
+    RunAlarm,
+)
 
 
 async def observe_recorded_barren_tick(
@@ -48,12 +53,12 @@ async def observe_recorded_barren_tick(
         previous_open=previous_open,
         files_changed=AlarmReading(
             source_ref=comment.comment_key,
-            value=str(record.files_changed),
+            value=CountEvidence(value=record.files_changed),
             at_sha=record.head_sha,
         ),
         commits_ahead=AlarmReading(
             source_ref=comment.comment_key,
-            value=str(record.commits_ahead),
+            value=CountEvidence(value=record.commits_ahead),
             at_sha=record.head_sha,
         ),
         supersession_refs=supersessions,

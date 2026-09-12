@@ -1,7 +1,5 @@
 """Recorded identity and membership comparisons have paired quiet controls."""
 
-import json
-
 import pytest
 from pydantic import ValidationError
 
@@ -15,24 +13,32 @@ from kodezart.domain.mandate_graph import (
 from kodezart.types.domain.mandate_graph import (
     IssueSupersession,
     LaneGraphSnapshot,
+    LaneRulingSnapshot,
 )
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
     AlarmSubjectKind,
+    CountEvidence,
+    GraphEvidence,
+    IssueSubject,
+    LaneSubject,
+    ReferencesEvidence,
+    RulingsEvidence,
     RunAlarm,
+    ScopeSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssuePriority, TrackerIssue, WorkflowStateKind
 from tests.tracker.conftest import FIXTURE_NOW
 
-SUBJECT = AlarmSubject(kind=AlarmSubjectKind.LANE, scope_key="scope", lane_key="lane")
+SUBJECT = LaneSubject(scope_key="scope", lane_key="lane")
 MILESTONE = ScopeRef(kind=ScopeKind.MILESTONE, key="milestone")
 
 
-def reading(value: object, source: str = "lane-record") -> AlarmReading:
-    return AlarmReading(source_ref=source, value=json.dumps(value))
+def reading(value, source: str = "lane-record") -> AlarmReading:
+    return AlarmReading(source_ref=source, value=value)
 
 
 def ruling(
@@ -55,13 +61,23 @@ def ruling_inputs(
     bound: int = 1,
 ) -> tuple[AlarmReading, ...]:
     return (
-        reading(ruling_snapshot(baseline or [])),
         reading(
-            ruling_snapshot(rows if rows is not None else [ruling("a"), ruling("b")])
+            RulingsEvidence(
+                value=LaneRulingSnapshot.model_validate(ruling_snapshot(baseline or []))
+            )
         ),
-        reading(["criterion/open"]),
-        reading(closed),
-        reading(bound, RULINGS_BOUND),
+        reading(
+            RulingsEvidence(
+                value=LaneRulingSnapshot.model_validate(
+                    ruling_snapshot(
+                        rows if rows is not None else [ruling("a"), ruling("b")]
+                    )
+                )
+            )
+        ),
+        reading(ReferencesEvidence(value=("criterion/open",))),
+        reading(ReferencesEvidence(value=closed)),
+        reading(CountEvidence(value=bound), RULINGS_BOUND),
     )
 
 
@@ -114,7 +130,7 @@ def graph(
 
 
 def graph_reading(snapshot: LaneGraphSnapshot) -> AlarmReading:
-    return AlarmReading(source_ref="lane-graph", value=snapshot.model_dump_json())
+    return AlarmReading(source_ref="lane-graph", value=GraphEvidence(value=snapshot))
 
 
 def graph_alarm(before: LaneGraphSnapshot, after: LaneGraphSnapshot) -> RunAlarm | None:
@@ -189,8 +205,14 @@ def test_required_author_is_a_closed_recorded_field(value: object) -> None:
     row: dict[str, object] = dict(ruling("x"))
     row["authoredBy"] = value
     inputs = list(ruling_inputs())
-    inputs[1] = reading({"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]})
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
+        inputs[1] = reading(
+            RulingsEvidence(
+                value=LaneRulingSnapshot.model_validate(
+                    {"laneKey": "lane", "issueKeys": ["FIRE"], "rulings": [row]}
+                )
+            )
+        )
         count_alarm(tuple(inputs))
 
 
@@ -200,7 +222,7 @@ def test_every_ruling_input_is_required_even_when_closure_is_visible(
     index: int, raw: str
 ) -> None:
     inputs = list(ruling_inputs(closed=("criterion/open",)))
-    inputs[index] = inputs[index].model_copy(update={"value": raw})
+    inputs[index] = inputs[index].model_copy(update={"value": TextEvidence(value=raw)})
     with pytest.raises(RunShapeReadError):
         count_alarm(tuple(inputs))
 
@@ -347,11 +369,15 @@ def test_snapshot_is_closed_and_frozen() -> None:
 def test_ruling_identity_cannot_change_owning_issue_between_snapshots() -> None:
     inputs = list(ruling_inputs(baseline=[ruling("a")]))
     inputs[1] = reading(
-        {
-            "laneKey": "lane",
-            "issueKeys": ["OTHER"],
-            "rulings": [ruling("a", issue="OTHER")],
-        }
+        RulingsEvidence(
+            value=LaneRulingSnapshot.model_validate(
+                {
+                    "laneKey": "lane",
+                    "issueKeys": ["OTHER"],
+                    "rulings": [ruling("a", issue="OTHER")],
+                }
+            )
+        )
     )
     with pytest.raises(RunShapeReadError, match="owning issue"):
         count_alarm(tuple(inputs))
@@ -373,10 +399,10 @@ def test_foreign_milestone_member_refuses() -> None:
 
 @pytest.mark.parametrize("kind", [AlarmSubjectKind.SCOPE, AlarmSubjectKind.ISSUE])
 def test_both_predicates_require_the_lane_subject(kind: AlarmSubjectKind) -> None:
-    subject = AlarmSubject(
-        kind=kind,
-        scope_key="scope",
-        issue_id="FIRE" if kind is AlarmSubjectKind.ISSUE else None,
+    subject = (
+        IssueSubject(scope_key="scope", issue_id="FIRE")
+        if kind is AlarmSubjectKind.ISSUE
+        else ScopeSubject(scope_key="scope")
     )
     with pytest.raises(RunShapeReadError):
         rulings_outpace_closures(
@@ -406,7 +432,7 @@ def test_ruling_bound_is_environment_configured_and_nonnegative(
 def test_omitted_authorship_cannot_inherit_machine_attribution() -> None:
     row = ruling("x")
     del row["authoredBy"]
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         count_alarm(ruling_inputs(rows=[row]))
 
 

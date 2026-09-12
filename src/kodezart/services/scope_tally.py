@@ -1,7 +1,5 @@
 """Actual native roster and configured marker collection for scope observations."""
 
-from pydantic import TypeAdapter
-
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.organize import is_organize_subject
@@ -16,15 +14,16 @@ from kodezart.types.domain.organize import MandateKind, split_label_key
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
-    AlarmSubjectKind,
+    LabelsEvidence,
+    ReferencesEvidence,
     RunAlarm,
+    ScopeEvidence,
+    ScopeSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.tracker import TrackerIssue
 
-_LABELS = TypeAdapter(tuple[str, ...])
-_KEY = TypeAdapter(str)
 # The governed phase sequence is graph, body, then criteria. Configuration
 # table order carries no ordering authority.
 _MARKER_TRANSITIONS = {
@@ -119,22 +118,20 @@ async def observe_scope_tally(
         sorted(key for key, issue in facts.items() if is_organize_subject(issue))
     )
     readings = (
-        AlarmReading(source_ref=current_source, value=_KEY.dump_json(current).decode()),
-        AlarmReading(source_ref=next_source, value=_KEY.dump_json(following).decode()),
-        AlarmReading(source_ref=scope.key, value=scope.model_dump_json(by_alias=True)),
-        AlarmReading(source_ref=scope.key, value=_LABELS.dump_json(roster).decode()),
+        AlarmReading(source_ref=current_source, value=TextEvidence(value=current)),
+        AlarmReading(source_ref=next_source, value=TextEvidence(value=following)),
+        AlarmReading(source_ref=scope.key, value=ScopeEvidence(value=scope)),
+        AlarmReading(source_ref=scope.key, value=ReferencesEvidence(value=roster)),
         *(
             AlarmReading(
                 source_ref=key,
-                value=_LABELS.dump_json(
-                    tuple(sorted(facts[key].issue_labels))
-                ).decode(),
+                value=LabelsEvidence(value=tuple(sorted(facts[key].issue_labels))),
             )
             for key in roster
         ),
     )
     return tally_unmoved(
-        subject=AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key=scope.key),
+        subject=ScopeSubject(scope_key=scope.key),
         readings=readings,
         raised_at_sha=raised_at_sha,
         raised_by=raised_by,

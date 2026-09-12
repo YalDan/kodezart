@@ -3,7 +3,6 @@
 import ast
 import asyncio
 import inspect
-import json
 
 import pytest
 
@@ -19,7 +18,11 @@ from kodezart.domain.run_shape import barren_tick_with_diff_growth
 from kodezart.services import barren_record_signals
 from kodezart.services.barren_record_signals import observe_recorded_barren_tick
 from kodezart.services.lane_records import LaneRecordReader
-from kodezart.types.domain.run_alarm import AlarmReading, AlarmSignal
+from kodezart.types.domain.run_alarm import (
+    AlarmReading,
+    AlarmSignal,
+    ReferencesEvidence,
+)
 from kodezart.types.domain.run_state import LaneRunState
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
 from tests.domain.test_lane_record import record_data
@@ -44,7 +47,7 @@ def arguments(**overrides):
         "issue_key": APPROVED_ISSUE,
         "previous_open": AlarmReading(
             source_ref="recorded/tick/open",
-            value=json.dumps([OLD]),
+            value=ReferencesEvidence(value=(OLD,)),
             at_sha="prior-head",
         ),
         "supersession_refs": {},
@@ -88,8 +91,8 @@ async def test_native_counters_bounds_and_replay(
     assert result.raised_by == "supervisor-holder"
     assert result.readings[0] == inputs["previous_open"]
     assert result.readings[1].source_ref == APPROVED_ISSUE
-    assert json.loads(result.readings[1].value) == [NEW]
-    assert [item.value for item in result.readings[2:4]] == [str(files), str(commits)]
+    assert result.readings[1].value.value == (NEW,)
+    assert [item.value.value for item in result.readings[2:4]] == [files, commits]
     assert {item.source_ref for item in result.readings[2:4]} == {stored.comment_key}
     assert {item.at_sha for item in result.readings[2:4]} == {"head-full-identity"}
     assert (
@@ -342,6 +345,7 @@ def test_collector_calls_only_record_read_closure_and_local_construction():
         "read_barren_tick",
         "OperationConfig",
         "AlarmReading",
+        "CountEvidence",
         "AlarmSignal",
         "RunAlarm",
     }
@@ -354,7 +358,7 @@ def test_collector_calls_only_record_read_closure_and_local_construction():
         "reader.read",
         "read_barren_tick",
         "AlarmReading",
-        "str",
+        "CountEvidence",
         "tuple",
         "tracker.read_criteria",
         "RunShapeReadError",

@@ -2,11 +2,8 @@
 
 from collections.abc import Mapping
 
-from pydantic import TypeAdapter, ValidationError
-
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import TrackerPort
-from kodezart.domain.errors import RunShapeReadError
 from kodezart.domain.gap import compute_gap
 from kodezart.domain.run_shape import (
     BARREN_COMMITS_BOUND,
@@ -14,6 +11,7 @@ from kodezart.domain.run_shape import (
     ESCALATION_COMMITS_BOUND,
     ESCALATION_TICKS_BOUND,
     SURFACE_HOLDERS_BOUND,
+    _read_value,
     barren_tick_with_diff_growth,
     escalation_ageing,
     surface_contended,
@@ -23,13 +21,15 @@ from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
     AlarmSubject,
-    AlarmSubjectKind,
+    CountEvidence,
+    EscalationEvidence,
+    EscalationSubject,
+    LaneSubject,
+    ReferencesEvidence,
+    ResolutionEvidence,
     RunAlarm,
 )
-from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.tracker import TrackerIssue
-
-_REFERENCE_JSON = TypeAdapter(tuple[str, ...])
 
 
 def observe_surface_contention(
@@ -54,7 +54,7 @@ def observe_surface_contention(
             holder_history,
             AlarmReading(
                 source_ref=SURFACE_HOLDERS_BOUND,
-                value=str(config.run_alarm_max_surface_holders),
+                value=CountEvidence(value=config.run_alarm_max_surface_holders),
             ),
         ),
         raised_at_sha=raised_at_sha,
@@ -104,21 +104,13 @@ async def read_escalation_ageing(
     """Retain the exact resolution that produced this age observation.
 
     The caller supplies tracker projections with explicit source references:
-    the LaneEscalation JSON, recorded commit SHAs in order, and the recorded
+    the typed LaneEscalation, recorded commit SHAs in order, and the recorded
     ticks since this occurrence was raised. This function never collects
     commits from a repository or manufactures walker ticks. It returns an
     observation; persistence belongs to a supervisor holding its own lease.
     """
-    try:
-        record = LaneEscalation.model_validate_json(escalation.value, strict=True)
-    except ValidationError as exc:
-        raise RunShapeReadError(
-            signal=AlarmSignal.ESCALATION_AGEING.value,
-            source_ref=escalation.source_ref,
-            reason="invalid recorded escalation",
-        ) from exc
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.ESCALATION,
+    record = _read_value(escalation, EscalationEvidence, AlarmSignal.ESCALATION_AGEING)
+    subject = EscalationSubject(
         scope_key=scope_key,
         lane_key=lane_key,
         issue_id=record.issue_id,
@@ -135,17 +127,17 @@ async def read_escalation_ageing(
             escalation,
             AlarmReading(
                 source_ref=escalation.source_ref,
-                value=resolution.model_dump_json(by_alias=True),
+                value=ResolutionEvidence(value=resolution),
             ),
             commits,
             ticks_since_raise,
             AlarmReading(
                 source_ref=ESCALATION_COMMITS_BOUND,
-                value=str(config.run_alarm_escalation_age_max_commits),
+                value=CountEvidence(value=config.run_alarm_escalation_age_max_commits),
             ),
             AlarmReading(
                 source_ref=ESCALATION_TICKS_BOUND,
-                value=str(config.run_alarm_escalation_age_max_ticks),
+                value=CountEvidence(value=config.run_alarm_escalation_age_max_ticks),
             ),
         ),
         raised_at_sha=raised_at_sha,
@@ -209,9 +201,7 @@ async def read_barren_tick(
     be recorded projections, with their source references supplied here.
     No repository, author session or tracker writer is called.
     """
-    subject = AlarmSubject(
-        kind=AlarmSubjectKind.LANE, scope_key=scope_key, lane_key=lane_key
-    )
+    subject = LaneSubject(scope_key=scope_key, lane_key=lane_key)
     criteria = tuple(await tracker.read_criteria(issue_key=issue_key))
     open_keys = {
         criterion.issue_key
@@ -228,17 +218,21 @@ async def read_barren_tick(
             previous_open,
             AlarmReading(
                 source_ref=issue_key,
-                value=_REFERENCE_JSON.dump_json(closed_keys).decode("utf-8"),
+                value=ReferencesEvidence(value=closed_keys),
             ),
             files_changed,
             commits_ahead,
             AlarmReading(
                 source_ref=BARREN_FILES_BOUND,
-                value=str(config.run_alarm_barren_tick_max_files_changed),
+                value=CountEvidence(
+                    value=config.run_alarm_barren_tick_max_files_changed
+                ),
             ),
             AlarmReading(
                 source_ref=BARREN_COMMITS_BOUND,
-                value=str(config.run_alarm_barren_tick_max_commits_ahead),
+                value=CountEvidence(
+                    value=config.run_alarm_barren_tick_max_commits_ahead
+                ),
             ),
         ),
         raised_at_sha=raised_at_sha,

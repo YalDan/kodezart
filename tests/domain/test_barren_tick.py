@@ -1,7 +1,5 @@
 """Recorded branch growth is measured against identity-based progress."""
 
-import json
-
 import pytest
 from pydantic import ValidationError
 
@@ -12,16 +10,17 @@ from kodezart.types.domain.run_alarm import (
     AlarmBound,
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
-    AlarmSubjectKind,
+    CountEvidence,
+    LaneSubject,
+    ReferencesEvidence,
     RunAlarm,
+    ScopeSubject,
+    TextEvidence,
 )
 
 FILES_FIELD = "run_alarm_barren_tick_max_files_changed"
 COMMITS_FIELD = "run_alarm_barren_tick_max_commits_ahead"
-SUBJECT = AlarmSubject(
-    kind=AlarmSubjectKind.LANE, scope_key="scope-a", lane_key="lane-a"
-)
+SUBJECT = LaneSubject(scope_key="scope-a", lane_key="lane-a")
 
 
 def readings(
@@ -34,14 +33,14 @@ def readings(
     max_commits=5,
 ):
     return tuple(
-        AlarmReading(source_ref=source, value=json.dumps(value, indent=2), at_sha=sha)
+        AlarmReading(source_ref=source, value=value, at_sha=sha)
         for source, value, sha in (
-            ("previous-tick#open", previous, "previous-sha"),
-            ("current-criteria#closed", closed, None),
-            ("lane-record#files-changed", files, "current-sha"),
-            ("lane-record#commits-ahead", commits, "current-sha"),
-            (FILES_FIELD, max_files, None),
-            (COMMITS_FIELD, max_commits, None),
+            ("previous-tick#open", ReferencesEvidence(value=previous), "previous-sha"),
+            ("current-criteria#closed", ReferencesEvidence(value=closed), None),
+            ("lane-record#files-changed", CountEvidence(value=files), "current-sha"),
+            ("lane-record#commits-ahead", CountEvidence(value=commits), "current-sha"),
+            (FILES_FIELD, CountEvidence(value=max_files), None),
+            (COMMITS_FIELD, CountEvidence(value=max_commits), None),
         )
     )
 
@@ -126,27 +125,30 @@ def test_every_firing_arm_replays_its_original_readings(files_limit, commits_lim
 def test_unreadable_input_is_not_a_clean_observation(slot, value):
     original = readings()
     altered = tuple(
-        item.model_copy(update={"value": value}) if index == slot else item
+        item.model_copy(update={"value": TextEvidence(value=value)})
+        if index == slot
+        else item
         for index, item in enumerate(original)
     )
     with pytest.raises(RunShapeReadError) as raised:
         evaluate(altered)
     assert raised.value.source_ref == original[slot].source_ref
     assert raised.value.signal == "barren_tick_with_diff_growth"
-    assert isinstance(raised.value.__cause__, ValidationError)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize("name", ["files", "commits", "max_files", "max_commits"])
 @pytest.mark.parametrize("value", [-1, True, 1.5, "3"])
 def test_all_counts_are_nonnegative_integers(name, value):
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(readings(**{name: value}))
 
 
 @pytest.mark.parametrize("name", ["previous", "closed"])
 @pytest.mark.parametrize("value", [("same", "same"), ("",), ("  ",), (1,)])
 def test_reference_sets_require_unique_nonempty_opaque_keys(name, value):
-    with pytest.raises(RunShapeReadError):
+    expected = RunShapeReadError if value == ("same", "same") else ValidationError
+    with pytest.raises(expected):
         evaluate(readings(**{name: value}))
 
 
@@ -172,7 +174,7 @@ def test_the_complete_reading_sequence_is_required(size):
 def test_a_barren_tick_requires_a_lane_subject():
     with pytest.raises(RunShapeReadError, match="lane subject"):
         barren_tick_with_diff_growth(
-            subject=AlarmSubject(kind=AlarmSubjectKind.SCOPE, scope_key="scope-a"),
+            subject=ScopeSubject(scope_key="scope-a"),
             readings=readings(),
             raised_at_sha="sha",
             raised_by="holder",
@@ -180,7 +182,7 @@ def test_a_barren_tick_requires_a_lane_subject():
 
 
 def test_closure_does_not_supply_unreadable_growth_counts():
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(readings(closed=("EXT/42",), files=None))
 
 

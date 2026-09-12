@@ -1,6 +1,5 @@
 """Missing write-backs and inconsistent row counts use recorded facts only."""
 
-import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -8,14 +7,19 @@ from pydantic import ValidationError
 
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.domain.errors import RunShapeReadError
+from kodezart.domain.run_alarm_record import surface_alarm_member_id
 from kodezart.domain.run_shape import commits_ahead_of_record, write_back_missing
 from kodezart.types.domain.run_alarm import (
     AlarmReading,
     AlarmSignal,
-    AlarmSubject,
-    AlarmSubjectKind,
+    CommitsEvidence,
+    CountEvidence,
+    LaneSubject,
+    PresenceEvidence,
     RunAlarm,
-    surface_alarm_member_id,
+    SurfaceEvidence,
+    SurfaceSubject,
+    TextEvidence,
 )
 from kodezart.types.domain.run_state import LaneCommit
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
@@ -35,10 +39,9 @@ def surface(kind=SurfaceKind.MARKER_COMMENT, *, key="issue/42", marker="record:k
 
 
 def surface_subject(address):
-    return AlarmSubject(
-        kind=AlarmSubjectKind.SURFACE,
+    return SurfaceSubject(
         scope_key="scope/run",
-        member_id=surface_alarm_member_id(address),
+        surface=address,
     )
 
 
@@ -46,21 +49,19 @@ def write_readings(address, *, present=False):
     return (
         AlarmReading(
             source_ref="event/occurrence-7",
-            value=json.dumps(json.loads(surface_alarm_member_id(address)), indent=2),
+            value=SurfaceEvidence(value=address),
             at_sha="event-sha",
         ),
         AlarmReading(
             source_ref=surface_alarm_member_id(address),
-            value=json.dumps(present),
+            value=PresenceEvidence(value=present),
             at_sha="record-observed-sha",
         ),
     )
 
 
 def lane_subject():
-    return AlarmSubject(
-        kind=AlarmSubjectKind.LANE, scope_key="scope/run", lane_key="lane/42"
-    )
+    return LaneSubject(scope_key="scope/run", lane_key="lane/42")
 
 
 def commit_readings(*, count=3, rows=None, head="declared-head"):
@@ -72,10 +73,17 @@ def commit_readings(*, count=3, rows=None, head="declared-head"):
     return tuple(
         AlarmReading(
             source_ref="lane-record/ref",
-            value=json.dumps(value, indent=2),
+            value=value,
             at_sha=head,
         )
-        for value in ("lane/42", head, count, rows)
+        for value in (
+            TextEvidence(value="lane/42"),
+            TextEvidence(value=head),
+            CountEvidence(value=count),
+            CommitsEvidence(
+                value=tuple(LaneCommit.model_validate(row) for row in rows)
+            ),
+        )
     )
 
 
@@ -136,14 +144,14 @@ def test_presence_on_another_surface_cannot_discharge_the_event(other):
 @pytest.mark.parametrize("present", [None, 0, 1, "false", "true", {}, []])
 def test_only_an_explicit_successful_lookup_boolean_can_answer_presence(present):
     address = surface()
-    with pytest.raises(RunShapeReadError) as raised:
+    with pytest.raises(ValidationError) as raised:
         evaluate(
             write_back_missing,
             surface_subject(address),
             write_readings(address, present=present),
         )
-    assert raised.value.source_ref == surface_alarm_member_id(address)
-    assert isinstance(raised.value.__cause__, ValidationError)
+    assert raised.value.errors()[0]["type"] == "bool_type"
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.parametrize(
@@ -245,26 +253,30 @@ def test_count_subject_must_identify_the_recorded_lane(subject):
 
 @pytest.mark.parametrize("count", [-1, True, "2", 2.5, None])
 def test_declared_count_must_be_a_nonnegative_integer(count):
-    with pytest.raises(RunShapeReadError):
+    with pytest.raises(ValidationError):
         evaluate(commits_ahead_of_record, lane_subject(), commit_readings(count=count))
 
 
 @pytest.mark.parametrize(
-    "rows",
+    "rows,expected",
     [
-        [{"sha": "x", "subject": "s"}],
-        [{"sha": "x", "subject": "s", "issue_id": "i", "explanation": "extra"}],
-        [{"sha": 3, "subject": "s", "issue_id": "i"}],
-        [{"sha": " ", "subject": "s", "issue_id": "i"}],
-        [{"sha": "x", "subject": "s", "issue_id": "i"}] * 2,
-        ["x"],
-        {},
-        None,
+        ([{"sha": "x", "subject": "s"}], ValidationError),
+        (
+            [{"sha": "x", "subject": "s", "issue_id": "i", "explanation": "extra"}],
+            ValidationError,
+        ),
+        ([{"sha": 3, "subject": "s", "issue_id": "i"}], ValidationError),
+        ([{"sha": " ", "subject": "s", "issue_id": "i"}], RunShapeReadError),
+        ([{"sha": "x", "subject": "s", "issue_id": "i"}] * 2, RunShapeReadError),
+        (["x"], ValidationError),
+        ({}, ValidationError),
+        (None, ValidationError),
     ],
 )
-def test_unreadable_or_ambiguous_commit_rows_do_not_clear_the_signal(rows):
-    readings = replace(commit_readings(count=0), 3, value=json.dumps(rows))
-    with pytest.raises(RunShapeReadError):
+def test_unreadable_or_ambiguous_commit_rows_do_not_clear_the_signal(rows, expected):
+    with pytest.raises(expected):
+        evidence = CommitsEvidence.model_validate({"value": rows})
+        readings = replace(commit_readings(count=0), 3, value=evidence)
         evaluate(commits_ahead_of_record, lane_subject(), readings)
 
 
@@ -317,7 +329,9 @@ def test_commit_model_is_the_frozen_closed_three_field_record():
 
 
 @pytest.mark.parametrize("slot", [0, 1])
-@pytest.mark.parametrize("value", ["not-json", "null", '""', '" "', "7"])
+@pytest.mark.parametrize(
+    "value", [CountEvidence(value=7), TextEvidence(value=""), TextEvidence(value=" ")]
+)
 def test_lane_and_declared_head_require_readable_opaque_identities(slot, value):
     with pytest.raises(RunShapeReadError):
         evaluate(
