@@ -44,10 +44,12 @@ async def read_tracker_artifact(
         identities: set[str] = set()
         split_rows: list[dict[str, object]] = []
         for listed_child in children:
+            identity = await tracker.read_issue_identity(
+                issue_key=listed_child.issue_key
+            )
             child = await tracker.read_planning_issue(issue_key=listed_child.issue_key)
             if child != listed_child:
                 raise WriteBackReadError("split child changed during artifact read")
-            identity = await tracker.read_issue_identity(issue_key=child.issue_key)
             if (
                 child.issue_key in split_keys
                 or child.parent_key != source.issue_key
