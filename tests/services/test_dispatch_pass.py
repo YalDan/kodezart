@@ -415,6 +415,7 @@ class _FailingDispatcher:
         error: Exception | None = None,
     ) -> None:
         self.calls: int = 0
+        self.entered = asyncio.Event()
         self._block: asyncio.Event | None = block
         self._error: Exception = (
             TimeoutError("the delivery probe could not be reached")
@@ -424,6 +425,7 @@ class _FailingDispatcher:
 
     async def run_pass(self) -> DispatchReport:
         self.calls += 1
+        self.entered.set()
         if self._block is not None:
             await self._block.wait()
         raise self._error
@@ -553,12 +555,17 @@ class TestAFailedPassGivesTheWakeUpBack:
         """
         tracker = FakeTrackerPort(issues=[make_tracker_issue("K-1")])
         pass_, guard, dispatcher = failing_tick(tracker, block=asyncio.Event())
-
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(
-                pass_.run(TICK_STARTED_AT),
-                timeout=SETTLE_DELAY_SECONDS,
-            )
+        task = asyncio.create_task(pass_.run(TICK_STARTED_AT))
+        try:
+            # This control cancels an entered dispatcher. Cancellation during
+            # the preceding gate observation has separate synchronized probes.
+            await asyncio.wait_for(dispatcher.entered.wait(), timeout=5)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(task, timeout=SETTLE_DELAY_SECONDS)
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
         assert dispatcher.calls == 1, "the pass was entered and then abandoned"
         assert guard.mark(PassSignal.approved_changed, container=TEAM_KEYS[0]) is None
