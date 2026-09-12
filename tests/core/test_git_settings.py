@@ -201,6 +201,7 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
         FakeJobQueue,
         FakeRepoCache,
         FakeTrackerPort,
+        FakeWorkspaceProvider,
         ManagedFakeLinearMcpServer,
         make_tracker_issue,
     )
@@ -265,6 +266,7 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
         gate=PassThroughGate(),
         git=git_service,
         cache=FakeRepoCache(),
+        workspace=FakeWorkspaceProvider(),
         prompts=make_prompt_provider(),
         runner=FakeAgentRunner(events=[]),
         skills=SUPPRESS_ALL_SKILLS,

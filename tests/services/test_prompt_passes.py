@@ -59,6 +59,7 @@ from tests.fakes import (
     FakeAgentRunner,
     FakeJobQueue,
     FakeTrackerPort,
+    FakeWorkspaceProvider,
     ManagedFakeLinearMcpServer,
     make_tracker_issue,
 )
@@ -173,6 +174,7 @@ async def _registrations(
     runner = FakeAgentRunner(events=[])
     return (
         await build_prompt_passes(
+            organize=None,
             recorder=RunRecorder(records={}, sinks={}),
             config=_config(tmp_path, **overrides),
             operation=declared,
@@ -230,6 +232,7 @@ async def _runtime(
         gate=None,
         git=None,  # type: ignore[arg-type]
         cache=None,  # type: ignore[arg-type]
+        workspace=FakeWorkspaceProvider(),
         prompts=prompts,
         runner=runner,
         skills=SUPPRESS_ALL_SKILLS,
