@@ -8,9 +8,9 @@ every one is resolved through the mapping.
 
 The semantic APPROVED state deliberately persists across claim, dequeue
 and pull request: demoting approval is a human act this process never
-performs.  The terminal transition is the verified-merge write, which
-moves the workflow state to the stage the configuration binds ``DONE``
-to, and the queue state to its terminal member.
+performs. A verified merge retires the legacy queue entry. A parent's
+finished state is a read over its criterion subtree; the merge event
+grants no authority to write either parent or criterion Done states.
 
 **The pull-request arm also records the delivery — when there is one.**  A
 ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
@@ -144,16 +144,12 @@ class TrackerLifecycleWriter:
         await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
 
     async def on_verified_merge(self, *, issue_key: str) -> None:
-        """The terminal transition: workflow DONE stage, queue state terminal."""
-        await self._tracker.set_workflow_state(
-            issue_key=issue_key,
-            stage=LifecycleStage.DONE,
-        )
+        """Retire the queue entry without asserting criterion completion."""
         await self._tracker.set_queue_state(
             issue_key=issue_key,
             state=QueueState.DONE,
         )
-        await self._log.ainfo("lifecycle_done", issue_key=issue_key)
+        await self._log.ainfo("lifecycle_queue_finished", issue_key=issue_key)
 
     async def on_run_failed(
         self,
