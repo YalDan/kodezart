@@ -1,11 +1,12 @@
 """Run a live scope inside its existing queue job, one fresh lane per tick."""
 
+import json
 from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from kodezart.chains.criteria import require_current_native_snapshot
 from kodezart.chains.native_delivery import NativeLaneWorkflow
@@ -198,16 +199,19 @@ class ScopeWorkflowEngine:
                 "repo_path": context.repo_path,
                 "base": spec.model_dump_json(),
             }
+            # LangGraph retains only scalar configuration metadata. JSON text
+            # survives the real checkpoint serializer without another store.
+            address_json = json.dumps(address, sort_keys=True, separators=(",", ":"))
             assert context.run_identity is not None
             config["metadata"] = {
-                _REQUEST_METADATA: address,
-                _RUN_METADATA: context.run_identity.model_dump(mode="json"),
+                _REQUEST_METADATA: address_json,
+                _RUN_METADATA: context.run_identity.model_dump_json(),
             }
             initial: NativeDeliveryState | None = lane.prepare(fire_state)
             if lane.fire.checkpointer is not None:
                 saved = await lane.graph.aget_state(config)
                 if saved.values:
-                    if (saved.metadata or {}).get(_REQUEST_METADATA) != address:
+                    if (saved.metadata or {}).get(_REQUEST_METADATA) != address_json:
                         raise ScopeReadError(
                             "native checkpoint belongs to a different scope request",
                             ref=scope,
@@ -221,9 +225,21 @@ class ScopeWorkflowEngine:
                             "native checkpoint state differs from its request identity",
                             ref=scope,
                         )
-                    original_run = RunIdentity.model_validate(
-                        (saved.metadata or {}).get(_RUN_METADATA)
-                    )
+                    original_run_json = (saved.metadata or {}).get(_RUN_METADATA)
+                    if not isinstance(original_run_json, str):
+                        raise ScopeReadError(
+                            "native checkpoint has no serialized run identity",
+                            ref=scope,
+                        )
+                    try:
+                        original_run = RunIdentity.model_validate_json(
+                            original_run_json
+                        )
+                    except ValidationError as exc:
+                        raise ScopeReadError(
+                            "native checkpoint has an invalid run identity",
+                            ref=scope,
+                        ) from exc
                     if (
                         original_run.kind is not RunKind.FIRE
                         or original_run.name != key
@@ -233,9 +249,7 @@ class ScopeWorkflowEngine:
                             ref=scope,
                         )
                     config["configurable"]["run_identity"] = original_run.model_dump()
-                    config["metadata"][_RUN_METADATA] = original_run.model_dump(
-                        mode="json"
-                    )
+                    config["metadata"][_RUN_METADATA] = original_run_json
                     # Even a fully completed checkpoint must not replay a cached
                     # acceptance without asking today's criterion authority.
                     await require_current_native_snapshot(
