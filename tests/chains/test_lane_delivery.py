@@ -13,9 +13,11 @@ from kodezart.domain.errors import (
     CheckObservationError,
     DeliveryHeadError,
     FireSpecEntryError,
+    PRStateReadError,
 )
 from kodezart.types.domain.check_observation import IncompleteChecks
 from kodezart.types.domain.delivery import CheckRedClass, LaneDelivery
+from kodezart.types.domain.gating import OutboundDestination
 from kodezart.types.domain.native_delivery import (
     CompletedLaneDelivery,
     LaneDeliveryEvent,
@@ -335,6 +337,46 @@ async def test_delivery_refuses_incoherent_wire_outcome():
     wire["outcome"] = WorkflowOutcome.ci_failed_unclassified
     with pytest.raises(ValidationError, match="outcome must match"):
         LaneDelivery.model_validate(wire)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("state", "closed"), ("url", ""), ("url", " "), ("number", 0), ("number", -1)],
+)
+async def test_delivery_wire_requires_an_addressed_open_pr(field, value):
+    result = await deliver(await setup())
+    wire = result.model_dump(mode="json")
+    wire["pr"][field] = value
+    with pytest.raises(ValidationError, match="addressed open PR"):
+        LaneDelivery.model_validate(wire)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("base_branch", "unrelated-base"),
+        ("head_branch", "other-head"),
+        ("head_sha", "b" * 40),
+        ("lifecycle", PRLifecycle.CLOSED),
+    ],
+)
+async def test_pr_changed_during_failure_comment_gate_refuses_before_post(field, value):
+    parts = await setup(monitor=FakeCIMonitor(passed=False), bound=0)
+    owner, _, _, creator, *_ = parts
+
+    class ChangedPR(PassThroughGate):
+        async def gate(self, **kwargs):
+            if kwargs["destination"] is OutboundDestination.PR_COMMENT:
+                current = owner._pr_state_reader.records[(REPO, 1)]
+                wire = current.model_dump()
+                wire[field] = value
+                owner._pr_state_reader.records[(REPO, 1)] = PRState.model_validate(wire)
+            return await super().gate(**kwargs)
+
+    owner._gate = ChangedPR()
+    with pytest.raises(PRStateReadError):
+        await deliver(parts)
+    assert not [call for call in creator.calls if call["method"] == "comment_on_pr"]
 
 
 @pytest.mark.parametrize("branch", [HEAD, BASE])

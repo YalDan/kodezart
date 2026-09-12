@@ -66,6 +66,8 @@ class LaneDelivery(CamelCaseModel):
     @model_validator(mode="after")
     def coherent_delivery(self) -> Self:
         """A completed observation belongs to this head; routing agrees with it."""
+        if self.pr.state != "open" or not self.pr.url.strip() or self.pr.number < 1:
+            raise ValueError("delivery requires an addressed open PR")
         if isinstance(self.observation, ObservedChecks):
             if self.observation.commit_sha != self.final_commit_sha:
                 raise ValueError("delivery checks must identify its published head")
