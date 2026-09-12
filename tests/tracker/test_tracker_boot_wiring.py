@@ -139,6 +139,9 @@ in_progress = "In Progress"
 in_review = "In Review"
 done = "Done"
 
+[marker_prefixes]
+run_outcome = "fixture-run-outcome"
+
 {RUN_EVENT_TOML}
 
 [[repos]]

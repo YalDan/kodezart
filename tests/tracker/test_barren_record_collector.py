@@ -158,7 +158,9 @@ async def test_cold_clients_read_current_native_bytes(tracker, server):
             TrackerComment.model_validate_json(item.model_dump_json())
             for item in tracker.comments
         ]
-        tracker = FakeTrackerPort(issues=issues)
+        tracker = FakeTrackerPort(
+            issues=issues, writer_identities=await tracker.writer_identity()
+        )
         tracker.comments = comments
     else:
         tracker = linear_over_fake_mcp(server)

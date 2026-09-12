@@ -10,7 +10,7 @@ The semantic APPROVED state deliberately persists across claim, dequeue
 and pull request: demoting approval is a human act this process never
 performs. A verified merge retires the legacy queue entry. A parent's
 finished state is a read over its criterion subtree; the merge event
-grants no authority to write either parent or criterion Done states.
+grants no authority to mark either parent or criterion completed.
 
 **The pull-request arm also records the delivery — when there is one.**  A
 ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
