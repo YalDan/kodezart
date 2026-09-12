@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Sequence
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from kodezart.adapters.github_api import GitHubAPIClient
+from kodezart.adapters.subprocess_git_source_reader import SubprocessGitSourceReader
 from kodezart.chains.authored_checks import AuthoredChecks
 from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.chains.authored_publication import AuthoredPublication
@@ -43,9 +44,10 @@ from kodezart.core.retry import DelayFloor
 from kodezart.domain.errors import RateLimitError, ScopedExecutionUnavailableError
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
+from kodezart.services.native_amendments import NativeAmendments
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
-from kodezart.types.domain.operation import RepoEntry
+from kodezart.types.domain.operation import OperationConfig, RepoEntry
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import AllowedTools, PermissionMode
@@ -183,6 +185,7 @@ def build_workflow_engine(
     checkpointer: BaseCheckpointSaver[str] | None,
     criteria: FireCriteriaSource | None = None,
     scope_tracker: TrackerPort | None = None,
+    operation: OperationConfig | None = None,
 ) -> OriginRoutedWorkflowEngine:
     """The engine, with the loops and the remediation component it runs.
 
@@ -200,6 +203,24 @@ def build_workflow_engine(
     # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
     ralph_loop = RalphLoop(
+        amendments=(
+            NativeAmendments(
+                tracker=scope_tracker,
+                operation=operation,
+                criteria=criteria,
+                git=git,
+                source=SubprocessGitSourceReader(),
+                workspace=workspace,
+                runner=agent_service,
+                prompts=prompts,
+                skills=skills,
+                repositories=repositories,
+            )
+            if scope_tracker is not None
+            and operation is not None
+            and criteria is not None
+            else None
+        ),
         criteria_reader=criteria,
         service=agent_service,
         max_iterations=config.max_iterations,

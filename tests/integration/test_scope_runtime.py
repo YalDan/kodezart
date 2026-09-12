@@ -46,7 +46,12 @@ from kodezart.types.domain.ticket_review import TicketReviewMode
 from kodezart.types.domain.tracker import WorkflowStateKind
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.api.v1.test_jobs import _build_app
-from tests.chains.test_native_fire import NativeExecutor, native_evaluation
+from tests.chains.test_native_fire import (
+    NativeExecutor,
+    NativeSourceReader,
+    native_evaluation,
+    native_operation,
+)
 from tests.fakes import (
     FIXTURE_EPOCH,
     SUPPRESS_ALL_SKILLS,
@@ -158,36 +163,44 @@ def runtime(
     )
     artifacts = FakeArtifactPersister()
     saver = saver or InMemorySaver()
-    engine = build_workflow_engine(
-        config=AppConfig(
-            ticket_review_mode=TicketReviewMode.REVIEWED,
-            max_iterations=1,
-            retry_max_attempts=1,
-            retry_initial_interval=0.1,
-        ),
-        repositories=(RepoEntry(url=origin, trunk=trunk),),
-        agent_service=service,
-        git=RemoteGit(),
-        cache=FakeRepoCache(),
-        workspace=workspace,
-        merger=FakeBranchMerger(
-            consolidation_outcomes=[
-                ConsolidationOutcome(
-                    status=ConsolidationStatus.FAST_FORWARDED, feature_tip_sha="a" * 40
-                )
-                for _ in lanes
-            ],
-        ),
-        artifact_persister=artifacts,
-        ref_publisher=FakeRefPublisher(),
-        prompts=make_prompt_provider(),
-        skills=SUPPRESS_ALL_SKILLS,
-        gate=PassThroughGate(),
-        github_api=forge,
-        checkpointer=saver,
-        criteria=TrackerCriteria(tracker=port),
-        scope_tracker=port,
-    )
+    # Pair the fake filesystem/Git boundary with its immutable-source double.
+    # The production builder, native owner and graph remain actual consumers.
+    with pytest.MonkeyPatch.context() as external:
+        external.setattr(
+            "kodezart.composition.engine.SubprocessGitSourceReader", NativeSourceReader
+        )
+        engine = build_workflow_engine(
+            operation=native_operation(),
+            config=AppConfig(
+                ticket_review_mode=TicketReviewMode.REVIEWED,
+                max_iterations=1,
+                retry_max_attempts=1,
+                retry_initial_interval=0.1,
+            ),
+            repositories=(RepoEntry(url=origin, trunk=trunk),),
+            agent_service=service,
+            git=RemoteGit(),
+            cache=FakeRepoCache(),
+            workspace=workspace,
+            merger=FakeBranchMerger(
+                consolidation_outcomes=[
+                    ConsolidationOutcome(
+                        status=ConsolidationStatus.FAST_FORWARDED,
+                        feature_tip_sha="a" * 40,
+                    )
+                    for _ in lanes
+                ],
+            ),
+            artifact_persister=artifacts,
+            ref_publisher=FakeRefPublisher(),
+            prompts=make_prompt_provider(),
+            skills=SUPPRESS_ALL_SKILLS,
+            gate=PassThroughGate(),
+            github_api=forge,
+            checkpointer=saver,
+            criteria=TrackerCriteria(tracker=port),
+            scope_tracker=port,
+        )
     return Harness(engine, port, executor, service, artifacts, saver)
 
 

@@ -1,7 +1,7 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -33,6 +33,7 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
     AgentExecutor,
     McpToolResult,
+    NativeWriteGuard,
     PromptSetProvider,
     WorkflowEngine,
 )
@@ -1013,7 +1014,10 @@ class FakeChangePersister:
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
+        if before_commit is not None:
+            await before_commit()
         self.calls.append(
             {
                 "workspace_path": workspace_path,
@@ -1146,6 +1150,7 @@ class FakeAgentRunner:
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -1154,6 +1159,7 @@ class FakeAgentRunner:
                 "skills": skills,
                 "visibility": visibility,
                 "base_branch": base_branch,
+                "native_guard": native_guard,
             },
         )
         for event in self._events:

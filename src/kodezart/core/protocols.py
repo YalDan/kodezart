@@ -1,11 +1,16 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.run_event_stream import LaneRunEvent
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.amendment import (
+    AmendmentReport,
+    NativeWriterOutput,
+    NativeWriterStart,
+)
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.check_chain import CheckChainResult
@@ -359,6 +364,7 @@ class ChangePersister(Protocol):
         backup_ref_id_prefix: str,
         skills: SkillsSelection,
         visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -1405,6 +1411,7 @@ class AgentRunner(Protocol):
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: "NativeWriteGuard | None" = None,
     ) -> AsyncIterator[AgentEvent]:
         """Workflow mode with branch creation and persistence."""
         ...
@@ -1425,6 +1432,43 @@ class AgentRunner(Protocol):
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Execute in a pre-acquired workspace (no lifecycle)."""
+        ...
+
+
+@runtime_checkable
+class NativeWriteGuard(Protocol):
+    """A native session's live semantic and source authority before commit."""
+
+    async def begin(self, *, workspace_path: str) -> NativeWriterStart:
+        """Read the actual starting HEAD and render the current ruling registry."""
+        ...
+
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        """Independently reconcile actual writer claims before persistence."""
+        ...
+
+    async def require_current(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
+        ...
+
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Check local evidence before failed writer cleanup, without tracker I/O."""
         ...
 
 

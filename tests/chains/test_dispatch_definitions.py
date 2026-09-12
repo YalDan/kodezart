@@ -23,6 +23,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
 from kodezart.chains.ralph_loop import RalphLoop
 from kodezart.chains.ticket_generation import TicketGenerationLoop
 from kodezart.core.errors import NoStructuredOutputError
+from kodezart.core.protocols import NativeWriteGuard
 from kodezart.types.domain.agent import AgentEvent, ResultEvent
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.gating import RepoVisibility
@@ -187,6 +188,7 @@ class RecordingRunner:
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Record the dispatch and stream nothing."""
         self._record(agents, "stream_workflow", session_policy, prompt, skills)

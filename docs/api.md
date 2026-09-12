@@ -316,6 +316,19 @@ remediation never appears as a terminal delivery event. Consumers evaluating a
 later scope result must use these actual delivery records and current tracker
 obligations.
 
+### Native Amendment Events (1)
+
+| Event Type | Key Fields |
+| ---------- | ---------- |
+| `native_amendment` | `report`, `repeated` |
+
+The native precommit gate reports the actual departure claims it independently
+judged. An upheld record retains the original claim, reason and cited judgment;
+that proposed departure was not committed. Repeated entries count the exact
+subject kind, identity and reason across the current inner loop. This event can
+appear inside `scope_lane.event`. A reproduced ground requiring an unconfirmed
+tracker amendment refuses before commit and does not emit an applied amendment.
+
 ### Job Events (1)
 
 | Event Type     | Key Fields                                                     |

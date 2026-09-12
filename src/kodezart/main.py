@@ -164,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.checkpointer = checkpointer
         workflow_engine = build_workflow_engine(
             config=config,
+            operation=operation,
             repositories=operation.repos if operation is not None else (),
             agent_service=agent_service,
             git=stack.git,

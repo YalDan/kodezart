@@ -3,13 +3,27 @@
 import sys
 from collections.abc import AsyncGenerator, Sequence
 
+from pydantic import ValidationError
+
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentExecutor, ChangePersister, WorkspaceProvider
+from kodezart.core.protocols import (
+    AgentExecutor,
+    ChangePersister,
+    NativeWriteGuard,
+    WorkspaceProvider,
+)
 from kodezart.domain.agent import generate_workspace_id
+from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
-from kodezart.types.domain.agent import AgentEvent, ResultEvent
+from kodezart.types.domain.agent import (
+    NATIVE_WRITER_SCHEMA,
+    AgentEvent,
+    NativeAmendmentEvent,
+    ResultEvent,
+)
+from kodezart.types.domain.amendment import NativeWriterOutput, NativeWriterStart
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -134,6 +148,7 @@ class AgentService:
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Workflow mode: acquire, execute, persist, release."""
         effective_branch = branch_name or ""
@@ -155,6 +170,7 @@ class AgentService:
             visibility=visibility,
             persist_branch=effective_ralph,
             cache_key=cache_key,
+            native_guard=native_guard,
         ):
             if isinstance(event, ResultEvent):
                 event = event.model_copy(
@@ -183,6 +199,7 @@ class AgentService:
         output_format: dict[str, object] | None = None,
         persist_branch: str | None = None,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
@@ -213,25 +230,87 @@ class AgentService:
             yield build_error_event(exc)
             return
 
+        retain_workspace = False
         try:
+            native_start: NativeWriterStart | None = None
+            if native_guard is not None:
+                if self._persister is None or not persist_branch:
+                    raise NativeWriteRefusalError(
+                        "Native persistence is not configured"
+                    )
+                native_start = await native_guard.begin(workspace_path=workspace_path)
+                prompt += "\n\n" + native_start.instructions
+                output_format = {"type": "json_schema", "schema": NATIVE_WRITER_SCHEMA}
             buffered_result: ResultEvent | None = None
-            async for event in self._executor.stream(
-                prompt=prompt,
-                cwd=workspace_path,
-                permission_mode=permission_mode,
-                allowed_tools=allowed_tools,
-                skills=skills,
-                session_type=session_type,
-                run_identity=run_identity,
-                agents=agents,
-                session_policy=session_policy,
-                session_id=session_id,
-                output_format=output_format,
-            ):
-                if isinstance(event, ResultEvent):
-                    buffered_result = event
-                else:
-                    yield event
+            try:
+                async for event in self._executor.stream(
+                    prompt=prompt,
+                    cwd=workspace_path,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    skills=skills,
+                    session_type=session_type,
+                    run_identity=run_identity,
+                    agents=agents,
+                    session_policy=session_policy,
+                    session_id=session_id,
+                    output_format=output_format,
+                ):
+                    if isinstance(event, ResultEvent):
+                        buffered_result = event
+                    else:
+                        yield event
+            except BaseException:
+                if native_guard is not None and native_start is not None:
+                    # The executor may fail or be cancelled after moving HEAD.
+                    # Read only local identity; a tracker outage cannot erase
+                    # this workspace or replace the original writer failure.
+                    try:
+                        await native_guard.require_unchanged_head(
+                            workspace_path=workspace_path,
+                            start=native_start,
+                        )
+                    except BaseException:
+                        retain_workspace = True
+                        raise
+                raise
+
+            before_commit = None
+            if native_guard is not None and native_start is not None:
+                await native_guard.require_current(
+                    workspace_path=workspace_path,
+                    start=native_start,
+                )
+                if (
+                    buffered_result is None
+                    or buffered_result.is_error
+                    or buffered_result.structured_output is None
+                ):
+                    raise NativeWriteRefusalError(
+                        "The native writer returned no claim report"
+                    )
+                try:
+                    output = NativeWriterOutput.model_validate(
+                        buffered_result.structured_output
+                    )
+                except ValidationError as exc:
+                    raise NativeWriteRefusalError(
+                        "The native writer claim report is malformed"
+                    ) from exc
+                report = await native_guard.judge(
+                    workspace_path=workspace_path,
+                    start=native_start,
+                    output=output,
+                )
+                yield NativeAmendmentEvent(report=report)
+                if report.upheld:
+                    return
+
+                async def before_commit() -> None:
+                    await native_guard.require_current(
+                        workspace_path=workspace_path,
+                        start=native_start,
+                    )
 
             if persist_branch and self._persister and buffered_result:
                 backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
@@ -242,6 +321,7 @@ class AgentService:
                     backup_ref_id_prefix=backup_ref_id_prefix,
                     skills=skills,
                     visibility=visibility,
+                    before_commit=before_commit,
                 )
                 if persist_result:
                     buffered_result = buffered_result.model_copy(
@@ -253,11 +333,20 @@ class AgentService:
 
             if buffered_result:
                 yield buffered_result
+        except NativeWriteRefusalError:
+            retain_workspace = True
+            raise
         finally:
-            try:
-                await self._workspace.release(workspace_path)
-            except Exception as cleanup_exc:
+            if retain_workspace:
                 await self._log.awarning(
-                    "workspace_cleanup_failed",
-                    error=str(cleanup_exc),
+                    "native_writer_workspace_retained",
+                    workspace_path=workspace_path,
                 )
+            else:
+                try:
+                    await self._workspace.release(workspace_path)
+                except Exception as cleanup_exc:
+                    await self._log.awarning(
+                        "workspace_cleanup_failed",
+                        error=str(cleanup_exc),
+                    )
