@@ -125,6 +125,12 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     )
     _bind_absentable(
         bindings,
+        "issue_labels",
+        dict(config.issue_labels),
+        absent=not config.issue_labels,
+    )
+    _bind_absentable(
+        bindings,
         "marker_prefixes",
         dict(config.marker_prefixes),
         absent=not config.marker_prefixes,

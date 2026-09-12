@@ -115,3 +115,10 @@ registries.
   the next pass reads (KOD-245); no separate checkpoint document carries it,
   in any prompt set (KOD-306). `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.
+
+
+## Native OperationConfig consumers
+
+| OperationConfig field | Actual native consumer |
+| --- | --- |
+| issue_labels | composition/tracker.py::build_tracker |
