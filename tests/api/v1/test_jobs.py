@@ -41,6 +41,8 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.criteria import ExecutionCriterion
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -333,7 +335,8 @@ class GatedQualityGate:
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
@@ -353,7 +356,9 @@ class GatedQualityGate:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             cache_key=cache_key,
+            run_identity=run_identity,
             repo_visibility=repo_visibility,
         ):
             yield event
