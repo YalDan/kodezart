@@ -26,6 +26,10 @@ class IssueLabelReadError(Exception):
         super().__init__(f"issue label {classification!r} could not be read: {reason}")
 
 
+class GitRepositoryError(ValueError):
+    """A requested local path does not identify an available Git repository."""
+
+
 class GitOperationError(RuntimeError):
     """A Git command failed or returned an invalid provider response."""
 
