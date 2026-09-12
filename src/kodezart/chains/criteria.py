@@ -2,6 +2,7 @@
 
 from langchain_core.runnables import RunnableConfig
 
+from kodezart.core.errors import TrackerAccessDeniedError, TrackerUnavailableError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import FireCriteriaReader, FireCriteriaSource, TrackerPort
 from kodezart.domain.errors import (
@@ -103,7 +104,13 @@ class TrackerCriteria:
         """Capture the admitted subject; an outage is never cached authority."""
         try:
             return await self._tracker.read_fire_spec(issue_key=issue_key)
-        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
+        except (
+            ConnectionError,
+            TimeoutError,
+            TransientAPIError,
+            TrackerUnavailableError,
+            TrackerAccessDeniedError,
+        ) as exc:
             raise FireSpecEntryError(
                 issue_key=issue_key,
                 reason="the tracker subject spec could not be read",
@@ -113,7 +120,13 @@ class TrackerCriteria:
         """Refresh obligations without replacing the captured subject text."""
         try:
             owed = await self._read_owed_criteria(spec)
-        except (ConnectionError, TimeoutError, TransientAPIError) as exc:
+        except (
+            ConnectionError,
+            TimeoutError,
+            TransientAPIError,
+            TrackerUnavailableError,
+            TrackerAccessDeniedError,
+        ) as exc:
             raise FireSpecEntryError(
                 issue_key=spec.subject,
                 reason="current tracker criteria could not be read",
