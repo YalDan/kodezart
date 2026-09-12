@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import RulingRecordReadError
 from kodezart.domain.rulings import render_ruling
 from kodezart.services.ruling_records import RulingRecordReader
@@ -170,9 +170,7 @@ async def test_unreachable_native_listing_retains_typed_cause(
         monkeypatch.setattr(
             tracker,
             "list_comments",
-            AsyncMock(
-                side_effect=McpTransportError("unreachable", server_name="fixture")
-            ),
+            AsyncMock(side_effect=TrackerUnavailableError("unreachable")),
         )
     else:
         server._tool_errors["list_comments"] = "unreachable"

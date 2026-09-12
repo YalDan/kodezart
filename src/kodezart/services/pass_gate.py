@@ -67,9 +67,9 @@ from datetime import datetime
 from typing import assert_never
 
 from kodezart.core.errors import (
-    McpTransportError,
     PassGateScopeError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
@@ -151,7 +151,7 @@ class PassGate:
             for container in self._containers(signal):
                 try:
                     changed.extend(await self._observe(signal, container))
-                except (McpTransportError, TrackerProtocolError) as exc:
+                except (TrackerUnavailableError, TrackerProtocolError) as exc:
                     unanswerable.append(f"{signal.value}@{container}")
                     await self._log.awarning(
                         "pass_gate_signal_unanswerable",

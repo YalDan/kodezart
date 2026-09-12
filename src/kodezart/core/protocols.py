@@ -610,7 +610,9 @@ class RunRecordSink(Protocol):
     because WHERE a row lands is vendor knowledge — a data-source page on
     one backend, a document append on another — while WHAT is written is
     the domain's one line.  The recorder service routes by the declared
-    system and never learns either vendor's shape.
+    system and never learns either vendor's shape. Refusals leave the sink
+    as RunRecordWriteError, preserving the failure classification and
+    concrete cause. The recorder never retries an unanswered publication.
 
     Verification is part of the same vendor knowledge, and it is asked
     PER RUN: whether THIS run's row is there, never whether the

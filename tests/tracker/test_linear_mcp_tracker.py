@@ -19,11 +19,10 @@ from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
-    McpCallUnansweredError,
-    McpCredentialRefusedError,
-    McpTransportError,
+    TrackerAccessDeniedError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.core.protocols import McpToolResult
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
@@ -408,7 +407,7 @@ class TestCapabilityProbe:
             transport_failures={"list_issues": 1},
         )
 
-        with pytest.raises(McpTransportError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker_over(server).verify_scan_capability(
                 signals=[PassSignal.issues_changed],
             )
@@ -430,7 +429,7 @@ class TestCapabilityProbe:
             tool_errors={"list_issues": "the request failed with status 403"},
         )
 
-        with pytest.raises(McpTransportError, match="403"):
+        with pytest.raises(TrackerUnavailableError, match="403"):
             await tracker_over(server).verify_scan_capability(
                 signals=[PassSignal.issues_changed],
             )
@@ -451,15 +450,13 @@ class TestTransientRetry:
         assert len(server.tool_calls("get_issue")) == 3
 
     async def test_exhausting_the_budget_raises_the_transient_error(self) -> None:
-        from kodezart.domain.errors import TransientAPIError
-
         server = FakeLinearMcpServer(
             issues=[FakeMcpIssue(id="T-3")],
             state_types=STATE_TYPES,
             transient_failures={"get_issue": 5},
         )
         tracker = tracker_over(server, max_retries=1)
-        with pytest.raises(TransientAPIError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker.read_issue(issue_key="T-3")
         assert len(server.tool_calls("get_issue")) == 2
 
@@ -490,7 +487,7 @@ class TestTransportRetry:
             transport_failures={"get_issue": 5},
         )
         tracker = tracker_over(server, max_retries=1)
-        with pytest.raises(McpTransportError):
+        with pytest.raises(TrackerUnavailableError):
             await tracker.read_issue(issue_key="T-5")
         assert len(server.tool_calls("get_issue")) == 2
 
@@ -514,7 +511,7 @@ class TestARefusedCredentialIsNeverRetried:
         tracker = tracker_over(server, max_retries=3)
 
         served = await tracker.read_issue(issue_key="T-6")
-        with pytest.raises(McpCredentialRefusedError):
+        with pytest.raises(TrackerAccessDeniedError):
             await tracker.read_issue(issue_key="T-6")
 
         assert served.issue_key == "T-6"
@@ -532,7 +529,7 @@ class TestARefusedCredentialIsNeverRetried:
 
         with (
             structlog.testing.capture_logs() as logs,
-            pytest.raises(McpCredentialRefusedError),
+            pytest.raises(TrackerAccessDeniedError),
         ):
             await tracker.read_issue(issue_key="T-7")
 
@@ -1231,7 +1228,7 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         try:
             tracker = tracker_over(workspace, caller=caller, max_retries=0)
             with structlog.testing.capture_logs() as logs:
-                with pytest.raises(McpCallUnansweredError):
+                with pytest.raises(TrackerUnavailableError):
                     await tracker.read_issue(issue_key="T-9")
                 issue = await tracker.read_issue(issue_key="T-9")
         finally:
@@ -1277,7 +1274,7 @@ class TestARetryBudgetIsNotSpentOnASessionThatDied:
         try:
             tracker = tracker_over(workspace, caller=caller, max_retries=2)
             with structlog.testing.capture_logs() as logs:
-                with pytest.raises(McpCallUnansweredError):
+                with pytest.raises(TrackerUnavailableError):
                     await tracker.update_issue(issue_key="T-9", title="renamed")
         finally:
             await caller.close()

@@ -5,9 +5,9 @@ import json
 from pydantic import ValidationError
 
 from kodezart.core.errors import (
-    McpCredentialRefusedError,
-    McpTransportError,
+    TrackerAccessDeniedError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.core.protocols import TrackerCommentReader
 from kodezart.domain.comment_markers import compose_comment_marker
@@ -60,8 +60,8 @@ class EscalationRecordReader:
         try:
             comments = await self._tracker.list_comments(issue_key=issue_key)
         except (
-            McpTransportError,
-            McpCredentialRefusedError,
+            TrackerUnavailableError,
+            TrackerAccessDeniedError,
             TrackerProtocolError,
             TransientAPIError,
             ValidationError,

@@ -508,7 +508,7 @@ class TestLinearRecordSink:
         ``True`` would silently skip one; the sink guesses neither."""
         caller = CapturingCaller({"get_document": {"id": "destination-1"}})
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.TRACKER),
                 record=_record(),
@@ -591,7 +591,7 @@ class TestNotionRecordSink:
             {"API-retrieve-a-data-source": {"properties": {"Date": {"type": "date"}}}},
         )
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).write_record(
                 destination=_destination(DocumentSystem.KNOWLEDGE),
                 record=_record(),
@@ -720,7 +720,7 @@ class TestNotionRecordSink:
             },
         )
 
-        with pytest.raises(McpTransportError) as caught:
+        with pytest.raises(RunRecordWriteError) as caught:
             await self._sink(caller).holds_record(
                 destination=_destination(DocumentSystem.KNOWLEDGE),
                 record=_record(),

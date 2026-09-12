@@ -20,6 +20,7 @@ from kodezart.adapters.in_repo_prompt_registry import (
     InRepoPromptRegistry,
     default_sets_root,
 )
+from kodezart.adapters.record_failures import record_failure_boundary
 from kodezart.composition.records import RECORD_KIND_BY_PASS
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -4497,11 +4498,12 @@ class RefusingRecordSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> bool:
-        raise self.failure(
-            "the record destination could not be read",
-            server_name="fixture-knowledge",
-            tool_name="API-query-data-source",
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            raise self.failure(
+                "the record destination could not be read",
+                server_name="fixture-knowledge",
+                tool_name="API-query-data-source",
+            )
 
     async def write_record(
         self,
@@ -4509,11 +4511,12 @@ class RefusingRecordSink:
         destination: RecordDestination,
         record: RunRecord,
     ) -> None:
-        raise self.failure(
-            "the record destination refused the row",
-            server_name="fixture-knowledge",
-            tool_name="API-post-page",
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            raise self.failure(
+                "the record destination refused the row",
+                server_name="fixture-knowledge",
+                tool_name="API-post-page",
+            )
 
 
 class BrokenRecordSink:
