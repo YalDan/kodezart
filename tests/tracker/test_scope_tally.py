@@ -1,7 +1,6 @@
 """Actual scope membership and configured phase labels feed the shared signal."""
 
 import asyncio
-import json
 from dataclasses import dataclass
 
 import pytest
@@ -129,7 +128,7 @@ async def test_actual_marker_barrier_zero_partial_and_complete_rosters(
     alarm = await tally.observe(phase=phase)
     assert alarm is not None
     assert alarm.subject.scope_key == PROJECT.key
-    assert json.loads(alarm.readings[3].value) == ["one", "two"]
+    assert alarm.readings[3].value.value == ("one", "two")
     assert alarm.raised_at_sha == "supervisor-tick"
     assert alarm.raised_by == "run/holder"
     assert (
@@ -174,7 +173,7 @@ async def test_record_classification_does_not_prune_deliverable_descendants(tall
     tally.labels("one", "criteria")
     alarm = await tally.observe()
     assert alarm is not None
-    assert json.loads(alarm.readings[3].value) == ["one", "two"]
+    assert alarm.readings[3].value.value == ("one", "two")
     tally.read_only()
 
 
@@ -184,7 +183,7 @@ async def test_native_scope_addresses_and_milestone_query_are_preserved(tally, s
     alarm = await tally.observe(scope=scope)
     assert alarm is not None
     assert alarm.subject.scope_key == scope.key
-    assert json.loads(alarm.readings[2].value)["kind"] == scope.kind.value
+    assert alarm.readings[2].value.value == scope
     tally.read_only()
 
 
@@ -336,7 +335,7 @@ async def test_issue_subtree_roster_retains_its_native_address(tally):
     tally.labels("one", "criteria")
     alarm = await tally.observe(scope=scope)
     assert alarm is not None
-    assert json.loads(alarm.readings[3].value) == ["one"]
+    assert alarm.readings[3].value.value == ("one",)
     assert alarm.subject.scope_key == "one"
     tally.labels("one", "body", "criteria")
     assert await tally.observe(scope=scope) is None

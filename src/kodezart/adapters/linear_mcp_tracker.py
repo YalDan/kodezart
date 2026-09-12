@@ -1834,7 +1834,13 @@ class LinearMcpTracker:
         await self.read_run_alarm(
             issue_key=issue_key, subject=alarm.subject, signal=alarm.signal
         )
-        await self.upsert_comment(
+
+        def validate_existing(stored: TrackerComment) -> None:
+            self._parse_alarm_comment(
+                stored=stored, subject=alarm.subject, signal=alarm.signal
+            )
+
+        await self._upsert_comment(
             target=issue_key,
             marker=run_alarm_marker(
                 subject=alarm.subject,
@@ -1843,6 +1849,7 @@ class LinearMcpTracker:
             ),
             body=render_run_alarm(alarm=alarm),
             holder=holder,
+            validate_existing=validate_existing,
         )
 
     async def read_run_alarm(
@@ -1859,6 +1866,12 @@ class LinearMcpTracker:
         )
         if stored is None:
             return None
+        return self._parse_alarm_comment(stored=stored, subject=subject, signal=signal)
+
+    def _parse_alarm_comment(
+        self, *, stored: TrackerComment, subject: AlarmSubject, signal: AlarmSignal
+    ) -> RunAlarm:
+        """Decode one actual native snapshot, preserving a typed protocol refusal."""
         try:
             return parse_run_alarm(
                 body=stored.body,
@@ -1939,7 +1952,26 @@ class LinearMcpTracker:
     async def upsert_comment(
         self, *, target: str, marker: str, body: str, holder: str | None = None
     ) -> TrackerComment:
-        """Resolve the marker across the whole log before creating or editing."""
+        """Resolve the marker through the single attributed, leased writer."""
+        return await self._upsert_comment(
+            target=target, marker=marker, body=body, holder=holder
+        )
+
+    async def _upsert_comment(
+        self,
+        *,
+        target: str,
+        marker: str,
+        body: str,
+        holder: str | None,
+        validate_existing: Callable[[TrackerComment], None] | None = None,
+    ) -> TrackerComment:
+        """Validate the exact addressed snapshot before issuing its mutation.
+
+        The synchronous precondition sees the same comment used by this
+        writer, after attribution and ownership checks. The backend offers
+        no conditional update to fence changes unseen after that read.
+        """
         content = marked_comment_body(marker=marker, body=body)
         existing = comment_under_marker(
             target=target,
@@ -1957,6 +1989,8 @@ class LinearMcpTracker:
                     surface=surface, author=existing.author_key
                 )
         await self._require_surface_holder(surface=surface, holder=holder)
+        if existing is not None and validate_existing is not None:
+            validate_existing(existing)
         if existing is None:
             return await self.post_comment(issue_key=target, body=content)
         if existing.body == content:
