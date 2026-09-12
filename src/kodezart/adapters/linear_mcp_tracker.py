@@ -988,15 +988,20 @@ class LinearMcpTracker:
             self._validate(LinearPlanningIssueWire, payload, _TOOL_GET_ISSUE)
         )
 
-    async def read_labeled_issues(
-        self, *, classification: str
-    ) -> Sequence[TrackerIssue]:
+    def _classification_label(self, classification: str, *, stops: str) -> str:
         label = self._issue_labels.get(classification)
         if label is None or not label.strip():
             raise OperationMemberAbsentError(
-                missing=f"issue_labels[{classification!r}]",
-                stops="complete labeled issue membership cannot be read",
+                missing=f"issue_labels[{classification!r}]", stops=stops
             )
+        return label
+
+    async def read_labeled_issues(
+        self, *, classification: str
+    ) -> Sequence[TrackerIssue]:
+        label = self._classification_label(
+            classification, stops="complete labeled issue membership cannot be read"
+        )
         arguments: dict[str, object] = {
             "label": label,
             "includeArchived": True,
@@ -1047,22 +1052,18 @@ class LinearMcpTracker:
     def require_scope_plan_reads(self) -> None:
         """A clean plan must be able to see both criteria and open decisions."""
         for classification in ("criterion", "decision"):
-            if classification not in self._issue_labels:
-                raise OperationMemberAbsentError(
-                    missing=f"issue_labels[{classification!r}]",
-                    stops="scope plan barriers cannot be read",
-                )
+            self._classification_label(
+                classification, stops="scope plan barriers cannot be read"
+            )
 
     def require_issue_classification_reads(
         self, *, additional_keys: frozenset[str] = frozenset()
     ) -> None:
         self.require_scope_plan_reads()
         for key in sorted({"criterion", "decision", "tracker", *additional_keys}):
-            if not self._issue_labels.get(key, "").strip():
-                raise OperationMemberAbsentError(
-                    missing=f"issue_labels[{key!r}]",
-                    stops="required issue classifications cannot be read",
-                )
+            self._classification_label(
+                key, stops="required issue classifications cannot be read"
+            )
 
     async def read_issue_state_change(
         self, *, issue_key: str
@@ -1921,14 +1922,16 @@ class LinearMcpTracker:
     async def set_issue_classification(
         self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
-        if classification not in self._issue_labels:
-            raise OperationMemberAbsentError(
-                missing=f"issue_labels[{classification!r}]",
-                stops="this issue classification cannot be written",
+        label = self._classification_label(
+            classification, stops="this issue classification cannot be written"
+        )
+        if holder is not None:
+            self._classification_label(
+                "criterion", stops="the classification write surface cannot be read"
             )
 
         async def read_current() -> TrackerIssue:
-            current = await self.read_issue(issue_key=issue_key)
+            current = await self.read_planning_issue(issue_key=issue_key)
             if current.issue_key != issue_key:
                 raise IssueLabelReadError(
                     classification=classification,
@@ -1955,18 +1958,16 @@ class LinearMcpTracker:
                 return current
             payload = await self._send(
                 _TOOL_SAVE_ISSUE,
-                {"id": issue_key, "addLabels": [self._issue_labels[classification]]},
+                {"id": issue_key, "addLabels": [label]},
             )
-            return self._saved_issue(
-                payload, written={"addLabels": [self._issue_labels[classification]]}
-            )
+            return self._saved_issue(payload, written={"addLabels": [label]})
 
         receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
         if holder is None:
             return receipt
         # This read is outside the mutation retry. Failure cannot resend a
         # classification that the server already accepted.
-        current = await self.read_issue(issue_key=issue_key)
+        current = await self.read_planning_issue(issue_key=issue_key)
         if current.issue_key != issue_key or classification not in current.issue_labels:
             raise IssueLabelReadError(
                 classification=classification,

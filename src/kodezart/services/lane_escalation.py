@@ -64,6 +64,7 @@ class LaneEscalationWriter:
                 missing="issue_labels['decision']",
                 stops="the escalation cannot mark its owning issue for decision",
             )
+        self._tracker.require_scope_plan_reads()
         marker = compose_comment_marker(
             prefixes=self._operation.marker_prefixes,
             purpose="escalation",
@@ -106,7 +107,7 @@ class LaneEscalationWriter:
                 writer=OutboundDestination.TRACKER_COMMENT.value,
                 categories=[],
             )
-        current = await self._tracker.read_issue(issue_key=escalation.issue_id)
+        current = await self._tracker.read_planning_issue(issue_key=escalation.issue_id)
         if current.issue_key != escalation.issue_id:
             raise IssueLabelReadError(
                 classification="decision",
