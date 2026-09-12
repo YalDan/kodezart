@@ -1084,12 +1084,15 @@ class TrackerPort(
         ...
 
     async def set_issue_classification(
-        self, *, issue_key: str, classification: str
+        self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
         """Add one configured semantic classification, reading before writing.
 
         An already present value writes nothing. Unrelated classifications
         and all workflow/queue state survive unchanged.
+        A supplied holder must retain this issue's ISSUE_LABEL_SET grant
+        after internal reads and on every known-unsent retry. Re-read its
+        actual classification outside the mutation retry before returning.
         """
         ...
 
