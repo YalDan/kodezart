@@ -768,6 +768,13 @@ def refuse_combined_issue_write(arguments: Mapping[str, object]) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class _CriterionCreation:
+    """A completed save receipt requiring readback outside the retry scope."""
+
+    saved: TrackerIssue
+
+
+@dataclass(frozen=True, slots=True)
 class _SplitCreation:
     """Actual native save receipt and the facts needed for its separate readback."""
 
@@ -3718,47 +3725,56 @@ class LinearMcpTracker:
             raise CriterionReadError(
                 issue_key=parent_key, reason="criterion title is empty"
             )
-        children = await self.read_criteria(issue_key=parent_key)
-        existing = existing_criterion(
-            parent_key=parent_key, check=check, children=children
-        )
-        if existing is not None:
-            return existing
-        parent = await self.read_issue(issue_key=parent_key)
-        if parent.issue_key != parent_key or parent.team_key is None:
-            raise CriterionReadError(
-                issue_key=parent_key, reason="criterion parent has no declared team"
+
+        async def attempt() -> TrackerIssue | _CriterionCreation:
+            children = await self.read_criteria(issue_key=parent_key)
+            existing = existing_criterion(
+                parent_key=parent_key, check=check, children=children
             )
-        label = self._issue_labels.get("criterion")
-        if not label:
-            raise OperationMemberAbsentError(
-                missing="issue_labels.criterion", stops="criterion creation"
+            if existing is not None:
+                return existing
+            parent = await self.read_issue(issue_key=parent_key)
+            if parent.issue_key != parent_key or parent.team_key is None:
+                raise CriterionReadError(
+                    issue_key=parent_key, reason="criterion parent has no declared team"
+                )
+            label = self._issue_labels.get("criterion")
+            if not label:
+                raise OperationMemberAbsentError(
+                    missing="issue_labels.criterion", stops="criterion creation"
+                )
+            if label == self._scope_labels.get("approved"):
+                raise CriterionReadError(
+                    issue_key=parent_key,
+                    reason="criterion classification aliases human approval",
+                )
+            team = self._team_identifier(parent.team_key)
+            state = await self._unstarted_state_id(team_id=team, issue_key=parent_key)
+            surface = WritableSurface(
+                kind=SurfaceKind.CRITERION_CHILD_SET,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
             )
-        if label == self._scope_labels.get("approved"):
-            raise CriterionReadError(
-                issue_key=parent_key,
-                reason="criterion classification aliases human approval",
+            await self._require_surface_holder(surface=surface, holder=holder)
+            created = self._saved_issue(
+                await self._send(
+                    _TOOL_SAVE_ISSUE,
+                    {
+                        "title": title,
+                        "description": body,
+                        "team": team,
+                        "parentId": parent_key,
+                        "labels": [label],
+                        "state": state,
+                    },
+                )
             )
-        team = self._team_identifier(parent.team_key)
-        state = await self._unstarted_state_id(team_id=team, issue_key=parent_key)
-        surface = WritableSurface(
-            kind=SurfaceKind.CRITERION_CHILD_SET,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
-        )
-        await self._require_surface_holder(surface=surface, holder=holder)
-        created = self._saved_issue(
-            await self._call(
-                _TOOL_SAVE_ISSUE,
-                {
-                    "title": title,
-                    "description": body,
-                    "team": team,
-                    "parentId": parent_key,
-                    "labels": [label],
-                    "state": state,
-                },
-            )
-        )
+            return _CriterionCreation(saved=created)
+
+        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if isinstance(written, TrackerIssue):
+            return written
+        created = written.saved
+        # Readback failure must never resend the completed creation.
         current = await self.read_issue(issue_key=created.issue_key)
         if (
             current.issue_key != created.issue_key
