@@ -752,3 +752,17 @@ configuration refuses scheduling. Retired flat Organize bound spellings remain
 rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.
+
+## Tracker write verification
+
+Configured tracker-writing owners require `AppConfig.write_back` with
+`max_verify_rounds`, an integer from 1 through 10 with no default. Set
+`KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS`, or declare the same field in the
+`KODEZART_WRITE_BACK` JSON object. The canonical verifier uses this bound
+independently of Organize admission and convergence. Its halt evidence names
+`write_back.max_verify_rounds` and retains every actual verification result.
+
+The retired flat `write_back_max_verify_rounds` field and its uppercase
+`KODEZART_` environment spelling are refused; migrate to the nested spelling.
+Deployments without a configured tracker-writing owner can leave the section
+absent. A configured owner with no verification budget refuses at startup.

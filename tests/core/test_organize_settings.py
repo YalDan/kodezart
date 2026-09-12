@@ -67,6 +67,7 @@ async def test_environment_bounds_reach_the_tick_and_stop_after_one_author(
 ):
     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS", "1")
     monkeypatch.setenv("KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS", "7")
+    monkeypatch.setenv("KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS", "4")
     config = AppConfig()
     assert config.organize.max_admission_rounds == 1
     assert config.organize.max_convergence_rounds == 7
