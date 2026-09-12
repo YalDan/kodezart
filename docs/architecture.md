@@ -308,8 +308,28 @@ cannot quietly escape it.
 
 ### Permission Modes
 
-- `plan` - Read-only tools, agent cannot modify files
-- `bypassPermissions` - Full tool access including `Edit` and `Write`
+Application ports and execution contexts carry `PermissionMode` from the domain
+session vocabulary: `INTERACTIVE`, `ACCEPT_EDITS`, `PLAN`, or `UNATTENDED`.
+The Claude adapters translate these to `default`, `acceptEdits`, `plan`, and
+`bypassPermissions` respectively. Tool selection remains an independent input.
+
+HTTP retains its existing `plan` and `bypassPermissions` values and defaults
+(query: `plan`; workflow/fire: `bypassPermissions`). The handler translates them
+before invoking the application. HTTP responses do not expose the internal
+permission value. Checkpoint configuration round-trips the domain enum; there
+is no supported cross-version workflow-resume API.
+
+Application callers select one of four existing `ToolPreset` bundles:
+evaluation, delegated evaluation, authoring, or implementation. The SDK option
+mapper expands these to the native ordered tool names. `AllowedTools` also
+accepts an explicit string list, passed through without parsing, reordering,
+or restricting future, scoped, or MCP selectors. Named subagents retain their
+explicit selector lists.
+
+HTTP continues to accept only explicit lists with its existing defaults and
+schemas. A preset is one whole value in internal submission/context models;
+an explicit list containing the same word stays a list after JSON or checkpoint
+serialization. Permission mode and knowledge-server grants remain independent.
 
 ### Structured Output
 
