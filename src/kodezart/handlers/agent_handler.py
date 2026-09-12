@@ -159,7 +159,7 @@ class AgentHandler:
                 msg = "Job queue not configured"
                 raise RuntimeError(msg)
             async for event in self._queue.attach(job_id=job_id):
-                yield event.model_dump(by_alias=True, exclude_none=True)
+                yield event.model_dump(mode="json", by_alias=True, exclude_none=True)
         except Exception as exc:
             yield await self._egress_error(exc)
 
@@ -181,6 +181,6 @@ class AgentHandler:
             queue_position=queue_position,
             status_url=status_url,
             stream_url=stream_url,
-        ).model_dump(by_alias=True, exclude_none=True)
+        ).model_dump(mode="json", by_alias=True, exclude_none=True)
         async for payload in self.attach_job(job_id=record.job_id):
             yield payload
