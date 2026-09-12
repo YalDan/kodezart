@@ -31,11 +31,10 @@ def selected_operation(operation, case="green"):
     return operation.model_copy(update={"repos": [repository]})
 
 
-def verifier(tracker, operation, ci, reader):
+def verifier(tracker, operation, ci):
     return AuditForgeVerifier(
         tracker=tracker,
         ci=ci,
-        observations=reader,
         operation=operation,
         config=AppConfig(_env_file=None, delivery_red_rerun_max_attempts=1),
     )
@@ -66,11 +65,9 @@ async def test_native_sweep_preserves_exact_forge_observation_and_mandate(
     await completed(tracker, server)
     op = selected_operation(operation, case)
     before = tracker_writes()
-    async with forge(backend, case) as (ci, reader, calls):
+    async with forge(backend, case) as (ci, calls):
         child, parent = (
-            await build(
-                selected_op=op, selected_forge=verifier(tracker, op, ci, reader)
-            ).run()
+            await build(selected_op=op, selected_forge=verifier(tracker, op, ci)).run()
         ).observations
         assert child.forge_unavailable_reason is None
         observed = child.forge
@@ -133,8 +130,8 @@ async def test_noncompleted_criteria_keep_other_arms_without_entering_forge(
     build, _, _, _, _, _, _, operation = setup
     await state(tracker, server, CHILD, "In Review", kind)
     op = selected_operation(operation)
-    async with forge("fake", "green") as (ci, reader, _):
-        selected = verifier(tracker, op, ci, reader)
+    async with forge("fake", "green") as (ci, _):
+        selected = verifier(tracker, op, ci)
         original = selected.observe
         invoked = []
 
@@ -167,7 +164,7 @@ async def test_unavailable_inputs_are_retained_without_clean_forge_claim(
             selected_op=op,
             selected_forge=None
             if missing == "verifier"
-            else verifier(tracker, op, None, None),
+            else verifier(tracker, op, None),
         ).run()
     ).observations[0]
     if missing == "capabilities":
@@ -193,11 +190,9 @@ async def test_forge_survives_independent_failure_and_retains_raw_mandate_failur
             raise RuntimeError(f"unavailable {failed_arm} session")
 
     executor.during = failing
-    async with forge("fake", "work") as (ci, reader, _):
+    async with forge("fake", "work") as (ci, _):
         child = (
-            await build(
-                selected_op=op, selected_forge=verifier(tracker, op, ci, reader)
-            ).run()
+            await build(selected_op=op, selected_forge=verifier(tracker, op, ci)).run()
         ).observations[0]
     assert child.forge.verdict is AuditVerdict.REFUTED
     assert child.forge.red.red_class is CheckRedClass.WORK_DEFECT
@@ -220,11 +215,9 @@ async def test_missing_own_evidence_never_borrows_a_parent_grading(
     await tracker.update_issue(issue_key=ROOT, body=BODY)
     await tracker.update_issue(issue_key=CHILD, body=f"**Check:** {CHECK}")
     op = selected_operation(operation)
-    async with forge("fake", "green") as (ci, reader, _):
+    async with forge("fake", "green") as (ci, _):
         child = (
-            await build(
-                selected_op=op, selected_forge=verifier(tracker, op, ci, reader)
-            ).run()
+            await build(selected_op=op, selected_forge=verifier(tracker, op, ci)).run()
         ).observations[0]
         assert child.forge is child.forge_report is None
         assert child.forge_unavailable_reason
@@ -237,8 +230,8 @@ async def test_a_mandate_report_cannot_replace_the_actual_forge_claim(
     build, _, _, _, _, _, _, operation = setup
     await completed(tracker, server)
     op = selected_operation(operation)
-    async with forge("fake", "work") as (ci, reader, _):
-        sweep = build(selected_op=op, selected_forge=verifier(tracker, op, ci, reader))
+    async with forge("fake", "work") as (ci, _):
+        sweep = build(selected_op=op, selected_forge=verifier(tracker, op, ci))
         original = sweep._mandates.complete
 
         async def changed(request):
@@ -267,8 +260,8 @@ async def test_forge_observation_must_equal_the_collected_native_criterion(
     build, _, _, _, _, _, _, operation = setup
     await completed(tracker, server)
     op = selected_operation(operation)
-    async with forge("fake", "work") as (ci, reader, _):
-        selected = verifier(tracker, op, ci, reader)
+    async with forge("fake", "work") as (ci, _):
+        selected = verifier(tracker, op, ci)
         original = selected.observe
 
         async def corrupted(request):
@@ -303,7 +296,7 @@ async def test_forge_and_mandate_cancellation_propagate_without_partial_result(
         entered.set()
         await asyncio.Future()
 
-    async with forge("fake", "work") as (ci, reader, _):
+    async with forge("fake", "work") as (ci, _):
         if phase == "watch":
 
             async def watching(**kwargs):
@@ -318,9 +311,7 @@ async def test_forge_and_mandate_cancellation_propagate_without_partial_result(
 
             executor.during = during
         task = asyncio.create_task(
-            build(
-                selected_op=op, selected_forge=verifier(tracker, op, ci, reader)
-            ).run()
+            build(selected_op=op, selected_forge=verifier(tracker, op, ci)).run()
         )
         await asyncio.wait_for(entered.wait(), 5)
         task.cancel()
@@ -366,8 +357,6 @@ async def test_final_native_snapshot_rejects_changes_after_completed_forge_hunt(
             assert parsed == record
 
     executor.during = changing
-    async with forge("fake", "work") as (ci, reader, _):
+    async with forge("fake", "work") as (ci, _):
         with pytest.raises(AuditClaimReadError):
-            await build(
-                selected_op=op, selected_forge=verifier(tracker, op, ci, reader)
-            ).run()
+            await build(selected_op=op, selected_forge=verifier(tracker, op, ci)).run()

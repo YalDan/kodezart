@@ -18,7 +18,6 @@ from kodezart.core.protocols import (
     ArtifactPersister,
     BranchMerger,
     CIMonitor,
-    CIObservationReader,
     GitService,
     OutboundContentGate,
     PRCreator,
@@ -123,7 +122,6 @@ def make_authored_workflow(
     delay_floor_for: DelayFloor,
     pr_creator: PRCreator | None = None,
     ci_monitor: CIMonitor | None = None,
-    ci_observations: CIObservationReader | None,
     repositories: Sequence[RepoEntry],
     max_concurrent_watches: int,
     red_rerun_max_attempts: int,
@@ -171,7 +169,6 @@ def make_authored_workflow(
         ),
         checks=AuthoredChecks(
             ci_monitor=ci_monitor,
-            ci_observations=ci_observations,
             git_base_url=git_base_url,
             repositories=repositories,
             max_concurrent_watches=max_concurrent_watches,

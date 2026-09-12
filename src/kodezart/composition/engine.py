@@ -282,7 +282,6 @@ def build_workflow_engine(
             ),
             checks=AuthoredChecks(
                 ci_monitor=forge,
-                ci_observations=forge,
                 git_base_url=config.git.base_url,
                 repositories=repositories,
                 max_concurrent_watches=config.delivery_max_concurrent_watches,

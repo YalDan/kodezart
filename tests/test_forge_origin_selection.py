@@ -31,7 +31,6 @@ from kodezart.composition.engine import (
 )
 from kodezart.composition.forge import (
     build_forge_client,
-    ci_observation_reader_for_origin,
     pr_state_reader_for_origin,
 )
 from kodezart.composition.jobs import build_job_queue
@@ -40,7 +39,6 @@ from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,
-    CIObservationReader,
     DeliveryProbe,
     ForgeQuery,
     PRCreator,
@@ -57,6 +55,7 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
@@ -96,7 +95,7 @@ COMPOSITION = SRC / "composition"
 #: through.  Bound as a set at exactly one site, so a capability cannot be
 #: selected apart from its peers.
 ENGINE_FORGE_SLOTS: frozenset[str] = frozenset(
-    {"visibility_resolver", "pr_creator", "ci_monitor", "ci_observations"},
+    {"visibility_resolver", "pr_creator", "ci_monitor"},
 )
 
 #: The forge client parameter of the composition root.  Its presence is
@@ -116,7 +115,6 @@ COVERED_BY_ORIGIN: dict[type, str] = {
     CIMonitor: "ci_monitor",
     RepoVisibilityResolver: "visibility_resolver",
     DeliveryProbe: "delivery",
-    CIObservationReader: "ci_observations",
     PRStateReader: "pr_state",
     ForgeQuery: "forge_query",
 }
@@ -160,9 +158,15 @@ class RecordingForge:
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
+    ) -> ObservedChecks:
         self.calls.append("wait_for_checks")
-        return (True, "All CI checks passed.")
+        return ObservedChecks(
+            commit_sha="a" * 40,
+            checks_passed=True,
+            check_names=frozenset({"unit"}),
+            failed_check_names=frozenset(),
+            summary="All CI checks passed.",
+        )
 
     async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
         self.calls.append("resolve_visibility")
@@ -172,7 +176,6 @@ class RecordingForge:
 def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
     return make_authored_workflow(
-        ci_observations=getattr(forge, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -538,39 +541,6 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
     assert isinstance(delivery.value, ast.Call)
     assert isinstance(delivery.value.func, ast.Name)
     assert delivery.value.func.id == "delivery_probe_for"
-
-
-async def test_native_watch_observation_reader_is_selected_by_origin():
-    from tests.adapters.test_github_api import _completed_run, _make_client
-
-    requests = []
-    payload = _completed_run("failure").json()
-    payload["check_runs"][0]["head_sha"] = "a" * 40
-
-    def handler(request):
-        requests.append(request)
-        return httpx.Response(200, json=payload)
-
-    client = _make_client(handler)
-    try:
-        assert (
-            ci_observation_reader_for_origin(client=None, repo_url=FORGE_ORIGIN) is None
-        )
-        assert (
-            ci_observation_reader_for_origin(client=client, repo_url=FILE_ORIGIN)
-            is None
-        )
-        selected = ci_observation_reader_for_origin(
-            client=client, repo_url=FORGE_ORIGIN
-        )
-        assert selected is client
-        await client.wait_for_checks(repo_url=FORGE_ORIGIN, ref="feature")
-        count = len(requests)
-        observed = await selected.observed_checks(repo_url=FORGE_ORIGIN, ref="feature")
-        assert observed.commit_sha == "a" * 40 and observed.checks_passed is False
-        assert len(requests) == count
-    finally:
-        await client.close()
 
 
 async def test_native_pr_state_reader_is_selected_before_any_forge_read():

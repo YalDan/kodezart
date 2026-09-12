@@ -5,12 +5,13 @@ from pydantic import ValidationError
 
 from kodezart.core.config import AppConfig
 from kodezart.services.check_classification import classify_red_checks
+from kodezart.types.domain.check_observation import AbsentChecks, ObservedChecks
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.operation import CheckPrerequisite, CheckStep, RepoEntry
 
 
 class CheckMonitor:
-    """Exactly the four declared capabilities; no log reader exists."""
+    """Exactly the coherent watch, declaration and rerun capabilities."""
 
     def __init__(self, *, observations=(), names=(), summary="arbitrary prose"):
         self.observations = iter(observations)
@@ -20,15 +21,21 @@ class CheckMonitor:
 
     async def wait_for_checks(self, *, repo_url, ref):
         self.calls.append(("wait", repo_url, ref))
-        return next(self.observations), self.summary
+        passed = next(self.observations)
+        if passed is None:
+            return AbsentChecks(summary=self.summary)
+        names = next(self.names) if passed is False else frozenset()
+        return ObservedChecks(
+            commit_sha=ref,
+            checks_passed=passed,
+            check_names=names or frozenset({"test"}),
+            failed_check_names=names,
+            summary=self.summary,
+        )
 
     async def checks_declared(self, *, repo_url):
         self.calls.append(("declared", repo_url))
         return True
-
-    async def failed_check_names(self, *, repo_url, ref):
-        self.calls.append(("names", repo_url, ref))
-        return next(self.names)
 
     async def rerun_checks(self, *, repo_url, ref):
         self.calls.append(("rerun", repo_url, ref))
@@ -45,10 +52,12 @@ async def classify(ci, repository=None, bound=1):
         ci=ci,
         repository=repository or repo(),
         repo_url=(repository or repo()).url,
-        final_commit_sha="immutable-sha",
-        initial_summary=ci.summary,
-        initial_failed_names=await ci.failed_check_names(
-            repo_url=(repository or repo()).url, ref="immutable-sha"
+        initial=ObservedChecks(
+            commit_sha="immutable-sha",
+            checks_passed=False,
+            check_names=frozenset({"test"}) | (names := next(ci.names)),
+            failed_check_names=names,
+            summary=ci.summary,
         ),
         max_attempts=bound,
     )
@@ -65,14 +74,14 @@ async def test_not_red_at_same_sha_establishes_flake(summary, passed):
     result = await classify(ci)
     assert result.red_class is CheckRedClass.RUNNER_FLAKE
     assert result.checks_passed is passed
-    assert [call[0] for call in ci.calls] == ["names", "rerun", "wait"]
+    assert [call[0] for call in ci.calls] == ["rerun", "wait"]
     assert all(call[2] == "immutable-sha" for call in ci.calls)
 
 
 async def test_zero_bound_reproduces_without_rerun():
     ci = CheckMonitor(names=[frozenset({"test"})])
     assert (await classify(ci, bound=0)).red_class is CheckRedClass.WORK_DEFECT
-    assert [call[0] for call in ci.calls] == ["names"]
+    assert [call[0] for call in ci.calls] == []
 
 
 @pytest.mark.parametrize("declared", [False, True, None])
@@ -142,7 +151,6 @@ def test_check_monitor_has_exact_declared_method_set():
     } == {
         "wait_for_checks",
         "checks_declared",
-        "failed_check_names",
         "rerun_checks",
     }
 
@@ -150,7 +158,7 @@ def test_check_monitor_has_exact_declared_method_set():
 @pytest.mark.parametrize("names", [[frozenset()], [frozenset({"test"}), frozenset()]])
 async def test_red_without_failing_evidence_refuses(names):
     ci = CheckMonitor(observations=[False], names=names)
-    with pytest.raises(ValueError, match="identify a failing check"):
+    with pytest.raises(ValueError, match="verdict must agree"):
         await classify(ci)
 
 

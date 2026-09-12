@@ -51,7 +51,12 @@ from kodezart.domain.errors import (
     TransientAPIError,
 )
 from kodezart.domain.git_url import extract_owner_repo
-from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    CIWatchResult,
+    IncompleteChecks,
+    ObservedChecks,
+)
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.pr_state import PRLifecycle, PRState
 from kodezart.utils.http import parse_ratelimit_reset, parse_retry_after
@@ -86,19 +91,6 @@ class _RerunBatch:
 class _RerunContext:
     task: object
     batches: Mapping[tuple[str, str, str], _RerunBatch]
-
-
-@dataclass(frozen=True)
-class _CompletedWatch:
-    checks: tuple[CheckRun, ...]
-    total_count: int
-    passed: bool
-
-
-@dataclass(frozen=True)
-class _WatchContext:
-    task: object
-    observations: Mapping[tuple[str, str, str], _CompletedWatch]
 
 
 def _pull_request_listing(payload: object) -> tuple[PullRequestSummary, ...]:
@@ -181,9 +173,6 @@ class GitHubAPIClient:
         self._retry = retry
         self._reruns: ContextVar[_RerunContext | None] = ContextVar(
             "github_ci_rerun_context", default=None
-        )
-        self._watched_checks: ContextVar[_WatchContext | None] = ContextVar(
-            "github_completed_check_watches", default=None
         )
         self._rerun_dispatch_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
         self._rerun_attempt_floors: dict[tuple[str, str, int], int] = {}
@@ -806,15 +795,20 @@ class GitHubAPIClient:
         return page
 
     async def _wait_for_rerun(
-        self, owner: str, repo: str, ref: str, batch: _RerunBatch
-    ) -> tuple[bool | None, str]:
+        self, owner: str, repo: str, ref: str, batch: _RerunBatch, *, repo_url: str
+    ) -> ObservedChecks:
         for poll in range(self._ci_poll_max_attempts):
             page = await self._rerun_observation(owner, repo, batch)
             if page is not None:
                 verdict = self._verdict(page)
                 if verdict is not None:
-                    self._remember_watch(owner, repo, ref, page, verdict[0])
-                    return verdict
+                    return self._completed_watch(
+                        repo_url=repo_url,
+                        ref=ref,
+                        page=page,
+                        passed=verdict[0],
+                        summary=verdict[1],
+                    )
             if poll + 1 < self._ci_poll_max_attempts:
                 await asyncio.sleep(self._ci_poll_interval)
         raise TransientAPIError(
@@ -1045,102 +1039,35 @@ class GitHubAPIClient:
             detail="CI observation",
         )
 
-    async def failed_check_names(self, *, repo_url: str, ref: str) -> frozenset[str]:
-        """Read one failing-set interpretation from the pinned watch or API.
-
-        A rerun selects its own attempt first. Otherwise a completed watch
-        in this task owns the original ref's bytes, so a branch move cannot
-        replace the original failing set between watching and classifying.
-        """
-        owner, repo = extract_owner_repo(repo_url)
-        batch = self._rerun_context().get((owner, repo, ref))
-        watched = self._watch_context().get((owner.casefold(), repo.casefold(), ref))
-        if batch is not None:
-            page = await self._rerun_observation(owner, repo, batch)
-        elif watched is not None:
-            page = CheckRunsResponse(
-                total_count=watched.total_count, check_runs=list(watched.checks)
-            )
-        else:
-            page = await self._fetch_check_runs(
-                owner, repo, ref, require_stable_total=True
-            )
-        if page is None or len(page.check_runs) != page.total_count:
-            raise ForgeAPIError(
-                "Failed check names were not completely observable",
-                status_code=None,
-                detail="CI observation",
-            )
-        if len({run.id for run in page.check_runs}) != page.total_count:
-            raise ForgeAPIError(
-                "Failed check listing repeated a check identity",
-                status_code=None,
-                detail="CI observation",
-            )
-        if any(
-            run.status != "completed"
-            or run.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
-            for run in page.check_runs
-        ):
-            raise ForgeAPIError(
-                "Failed check names require a terminal check observation",
-                status_code=None,
-                detail="CI observation",
-            )
-        return frozenset(
-            run.name
-            for run in page.check_runs
-            if run.conclusion in self._FAILURE_CONCLUSIONS
-        )
-
-    def _watch_context(self) -> Mapping[tuple[str, str, str], _CompletedWatch]:
-        context = self._watched_checks.get()
-        if context is None or context.task is not asyncio.current_task():
-            return {}
-        return context.observations
-
-    def _forget_watch(self, owner: str, repo: str, ref: str) -> None:
-        observations = dict(self._watch_context())
-        observations.pop((owner.casefold(), repo.casefold(), ref), None)
-        self._watched_checks.set(
-            _WatchContext(task=asyncio.current_task(), observations=observations)
-        )
-
-    def _remember_watch(
-        self, owner: str, repo: str, ref: str, page: CheckRunsResponse, passed: bool
-    ) -> None:
-        observations = dict(self._watch_context())
-        observations[(owner.casefold(), repo.casefold(), ref)] = _CompletedWatch(
-            checks=tuple(page.check_runs), total_count=page.total_count, passed=passed
-        )
-        self._watched_checks.set(
-            _WatchContext(task=asyncio.current_task(), observations=observations)
-        )
-
-    async def observed_checks(self, *, repo_url: str, ref: str) -> ObservedChecks:
-        """Read this task's exact completed watch, with no new remote query."""
-        owner, repo = extract_owner_repo(repo_url)
-        watched = self._watch_context().get((owner.casefold(), repo.casefold(), ref))
+    def _completed_watch(
+        self,
+        *,
+        repo_url: str,
+        ref: str,
+        page: CheckRunsResponse,
+        passed: bool,
+        summary: str,
+    ) -> ObservedChecks:
         reason: str | None = None
-        if watched is None or not watched.checks:
-            reason = "this task has no completed nonempty check watch"
+        checks = page.check_runs
+        if not checks:
+            reason = "a completed check watch must be nonempty"
         elif (
-            len(watched.checks) != watched.total_count
-            or len({check.id for check in watched.checks}) != watched.total_count
+            len(checks) != page.total_count
+            or len({check.id for check in checks}) != page.total_count
         ):
             reason = "the watched check set was incomplete or repeated identities"
         elif any(
             check.status != "completed"
             or check.conclusion not in self._FAILURE_CONCLUSIONS | self._OK_CONCLUSIONS
-            or not check.name
-            for check in watched.checks
+            or not check.name.strip()
+            for check in checks
         ):
             reason = "the watched check set was not terminal and understood"
         if reason is not None:
             raise CheckObservationError(repo_url=repo_url, ref=ref, reason=reason)
-        assert watched is not None
-        sha = watched.checks[0].head_sha
-        if not sha or any(check.head_sha != sha for check in watched.checks):
+        sha = checks[0].head_sha
+        if not sha or not sha.strip() or any(check.head_sha != sha for check in checks):
             raise CheckObservationError(
                 repo_url=repo_url,
                 ref=ref,
@@ -1154,8 +1081,14 @@ class GitHubAPIClient:
             )
         return ObservedChecks(
             commit_sha=sha,
-            checks_passed=watched.passed,
-            check_names=frozenset(check.name for check in watched.checks),
+            checks_passed=passed,
+            check_names=frozenset(check.name for check in checks),
+            failed_check_names=frozenset(
+                check.name
+                for check in checks
+                if check.conclusion in self._FAILURE_CONCLUSIONS
+            ),
+            summary=summary,
         )
 
     async def wait_for_checks(
@@ -1163,7 +1096,7 @@ class GitHubAPIClient:
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
+    ) -> CIWatchResult:
         """Poll Check Runs API until all checks complete or timeout.
 
         Single loop.  While no check run has ever been observed, poll at
@@ -1178,14 +1111,15 @@ class GitHubAPIClient:
         tolerated up to ``ci_ref_not_found_grace_polls`` consecutive
         occurrences; beyond that the call raises ``TransientAPIError``.
 
-        Returns ``(True, ...)`` when all checks pass, ``(False, ...)``
-        on failure or timeout, ``(None, ...)`` when no CI ran.
+        Return the complete observation, an absent run, or an incomplete
+        watch at exhaustion. Timeout never claims a completed red verdict.
         """
         owner, repo = extract_owner_repo(repo_url)
-        self._forget_watch(owner, repo, ref)
         batch = self._rerun_context().get((owner, repo, ref))
         if batch is not None:
-            return await self._wait_for_rerun(owner, repo, ref, batch)
+            return await self._wait_for_rerun(
+                owner, repo, ref, batch, repo_url=repo_url
+            )
         grace_interval = min(self._ci_poll_interval, self._ci_grace_poll_interval)
 
         probe: WorkflowsProbeResult | None = None
@@ -1196,7 +1130,9 @@ class GitHubAPIClient:
         polls_used = 0
 
         while True:
-            page = await self._fetch_check_runs(owner, repo, ref)
+            page = await self._fetch_check_runs(
+                owner, repo, ref, require_stable_total=True
+            )
 
             if page is None:
                 not_found_polls += 1
@@ -1230,7 +1166,9 @@ class GitHubAPIClient:
                         result=probe,
                         grace_polls=grace_polls,
                     )
-                    return (None, self._no_checks_summary(probe, grace_polls))
+                    return AbsentChecks(
+                        summary=self._no_checks_summary(probe, grace_polls)
+                    )
                 await asyncio.sleep(grace_interval)
                 continue
 
@@ -1245,12 +1183,30 @@ class GitHubAPIClient:
             polls_used += 1
             verdict = self._verdict(page)
             if verdict is not None:
-                self._remember_watch(owner, repo, ref, page, verdict[0])
-                return verdict
+                return self._completed_watch(
+                    repo_url=repo_url,
+                    ref=ref,
+                    page=page,
+                    passed=verdict[0],
+                    summary=verdict[1],
+                )
 
             if polls_used >= self._ci_poll_max_attempts:
                 attempts = self._ci_poll_max_attempts
-                return (False, f"CI checks still running after {attempts} polls.")
+                return IncompleteChecks(
+                    commit_shas=frozenset(
+                        check.head_sha for check in page.check_runs if check.head_sha
+                    ),
+                    check_names=frozenset(check.name for check in page.check_runs),
+                    failed_check_names=frozenset(
+                        check.name
+                        for check in page.check_runs
+                        if check.conclusion in self._FAILURE_CONCLUSIONS
+                    ),
+                    observed_count=len(page.check_runs),
+                    expected_count=page.total_count,
+                    summary=f"CI checks still running after {attempts} polls.",
+                )
             await asyncio.sleep(self._ci_poll_interval)
 
     # -- Lifecycle -----------------------------------------------------------

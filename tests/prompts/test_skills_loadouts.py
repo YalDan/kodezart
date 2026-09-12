@@ -227,7 +227,6 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         persister=FakeChangePersister(),
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,

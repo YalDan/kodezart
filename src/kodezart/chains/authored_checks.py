@@ -6,10 +6,7 @@ from collections.abc import Sequence
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 
-from kodezart.core.protocols import (
-    CIMonitor,
-    CIObservationReader,
-)
+from kodezart.core.protocols import CIMonitor
 from kodezart.domain.ci import ci_status_of
 from kodezart.domain.errors import (
     CheckObservationError,
@@ -19,7 +16,7 @@ from kodezart.services.check_classification import classify_red_checks
 from kodezart.types.domain.agent import (
     WorkflowCIEvent,
 )
-from kodezart.types.domain.delivery import CheckRedClass
+from kodezart.types.domain.check_observation import IncompleteChecks, ObservedChecks
 from kodezart.types.domain.operation import RepoEntry
 from kodezart.types.domain.workflow import (
     AuthoredWorkflowState,
@@ -34,14 +31,12 @@ class AuthoredChecks:
         self,
         *,
         ci_monitor: CIMonitor | None,
-        ci_observations: CIObservationReader | None,
         git_base_url: str,
         repositories: Sequence[RepoEntry],
         max_concurrent_watches: int,
         red_rerun_max_attempts: int,
     ) -> None:
         self._ci_monitor = ci_monitor
-        self._ci_observations = ci_observations
         self._git_base_url = git_base_url
         self._red_rerun_max_attempts = red_rerun_max_attempts
         self._repositories = tuple(repo.model_copy(deep=True) for repo in repositories)
@@ -87,57 +82,25 @@ class AuthoredChecks:
         repository = matches[0] if matches else None
         red_class = None
         async with self._watch_slots:
-            passed, summary = await ci_monitor.wait_for_checks(
-                repo_url=repo_url,
-                ref=ref,
-            )
-            if passed is False:
-                observations = self._ci_observations
-                if observations is None:
-                    raise CheckObservationError(
-                        repo_url=repo_url,
-                        ref=ref,
-                        reason="red classification needs the completed watch identity",
-                    )
-                original = await observations.observed_checks(
-                    repo_url=repo_url, ref=ref
+            observed = await ci_monitor.wait_for_checks(repo_url=repo_url, ref=ref)
+            if isinstance(observed, IncompleteChecks):
+                raise CheckObservationError(
+                    repo_url=repo_url, ref=ref, reason=observed.summary
                 )
-                names = await ci_monitor.failed_check_names(repo_url=repo_url, ref=ref)
-                if (
-                    original.checks_passed
-                    or not names
-                    or not names <= original.check_names
-                ):
-                    raise CheckObservationError(
-                        repo_url=repo_url,
-                        ref=ref,
-                        reason="original red identity and failing check set disagree",
-                    )
+            if isinstance(observed, ObservedChecks) and not observed.checks_passed:
                 red = await classify_red_checks(
                     ci=ci_monitor,
                     repo_url=repo_url,
                     repository=repository,
-                    final_commit_sha=original.commit_sha,
-                    initial_summary=summary,
-                    initial_failed_names=names,
+                    initial=observed,
                     max_attempts=self._red_rerun_max_attempts,
                 )
                 red_class = red.red_class
-                passed, summary = red.checks_passed, red.checks_summary
-                if red_class is CheckRedClass.RUNNER_FLAKE and passed is not None:
-                    final = await observations.observed_checks(
-                        repo_url=repo_url,
-                        ref=original.commit_sha,
-                    )
-                    if (
-                        final.commit_sha != original.commit_sha
-                        or final.checks_passed != passed
-                    ):
-                        raise CheckObservationError(
-                            repo_url=repo_url,
-                            ref=original.commit_sha,
-                            reason="recovered checks changed commit or verdict",
-                        )
+                observed = red.observation
+            passed = (
+                observed.checks_passed if isinstance(observed, ObservedChecks) else None
+            )
+            summary = observed.summary
             run_absent = (
                 passed is None
                 and await ci_monitor.checks_declared(repo_url=repo_url)

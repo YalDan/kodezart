@@ -5,11 +5,14 @@ import asyncio
 import httpx
 import pytest
 
-from kodezart.core.protocols import CIObservationReader
 from kodezart.domain.errors import CheckObservationError, ForgeAPIError
-from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    IncompleteChecks,
+    ObservedChecks,
+)
 from tests.adapters.test_github_api import _make_client
-from tests.fakes import FakeCIMonitor, FakeCIObservationReader
+from tests.fakes import FakeCIMonitor
 
 REPO = "https://github.com/example/project"
 BRANCH = "feature/one"
@@ -32,14 +35,12 @@ async def boundary(request):
     requests = []
     rows = [check()]
     if request.param == "fake":
-        reader = FakeCIObservationReader()
         monitor = FakeCIMonitor(
             passed=False,
             failed_names=frozenset({"unit"}),
-            observation_reader=reader,
             observed_sha_by_ref={BRANCH: SHA},
         )
-        yield monitor, reader, requests
+        yield monitor, requests
         return
 
     def handler(req):
@@ -49,61 +50,62 @@ async def boundary(request):
 
     monitor = _make_client(handler)
     try:
-        yield monitor, monitor, requests
+        yield monitor, requests
     finally:
         await monitor.close()
 
 
-async def test_no_watch_is_not_a_readable_observation(boundary):
-    _, reader, requests = boundary
-    assert isinstance(reader, CIObservationReader)
-    with pytest.raises(CheckObservationError):
-        await reader.observed_checks(repo_url=REPO, ref=BRANCH)
+async def test_no_task_local_evidence_reader_is_exposed(boundary):
+    monitor, requests = boundary
+    assert not hasattr(monitor, "observed_checks")
+    assert not hasattr(monitor, "failed_check_names")
     assert requests == []
 
 
-async def test_original_watch_is_read_without_another_forge_request(boundary):
-    monitor, reader, requests = boundary
-    passed, _ = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
-    assert passed is False
+async def test_original_watch_returns_its_complete_evidence_without_another_query(
+    boundary,
+):
+    monitor, requests = boundary
+    observed = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    assert isinstance(observed, ObservedChecks)
+    assert observed.commit_sha == SHA
+    assert observed.checks_passed is False
+    assert observed.failed_check_names == {"unit"}
+    assert "unit" in observed.check_names
     count = len(requests)
-    expected = ObservedChecks(
-        commit_sha=SHA, checks_passed=False, check_names=frozenset({"unit"})
-    )
-    assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
-    assert await reader.observed_checks(repo_url=REPO, ref=BRANCH) == expected
-    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"unit"}
+    assert ObservedChecks.model_validate_json(observed.model_dump_json()) == observed
     assert len(requests) == count
 
 
 async def test_fake_original_failing_set_survives_changed_unwatched_state():
     monitor = FakeCIMonitor(passed=False, failed_names=frozenset({"original"}))
-    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    original = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
     monitor._failed_names = frozenset({"later"})
-    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"original"}
-    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
-    assert await monitor.failed_check_names(repo_url=REPO, ref=BRANCH) == {"later"}
+    later = await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    assert original.failed_check_names == {"original"}
+    assert later.failed_check_names == {"later"}
 
 
-@pytest.mark.parametrize("repo,ref", [(REPO + "-other", BRANCH), (REPO, "other")])
-async def test_watch_identity_is_repository_and_ref_specific(boundary, repo, ref):
-    monitor, reader, _ = boundary
-    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
-    with pytest.raises(CheckObservationError):
-        await reader.observed_checks(repo_url=repo, ref=ref)
-
-
-async def test_child_task_cannot_inherit_a_parent_watch(boundary):
-    monitor, reader, _ = boundary
-    await monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
-    with pytest.raises(CheckObservationError):
-        await asyncio.create_task(reader.observed_checks(repo_url=REPO, ref=BRANCH))
-    assert (await reader.observed_checks(repo_url=REPO, ref=BRANCH)).commit_sha == SHA
+async def test_watch_return_is_portable_after_the_observing_task_ends(boundary):
+    monitor, _ = boundary
+    observed = await asyncio.create_task(
+        monitor.wait_for_checks(repo_url=REPO, ref=BRANCH)
+    )
+    assert observed.commit_sha == SHA
+    assert observed.failed_check_names == {"unit"}
 
 
 @pytest.mark.parametrize(
     "problem",
-    ["missing-sha", "null-sha", "mixed-sha", "duplicate", "pending", "unknown"],
+    [
+        "missing-sha",
+        "null-sha",
+        "blank-sha",
+        "mixed-sha",
+        "duplicate",
+        "pending",
+        "unknown",
+    ],
 )
 async def test_incomplete_native_identity_or_terminal_set_is_unreadable(problem):
     rows = [check()]
@@ -111,6 +113,8 @@ async def test_incomplete_native_identity_or_terminal_set_is_unreadable(problem)
         del rows[0]["head_sha"]
     elif problem == "null-sha":
         rows[0]["head_sha"] = None
+    elif problem == "blank-sha":
+        rows[0]["head_sha"] = " "
     elif problem == "mixed-sha":
         rows.append(check(identity=2, sha="b" * 40))
     elif problem == "duplicate":
@@ -126,9 +130,14 @@ async def test_incomplete_native_identity_or_terminal_set_is_unreadable(problem)
         ci_poll_max_attempts=1,
     )
     try:
-        await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
-        with pytest.raises(CheckObservationError):
-            await client.observed_checks(repo_url=REPO, ref=BRANCH)
+        if problem == "pending":
+            result = await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
+            assert isinstance(result, IncompleteChecks)
+            assert result.commit_shas == {SHA}
+            assert result.check_names == {"unit"}
+        else:
+            with pytest.raises(CheckObservationError):
+                await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
     finally:
         await client.close()
 
@@ -140,9 +149,8 @@ async def test_requested_sha_must_match_the_native_check_identity():
         )
     )
     try:
-        await client.wait_for_checks(repo_url=REPO, ref=SHA)
         with pytest.raises(CheckObservationError, match="requested SHA"):
-            await client.observed_checks(repo_url=REPO, ref=SHA)
+            await client.wait_for_checks(repo_url=REPO, ref=SHA)
     finally:
         await client.close()
 
@@ -167,10 +175,8 @@ async def test_later_unsuccessful_watch_cannot_reuse_older_native_evidence(later
         handler, ci_poll_max_attempts=1, ci_no_workflows_grace_polls=1
     )
     try:
-        await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
-        assert (
-            await client.observed_checks(repo_url=REPO, ref=BRANCH)
-        ).commit_sha == SHA
+        original = await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
+        assert original.commit_sha == SHA
         first = False
         if later == "failure":
             with pytest.raises(ForgeAPIError):
@@ -180,8 +186,11 @@ async def test_later_unsuccessful_watch_cannot_reuse_older_native_evidence(later
                 async with asyncio.timeout(0.01):
                     await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
         else:
-            await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
-        with pytest.raises(CheckObservationError):
-            await client.observed_checks(repo_url=REPO, ref=BRANCH)
+            later_watch = await client.wait_for_checks(repo_url=REPO, ref=BRANCH)
+            expected = AbsentChecks if later == "empty" else IncompleteChecks
+            assert isinstance(later_watch, expected)
+        assert original.commit_sha == SHA
+        assert original.failed_check_names == {"unit"}
+        assert not hasattr(client, "observed_checks")
     finally:
         await client.close()

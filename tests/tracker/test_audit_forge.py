@@ -23,7 +23,7 @@ from kodezart.types.domain.operation import (
 )
 from tests.adapters.test_ci_rerun import ActionsAPI
 from tests.adapters.test_github_api import _make_client
-from tests.fakes import FakeCIMonitor, FakeCIObservationReader
+from tests.fakes import FakeCIMonitor
 from tests.tracker import test_audit_evidence as evidence_fixtures
 from tests.tracker.test_audit_claim import CHILD, ROOT
 
@@ -54,11 +54,10 @@ async def setup(tracker):
     await tracker.update_issue(issue_key=CHILD, body=evidence_fixtures.body(SHA))
     await tracker.restore_workflow_state(issue_key=CHILD, state_name="Done")
 
-    def build(ci, reader, *, repository=REPOSITORY, bound=1):
+    def build(ci, *, repository=REPOSITORY, bound=1):
         return AuditForgeVerifier(
             tracker=tracker,
             ci=ci,
-            observations=reader,
             operation=OperationConfig(
                 operation_name="fixture", workspace="fixture", repos=[repository]
             ),
@@ -82,16 +81,14 @@ async def forge(backend, case):
         else frozenset()
     )
     if backend == "fake":
-        reader = FakeCIObservationReader()
         ci = FakeCIMonitor(
             passed=passed,
             failed_names=NAMES if red else frozenset(),
             rerun_results=[(not bool(rerun_failed), "fresh result", rerun_failed)],
             observed_sha_by_ref={SHA: observed_sha},
-            observation_reader=reader,
             check_names=observed_names,
         )
-        yield ci, reader, ci.rerun_calls
+        yield ci, ci.rerun_calls
         return
     actions = ActionsAPI(names=tuple(sorted(NAMES)), fresh_failed=rerun_failed)
 
@@ -119,7 +116,7 @@ async def forge(backend, case):
 
     ci = _make_client(handler, ci_no_workflows_grace_polls=1)
     try:
-        yield ci, ci, actions.requests
+        yield ci, actions.requests
     finally:
         await ci.close()
 
@@ -151,8 +148,8 @@ async def test_exact_sha_roster_and_the_one_red_classifier_determine_the_verdict
             update={"runner_environment": {CheckPrerequisite.REPOSITORY_HISTORY: False}}
         )
     before = tracker_writes()
-    async with forge(backend, case) as (ci, reader, calls):
-        result = await setup(ci, reader, repository=repository).observe(REQUEST)
+    async with forge(backend, case) as (ci, calls):
+        result = await setup(ci, repository=repository).observe(REQUEST)
         assert result.verdict is verdict
         assert (None if result.red is None else result.red.red_class) is red_class
         assert result.criterion.issue_key == CHILD
@@ -183,8 +180,8 @@ async def test_exact_sha_roster_and_the_one_red_classifier_determine_the_verdict
 async def test_zero_rerun_bound_uses_the_existing_classifier_without_a_write(
     setup, backend
 ):
-    async with forge(backend, "work") as (ci, reader, calls):
-        result = await setup(ci, reader, bound=0).observe(REQUEST)
+    async with forge(backend, "work") as (ci, calls):
+        result = await setup(ci, bound=0).observe(REQUEST)
         assert result.verdict is AuditVerdict.REFUTED
         assert result.red.red_class is CheckRedClass.WORK_DEFECT
         assert not (
@@ -193,7 +190,7 @@ async def test_zero_rerun_bound_uses_the_existing_classifier_without_a_write(
 
 
 async def test_no_check_capability_does_not_silently_accept_done(setup):
-    result = await setup(None, None).observe(REQUEST)
+    result = await setup(None).observe(REQUEST)
     assert result.verdict is AuditVerdict.UNVERIFIABLE and SHA in result.reason
 
 
@@ -202,17 +199,17 @@ async def test_only_the_current_completed_criterion_enters_this_check(
     setup, tracker, state
 ):
     await tracker.restore_workflow_state(issue_key=CHILD, state_name=state)
-    ci, reader = FakeCIMonitor(), FakeCIObservationReader()
+    ci = FakeCIMonitor()
     with pytest.raises(AuditEvidenceReadError, match="completed criterion"):
-        await setup(ci, reader).observe(REQUEST)
+        await setup(ci).observe(REQUEST)
     assert ci.calls == []
 
 
 async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, tracker):
     await tracker.update_issue(issue_key=CHILD, body=f"**Evidence:** {SHA} test_unit")
-    ci, reader = FakeCIMonitor(), FakeCIObservationReader()
+    ci = FakeCIMonitor()
     with pytest.raises(AuditEvidenceReadError):
-        await setup(ci, reader).observe(REQUEST)
+        await setup(ci).observe(REQUEST)
     assert ci.calls == []
 
 
@@ -220,7 +217,7 @@ async def test_foreign_recorded_prose_cannot_supply_a_convenient_sha(setup, trac
 async def test_a_mid_watch_source_change_cannot_receive_a_forge_verdict(
     setup, tracker, monkeypatch, damage
 ):
-    async with forge("fake", "green") as (ci, reader, _):
+    async with forge("fake", "green") as (ci, _):
         original = ci.wait_for_checks
 
         async def changing(**kwargs):
@@ -247,12 +244,12 @@ async def test_a_mid_watch_source_change_cannot_receive_a_forge_verdict(
 
         monkeypatch.setattr(ci, "wait_for_checks", changing)
         with pytest.raises(AuditEvidenceReadError):
-            await setup(ci, reader).observe(REQUEST)
+            await setup(ci).observe(REQUEST)
 
 
 async def test_unclassified_red_cannot_be_restamped_clean_by_model_construction(setup):
-    async with forge("fake", "unknown") as (ci, reader, _):
-        result = await setup(ci, reader).observe(REQUEST)
+    async with forge("fake", "unknown") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
         values = result.model_dump()
         values["verdict"] = AuditVerdict.HOLDS
         with pytest.raises(ValidationError):
@@ -264,18 +261,16 @@ async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
     setup, backend
 ):
     if backend == "fake":
-        reader = FakeCIObservationReader()
         ci = FakeCIMonitor(
             passed=False,
             failed_names=NAMES,
             rerun_results=[(True, "old green", frozenset())],
-            observation_reader=reader,
             observed_sha_by_ref={SHA: SHA},
             check_names=NAMES,
         )
         await ci.rerun_checks(repo_url=REPO, ref=SHA)
-        assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
-        result = await setup(ci, reader, bound=0).observe(REQUEST)
+        assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA)).checks_passed is True
+        result = await setup(ci, bound=0).observe(REQUEST)
     else:
 
         class TimelineAPI(ActionsAPI):
@@ -295,9 +290,11 @@ async def test_a_callers_earlier_green_rerun_cannot_replace_a_new_red_watch(
         ci = _make_client(api)
         try:
             await ci.rerun_checks(repo_url=REPO, ref=SHA)
-            assert (await ci.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+            assert (
+                await ci.wait_for_checks(repo_url=REPO, ref=SHA)
+            ).checks_passed is True
             api.attempts[101] = 3
-            result = await setup(ci, ci, bound=0).observe(REQUEST)
+            result = await setup(ci, bound=0).observe(REQUEST)
             assert len(api.writes) == 1
         finally:
             await ci.close()
@@ -345,7 +342,7 @@ async def test_unreadable_native_terminal_evidence_never_enters_classification(
 
     ci = _make_client(handler, ci_poll_max_attempts=1, ci_check_runs_max_pages=1)
     try:
-        result = await setup(ci, ci).observe(REQUEST)
+        result = await setup(ci).observe(REQUEST)
         assert result.verdict is AuditVerdict.UNVERIFIABLE
         assert result.red is None and SHA in result.reason
     finally:
@@ -353,8 +350,8 @@ async def test_unreadable_native_terminal_evidence_never_enters_classification(
 
 
 async def test_a_missing_repository_declaration_refuses_before_the_forge(setup):
-    ci, reader = FakeCIMonitor(), FakeCIObservationReader()
-    result = await setup(ci, reader).observe(
+    ci = FakeCIMonitor()
+    result = await setup(ci).observe(
         REQUEST.model_copy(update={"repo_url": "https://github.com/other/repository"})
     )
     assert result.verdict is AuditVerdict.UNVERIFIABLE and SHA in result.reason
@@ -364,9 +361,9 @@ async def test_a_missing_repository_declaration_refuses_before_the_forge(setup):
 async def test_absent_checks_remain_unverifiable_even_when_delivery_is_forge_exempt(
     setup,
 ):
-    async with forge("fake", "absent") as (ci, reader, _):
+    async with forge("fake", "absent") as (ci, _):
         repo = REPOSITORY.model_copy(update={"forge_exempt": True})
-        result = await setup(ci, reader, repository=repo).observe(REQUEST)
+        result = await setup(ci, repository=repo).observe(REQUEST)
         assert result.verdict is AuditVerdict.UNVERIFIABLE
         assert SHA in result.reason
 
@@ -375,7 +372,7 @@ async def test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_a
     setup, tracker_writes, monkeypatch
 ):
     entered, finished = asyncio.Event(), asyncio.Event()
-    ci, reader = FakeCIMonitor(), FakeCIObservationReader()
+    ci = FakeCIMonitor()
 
     async def watch(**_kwargs):
         entered.set()
@@ -386,7 +383,7 @@ async def test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_a
 
     monkeypatch.setattr(ci, "wait_for_checks", watch)
     before = tracker_writes()
-    task = asyncio.create_task(setup(ci, reader).observe(REQUEST))
+    task = asyncio.create_task(setup(ci).observe(REQUEST))
     await asyncio.wait_for(entered.wait(), 2)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -398,22 +395,22 @@ async def test_cancellation_does_not_return_a_forge_verdict_or_leave_the_watch_a
 async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
     setup, monkeypatch, damage
 ):
-    async with forge("fake", "work") as (ci, reader, _):
-        if damage == "failed-names":
-            monkeypatch.setattr(
-                ci, "failed_check_names", AsyncMock(return_value=frozenset({"foreign"}))
-            )
-        else:
-            original = reader.observed_checks
+    async with forge("fake", "work") as (ci, _):
+        original = ci.wait_for_checks
 
-            async def changed(**kwargs):
-                if damage == "reader-error":
-                    raise OSError("forge read failed")
-                row = await original(**kwargs)
-                return row.model_copy(update={"checks_passed": True})
+        async def changed(**kwargs):
+            if damage == "reader-error":
+                raise OSError("forge read failed")
+            row = await original(**kwargs)
+            values = row.model_dump()
+            if damage == "failed-names":
+                values["failed_check_names"] = frozenset({"foreign"})
+            else:
+                values["checks_passed"] = True
+            return type(row).model_validate(values)
 
-            monkeypatch.setattr(reader, "observed_checks", changed)
-        result = await setup(ci, reader).observe(REQUEST)
+        monkeypatch.setattr(ci, "wait_for_checks", changed)
+        result = await setup(ci).observe(REQUEST)
         assert result.verdict is AuditVerdict.UNVERIFIABLE and result.red is None
         assert ci.rerun_calls == []
 
@@ -428,7 +425,7 @@ async def test_forge_transport_failure_is_reported_without_branch_fallback(setup
 
     ci = _make_client(handler)
     try:
-        result = await setup(ci, ci).observe(REQUEST)
+        result = await setup(ci).observe(REQUEST)
         assert result.verdict is AuditVerdict.UNVERIFIABLE and SHA in result.reason
         assert result.checks is result.red is None
         assert len(calls) == 1
@@ -437,16 +434,14 @@ async def test_forge_transport_failure_is_reported_without_branch_fallback(setup
 
 
 async def test_a_classified_flake_without_an_observable_rerun_is_not_green(setup):
-    reader = FakeCIObservationReader()
     ci = FakeCIMonitor(
         passed=False,
         failed_names=NAMES,
         check_names=NAMES,
-        observation_reader=reader,
         observed_sha_by_ref={SHA: SHA},
         rerun_results=[(None, "no observable rerun", frozenset())],
     )
-    result = await setup(ci, reader).observe(REQUEST)
+    result = await setup(ci).observe(REQUEST)
     assert result.red.red_class is CheckRedClass.RUNNER_FLAKE
     assert result.red.checks_passed is None
     assert result.verdict is AuditVerdict.UNVERIFIABLE
@@ -460,8 +455,8 @@ async def test_an_empty_declared_roster_leaves_the_native_ci_roster_authoritativ
     repository = REPOSITORY.model_copy(
         update={"checks": (CheckStep(name="local-only", command="run local"),)}
     )
-    async with forge(backend, "green") as (ci, reader, _):
-        result = await setup(ci, reader, repository=repository).observe(REQUEST)
+    async with forge(backend, "green") as (ci, _):
+        result = await setup(ci, repository=repository).observe(REQUEST)
         assert result.verdict is AuditVerdict.HOLDS
         assert result.required_check_names == frozenset()
         assert result.checks.check_names == NAMES
@@ -474,22 +469,20 @@ async def test_a_readable_red_is_classified_even_when_another_declared_check_is_
 ):
     failures = frozenset() if rerun_green else frozenset({"unit"})
     if backend == "fake":
-        reader = FakeCIObservationReader()
         ci = FakeCIMonitor(
             passed=False,
             failed_names=frozenset({"unit"}),
             check_names=frozenset({"unit"}),
             rerun_results=[(rerun_green, "rerun result", failures)],
-            observation_reader=reader,
             observed_sha_by_ref={SHA: SHA},
         )
-        result = await setup(ci, reader).observe(REQUEST)
+        result = await setup(ci).observe(REQUEST)
         assert ci.rerun_calls == [(REPO, SHA)]
     else:
         api = ActionsAPI(names=("unit",), fresh_failed=failures)
         ci = _make_client(api)
         try:
-            result = await setup(ci, ci).observe(REQUEST)
+            result = await setup(ci).observe(REQUEST)
             assert len(api.writes) == 1
         finally:
             await ci.close()
@@ -503,8 +496,8 @@ async def test_a_readable_red_is_classified_even_when_another_declared_check_is_
 
 
 async def test_a_constructed_green_verdict_cannot_ignore_the_declared_roster(setup):
-    async with forge("fake", "roster") as (ci, reader, _):
-        result = await setup(ci, reader).observe(REQUEST)
+    async with forge("fake", "roster") as (ci, _):
+        result = await setup(ci).observe(REQUEST)
     assert result.verdict is AuditVerdict.UNVERIFIABLE
     data = result.model_dump()
     data["verdict"] = AuditVerdict.HOLDS

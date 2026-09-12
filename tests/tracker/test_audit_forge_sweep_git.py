@@ -12,7 +12,7 @@ from kodezart.domain.criterion_evidence import render_evidence_field
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from tests.fakes import FakeCIMonitor, FakeCIObservationReader
+from tests.fakes import FakeCIMonitor
 from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_forge import NAMES, REPOSITORY
@@ -45,13 +45,11 @@ async def test_historical_forge_sha_is_not_restamped_to_current_head(
     op = operation.model_copy(
         update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}
     )
-    reader = FakeCIObservationReader()
     ci = FakeCIMonitor(
         passed=not red,
         failed_names=NAMES if red else frozenset(),
         check_names=NAMES,
         observed_sha_by_ref={graded: graded},
-        observation_reader=reader,
         rerun_results=[(False, "reproduced graded failure", NAMES)],
     )
     paths = []
@@ -74,7 +72,7 @@ async def test_historical_forge_sha_is_not_restamped_to_current_head(
             selected_cache=cache,
             selected_workspace=workspace,
             selected_source=SubprocessGitSourceReader(),
-            selected_forge=verifier(tracker, op, ci, reader),
+            selected_forge=verifier(tracker, op, ci),
         ).run()
     ).observations[0]
     assert child.unavailable_reason is child.forge_unavailable_reason is None

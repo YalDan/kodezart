@@ -225,7 +225,6 @@ async def _workflow_client(
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -500,7 +499,6 @@ async def _workflow_client_with(
         persister=FakeChangePersister(),
     )
     engine = make_authored_workflow(
-        ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,

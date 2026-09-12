@@ -142,7 +142,6 @@ def _make_engine(
     delay_floor_for: DelayFloor = no_delay_floor,
     outbound_gate: OutboundContentGate | None = None,
     repositories=(),
-    observations=None,
     max_concurrent_watches=4,
     red_rerun_max_attempts=0,
 ) -> AuthoredDeliveryCoordinator:
@@ -161,7 +160,6 @@ def _make_engine(
         persister=FakeChangePersister(),
     )
     return make_authored_workflow(
-        ci_observations=observations or getattr(ci_monitor, "observation_reader", None),
         repositories=repositories,
         max_concurrent_watches=max_concurrent_watches,
         red_rerun_max_attempts=red_rerun_max_attempts,
@@ -707,7 +705,6 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -961,7 +958,6 @@ async def test_criteria_receives_formatted_ticket() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -1355,7 +1351,6 @@ async def test_workflow_review_fails_triggers_fix() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -1677,7 +1672,6 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -1843,7 +1837,6 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -3006,7 +2999,6 @@ def _make_engine_with_executor(
         last_commit_sha="a" * 40,
     )
     return make_authored_workflow(
-        ci_observations=getattr(ci_monitor, "observation_reader", None),
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -3144,7 +3136,6 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
         last_commit_sha=feature_tip,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -3224,7 +3215,6 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         persister=FakeChangePersister(),
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -3316,7 +3306,6 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
         last_commit_sha="a" * 40,
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -3672,7 +3661,6 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         persister=FakeChangePersister(),
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -4015,7 +4003,6 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         persister=FakeChangePersister(),
     )
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,
@@ -4285,7 +4272,6 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
 ):
     """No silent fallback: a run that produced commits always lands a PR."""
     engine = make_authored_workflow(
-        ci_observations=None,
         repositories=(),
         max_concurrent_watches=4,
         red_rerun_max_attempts=0,

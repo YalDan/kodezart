@@ -6,7 +6,6 @@ from typing import assert_never
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
     CIMonitor,
-    CIObservationReader,
     TrackerCriteriaReader,
 )
 from kodezart.domain.criterion_evidence import parse_criterion_evidence
@@ -16,7 +15,11 @@ from kodezart.services.check_classification import classify_red_checks
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
-from kodezart.types.domain.check_observation import ObservedChecks
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    IncompleteChecks,
+    ObservedChecks,
+)
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
 from kodezart.types.domain.delivery import CheckRedClass, CheckRedObservation
 from kodezart.types.domain.operation import OperationConfig, RepoEntry
@@ -26,8 +29,9 @@ from kodezart.types.domain.tracker import TrackerIssue, WorkflowStateKind
 class AuditForgeVerifier:
     """Consume existing CI capabilities and the delivery lane's sole classifier.
 
-    A separate task per observation prevents prior monitor attempts or watch
-    snapshots in the caller's task from supplying this observation's evidence.
+    A separate task prevents a prior rerun attempt in the caller's task from
+    selecting this observation's backend attempt. Completed evidence returns
+    directly from the watch and can be read in any task.
     The classifier can request its declared bounded same-SHA reruns. This
     consumer performs no tracker correction, remediation or publication.
     """
@@ -37,13 +41,11 @@ class AuditForgeVerifier:
         *,
         tracker: TrackerCriteriaReader,
         ci: CIMonitor | None,
-        observations: CIObservationReader | None,
         operation: OperationConfig,
         config: AppConfig,
     ) -> None:
         self._tracker = tracker
         self._ci = ci
-        self._observations = observations
         self._operation = operation
         self._config = config
 
@@ -112,37 +114,32 @@ class AuditForgeVerifier:
             required = frozenset(
                 step.forge_check for step in repository.checks if step.forge_check
             )
-            if self._ci is None or self._observations is None:
+            if self._ci is None:
                 raise ValueError("the forge check capabilities are unavailable")
-            passed, summary = await self._ci.wait_for_checks(
+            watched = await self._ci.wait_for_checks(
                 repo_url=request.repo_url, ref=evidence.graded_sha
             )
-            if passed is None:
+            if isinstance(watched, AbsentChecks):
                 return result(AuditVerdict.UNVERIFIABLE, "no run at the recorded SHA")
-            checks = await self._checked_snapshot(request, evidence, passed)
-            if passed:
+            if isinstance(watched, IncompleteChecks):
+                raise ValueError(watched.summary)
+            checks = self._checked_snapshot(watched, evidence)
+            if checks.checks_passed:
                 self._require_roster(checks, required)
                 return result(AuditVerdict.HOLDS, "the recorded SHA has green checks")
-            names = await self._ci.failed_check_names(
-                repo_url=request.repo_url, ref=evidence.graded_sha
-            )
-            if not names or not names <= checks.check_names:
-                raise ValueError("the red check names do not belong to the snapshot")
             red = await classify_red_checks(
                 ci=self._ci,
                 repository=repository,
                 repo_url=repository.url,
-                final_commit_sha=evidence.graded_sha,
-                initial_summary=summary,
-                initial_failed_names=names,
+                initial=checks,
                 max_attempts=self._config.delivery_red_rerun_max_attempts,
             )
-            if red.checks_passed is None:
+            if isinstance(red.observation, AbsentChecks):
                 return result(
                     AuditVerdict.UNVERIFIABLE,
                     "the classified rerun has no completed check observation",
                 )
-            checks = await self._checked_snapshot(request, evidence, red.checks_passed)
+            checks = self._checked_snapshot(red.observation, evidence)
             match red.red_class:
                 case CheckRedClass.RUNNER_FLAKE:
                     self._require_roster(checks, required)
@@ -162,26 +159,13 @@ class AuditForgeVerifier:
         except Exception as exc:
             return result(AuditVerdict.UNVERIFIABLE, f"{type(exc).__name__}: {exc}")
 
-    async def _checked_snapshot(
-        self,
-        request: AuditForgeRequest,
+    @staticmethod
+    def _checked_snapshot(
+        checks: ObservedChecks,
         evidence: CriterionEvidence,
-        passed: bool,
     ) -> ObservedChecks:
-        if self._observations is None:
-            raise ValueError("the completed check reader is unavailable")
-        checks = await self._observations.observed_checks(
-            repo_url=request.repo_url, ref=evidence.graded_sha
-        )
-        if (
-            checks.commit_sha != evidence.graded_sha
-            or checks.checks_passed is not passed
-        ):
+        if checks.commit_sha != evidence.graded_sha:
             raise ValueError("the completed observation differs from the requested SHA")
-        if not checks.check_names or any(
-            not name.strip() for name in checks.check_names
-        ):
-            raise ValueError("the completed observation has no usable check roster")
         return checks
 
     @staticmethod

@@ -18,7 +18,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.criterion_evidence import CriterionEvidence
-from tests.fakes import FakeCIMonitor, FakeCIObservationReader
+from tests.fakes import FakeCIMonitor
 from tests.tracker.test_audit_evidence_git import command
 from tests.tracker.test_audit_evidence_git import repository as repository
 from tests.tracker.test_audit_forge import NAMES, REPOSITORY
@@ -54,12 +54,10 @@ async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
     op = operation.model_copy(
         update={"repos": [REPOSITORY.model_copy(update={"url": remote.as_uri()})]}
     )
-    reader = FakeCIObservationReader()
     ci = FakeCIMonitor(
         passed=False,
         failed_names=NAMES,
         check_names=NAMES,
-        observation_reader=reader,
         observed_sha_by_ref={graded: graded},
         rerun_results=[(False, "same historical defect", NAMES)],
     )
@@ -106,7 +104,7 @@ async def test_combined_native_arms_keep_their_own_revisions_and_lifetimes(
         selected_source=SubprocessGitSourceReader(),
         include_overclaims=True,
         include_removals=True,
-        selected_forge=verifier(tracker, op, ci, reader),
+        selected_forge=verifier(tracker, op, ci),
     )
     before = tracker_writes()
     if mode == "cancel":
