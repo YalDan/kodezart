@@ -57,11 +57,7 @@ from kodezart.types.domain.amendment import (
     NativeWriterStart,
 )
 from kodezart.types.domain.audit import TrackerArtifact
-from kodezart.types.domain.criteria import (
-    CriterionId,
-    TrackerCriterion,
-    TrackerCriterionSet,
-)
+from kodezart.types.domain.criteria import TrackerCriterionSet
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.operation import (
@@ -577,16 +573,7 @@ class _WriterActions:
             current if i.issue_key == previous.issue_key else i
             for i in guard._criterion_issues or ()
         )
-        guard._criteria = TrackerCriterionSet(
-            criteria=[
-                TrackerCriterion(
-                    id=CriterionId(i.issue_key),
-                    text=criterion_check(criterion=i, issue_key=guard._spec.subject),
-                )
-                for i in guard._criterion_issues
-                if i.state_kind is WorkflowStateKind.UNSTARTED
-            ]
-        )
+        guard._criteria = await guard._owner._criteria.read_current(spec=guard._spec)
         await self.require_current()
         return current
 

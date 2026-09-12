@@ -16,6 +16,7 @@ import pytest
 
 from kodezart.chains import (
     authored_delivery,
+    native_amendment,
     native_delivery,
     ralph_loop,
     ralph_workflow,
@@ -29,6 +30,9 @@ _GRAPH_BINDINGS = (
     (authored_delivery, "self.fire.floor", "self.fire.retry"),
     (native_delivery, "fire.floor", "fire.retry"),
 )
+
+# These graph steps include side effects that have no automatic retry authority.
+_NONRETRYING_GRAPHS = (native_amendment,)
 
 
 def _module_source(module: ModuleType) -> str:
@@ -146,6 +150,26 @@ def test_correct_owner_and_unretried_terminal_are_valid(module, floor, retry):
     _assert_wiring(ast.parse(source), floor, retry)
 
 
+def _assert_nonretrying(tree: ast.AST) -> None:
+    calls = _add_node_calls(tree)
+    assert calls, "No actual nonretrying registration was checked"
+    for call in calls:
+        assert not any(kw.arg == "retry_policy" for kw in call.keywords)
+
+
+@pytest.mark.parametrize("module", _NONRETRYING_GRAPHS)
+def test_nonretrying_graphs_do_not_gain_automatic_replay(module):
+    tree = ast.parse(_module_source(module))
+    _assert_nonretrying(tree)
+    for index in range(len(_add_node_calls(tree))):
+        changed = copy.deepcopy(tree)
+        _add_node_calls(changed)[index].keywords.append(
+            ast.keyword(arg="retry_policy", value=ast.Name(id="unexpected_retry"))
+        )
+        with pytest.raises(AssertionError):
+            _assert_nonretrying(changed)
+
+
 def test_every_production_graph_with_registered_nodes_is_checked():
     assert ralph_loop.__file__ is not None
     source_root = Path(ralph_loop.__file__).resolve().parents[1]
@@ -159,4 +183,9 @@ def test_every_production_graph_with_registered_nodes_is_checked():
         for module, _, _ in _GRAPH_BINDINGS
         if module.__file__ is not None
     }
+    declared.update(
+        Path(module.__file__).resolve()
+        for module in _NONRETRYING_GRAPHS
+        if module.__file__ is not None
+    )
     assert actual == declared
