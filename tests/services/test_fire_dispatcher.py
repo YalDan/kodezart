@@ -1065,7 +1065,7 @@ class TestTheBaseIsReadOffTheGraph:
         report = await fire.run_pass()
 
         _, request = queue.submissions[0]
-        assert request.base_branch == TRUNK
+        assert request.base_spec.base_branch == TRUNK
         assert report.base is not None
         assert report.base.base_role is None
         assert report.base.inputs == ()
@@ -1089,8 +1089,8 @@ class TestTheBaseIsReadOffTheGraph:
         report = await fire.run_pass()
 
         _, request = queue.submissions[0]
-        assert request.base_branch == BLOCKER_BRANCH
-        assert request.base_branch != TRUNK
+        assert request.base_spec.base_branch == BLOCKER_BRANCH
+        assert request.base_spec.base_branch != TRUNK
         assert report.base is not None
         assert report.base.base_role is WorkRefRole.DELIVERABLE
         assert [item.blocker_issue_id for item in report.base.inputs] == ["K-2"]

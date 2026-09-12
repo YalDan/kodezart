@@ -24,8 +24,9 @@ from kodezart.types.domain.gating import ContentClass, GateDecision, GateVerdict
 from kodezart.types.domain.operation import OperationMemberAbsentError
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     FakeDeliveryProbe,
     FakeGitService,
@@ -159,13 +160,14 @@ async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id(monke
     try:
         record = await queue.submit(
             lane="fixture",
-            request=WorkflowRequest(
+            request=WorkflowSubmission(
                 prompt="Run the fixture",
                 repo_path=None,
                 repo_url="https://github.com/example/fixture.git",
                 base_spec=BaseSpec(inputs=(), base_branch="trunk"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=[],
+                implied_base=None,
             ),
         )
         await built.lifecycle.watch(

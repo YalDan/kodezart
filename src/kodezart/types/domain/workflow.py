@@ -19,6 +19,7 @@ from kodezart.types.domain.criteria import (
 )
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -37,6 +38,23 @@ _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 # Immutable context models (extracted from LangGraph configurable dicts)
 # ---------------------------------------------------------------------------
+
+
+class WorkflowSubmission(CamelCaseModel):
+    """Validated workflow input shared by HTTP and dispatcher producers.
+
+    The producer supplies the recorded base or explicitly constructs a trunk base.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str = Field(min_length=1)
+    repo_path: str | None
+    repo_url: str | None
+    base_spec: BaseSpec
+    implied_base: BaseSpec | None
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
 
 
 class WorkflowContext(CamelCaseModel):
@@ -73,8 +91,8 @@ class ExecutionContext(WorkflowContext):
     """
 
     base_spec: BaseSpec
-    permission_mode: str = Field(min_length=1)
-    allowed_tools: list[str]
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
 
     @property
     def base_branch(self) -> str:

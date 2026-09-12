@@ -20,7 +20,7 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -356,10 +356,7 @@ async def test_websearch_in_allowed_tools() -> None:
 
     assert len(executor.calls) >= 2
     for call in executor.calls:
-        allowed = call["allowed_tools"]
-        assert isinstance(allowed, list)
-        assert "WebSearch" in allowed
-        assert "WebFetch" in allowed
+        assert call["allowed_tools"] is ToolPreset.AUTHORING
 
 
 # ---------------------------------------------------------------------------

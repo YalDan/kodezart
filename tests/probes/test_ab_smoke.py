@@ -55,8 +55,9 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.ticket_review import TicketReviewMode
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.probes.recording import record
 
 pytestmark = pytest.mark.live
@@ -370,7 +371,15 @@ async def run_arm(
     )
 
     repo = await fixture_repo(root)
-    request = WorkflowRequest(prompt=TICKET, repo_path=str(repo))
+    request = WorkflowSubmission(
+        prompt=TICKET,
+        repo_path=str(repo),
+        repo_url=None,
+        base_spec=trunk_base("main"),
+        implied_base=None,
+        permission_mode=PermissionMode.UNATTENDED,
+        allowed_tools=ToolPreset.IMPLEMENTATION,
+    )
     events: list[AgentEvent] = []
     failure: str | None = None
     started = time.monotonic()
@@ -379,7 +388,7 @@ async def run_arm(
             prompt=request.prompt,
             repo_path=request.repo_path,
             repo_url=request.repo_url,
-            base_spec=trunk_base(request.base_branch),
+            base_spec=request.base_spec,
             permission_mode=request.permission_mode,
             allowed_tools=request.allowed_tools,
             cache_key=uuid.uuid4().hex,
