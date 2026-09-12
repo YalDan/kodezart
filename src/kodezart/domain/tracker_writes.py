@@ -3,7 +3,19 @@
 from collections.abc import Sequence
 
 from kodezart.domain.errors import DuplicateCommentMarkerError, StaleCommentWriteError
-from kodezart.types.domain.tracker import TrackerComment
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
+
+
+def classification_surface(issue: TrackerIssue) -> WritableSurface:
+    """A criterion's body, state and labels share its complete issue surface."""
+    return WritableSurface(
+        kind=SurfaceKind.CRITERION_SUB_ISSUE
+        if "criterion" in issue.issue_labels
+        else SurfaceKind.ISSUE_LABEL_SET,
+        ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue.issue_key),
+    )
 
 
 def marked_comment_body(*, marker: str, body: str) -> str:

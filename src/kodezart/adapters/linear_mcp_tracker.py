@@ -65,6 +65,7 @@ from kodezart.core.protocols import McpToolCaller, McpToolResult
 from kodezart.domain.errors import (
     CriterionReadError,
     DuplicateWorkRefError,
+    IssueLabelReadError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
@@ -78,6 +79,7 @@ from kodezart.domain.surface_lease import (
     surface_address,
 )
 from kodezart.domain.tracker_writes import (
+    classification_surface,
     comment_under_marker,
     marked_comment_body,
     require_expected_comment,
@@ -1188,6 +1190,62 @@ class LinearMcpTracker:
         return self._saved_issue(
             payload, written={"labels": [*preserved, self._label_for(state)]}
         )
+
+    async def set_issue_classification(
+        self, *, issue_key: str, classification: str, holder: str | None = None
+    ) -> TrackerIssue:
+        label = self._classification_label(
+            classification, stops="this issue classification cannot be written"
+        )
+        if holder is not None:
+            self._classification_label(
+                "criterion", stops="the classification write surface cannot be read"
+            )
+
+        async def read_current() -> TrackerIssue:
+            current = await self.read_planning_issue(issue_key=issue_key)
+            if current.issue_key != issue_key:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason="classification read returned another issue",
+                )
+            return current
+
+        async def attempt() -> TrackerIssue:
+            current = await read_current()
+            if holder is not None:
+                markers = await self._markers_on(
+                    _GrantKind.LEASE,
+                    targets=(
+                        _LEASE_ADDRESSING.target(classification_surface(current)),
+                    ),
+                )
+                current = await read_current()
+                self._assert_surface_holder(
+                    surface=classification_surface(current),
+                    holder=holder,
+                    markers=markers,
+                )
+            if classification in current.issue_labels:
+                return current
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE,
+                {"id": issue_key, "addLabels": [label]},
+            )
+            return self._saved_issue(payload, written={"addLabels": [label]})
+
+        receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if holder is None:
+            return receipt
+        # This read is outside the mutation retry. Failure cannot resend a
+        # classification that the server already accepted.
+        current = await self.read_planning_issue(issue_key=issue_key)
+        if current.issue_key != issue_key or classification not in current.issue_labels:
+            raise IssueLabelReadError(
+                classification=classification,
+                reason="the granted classification did not read back",
+            )
+        return current
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""
