@@ -35,6 +35,8 @@ from kodezart.types.domain.agent import (
     TicketReviewOutput,
 )
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
+from kodezart.types.domain.organize import AdmissionJudgment
+from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
 
@@ -72,6 +74,8 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
     "WRITE_BACK_SCHEMA": WriteBackFinding,
+    "ORGANIZE_ADMISSION_SCHEMA": AdmissionJudgment,
+    "ORGANIZE_PROPOSAL_SCHEMA": OrganizeProposal,
 }
 
 
@@ -315,6 +319,18 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "chains/organize.py",
+        ("OrganizeAdmission", "_judge"),
+        "judge_in_workspace",
+        "ORGANIZE_ADMISSION_SCHEMA",
+    ),
+    (
+        "chains/organize_author.py",
+        ("OrganizeAuthor", "propose"),
+        "judge_in_workspace",
+        "ORGANIZE_PROPOSAL_SCHEMA",
+    ),
     (
         "chains/write_back_verifier.py",
         ("FreshWriteBackJudge", "judge"),

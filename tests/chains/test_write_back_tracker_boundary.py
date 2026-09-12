@@ -89,6 +89,8 @@ async def test_actual_adapter_rounds_reread_and_repair(repair):
             SurfaceKind.ISSUE_LABEL_SET,
             SurfaceKind.CRITERION_SUB_ISSUE,
             SurfaceKind.CRITERION_CHILD_SET,
+            SurfaceKind.ISSUE_GRAPH,
+            SurfaceKind.ISSUE_SPLIT_SET,
         }
     ],
 )

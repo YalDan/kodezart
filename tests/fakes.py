@@ -3239,7 +3239,6 @@ class FakeTrackerPort:
         )
         self.issues[issue.issue_key] = issue
         self.issue_creations.append(issue.issue_key)
-        self.issue_state_changes[issue.issue_key] = issue.created_at
         return issue
 
     async def update_issue(
