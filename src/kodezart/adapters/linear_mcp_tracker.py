@@ -104,6 +104,7 @@ from kodezart.domain.surface_lease import (
     surface_address,
 )
 from kodezart.domain.tracker_writes import (
+    classification_surface,
     comment_under_marker,
     description_replacement,
     marked_comment_body,
@@ -1798,20 +1799,31 @@ class LinearMcpTracker:
                 missing=f"issue_labels[{classification!r}]",
                 stops="this issue classification cannot be written",
             )
-        surface = WritableSurface(
-            kind=SurfaceKind.ISSUE_LABEL_SET,
-            ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
-        )
 
-        async def attempt() -> TrackerIssue:
+        async def read_current() -> TrackerIssue:
             current = await self.read_issue(issue_key=issue_key)
             if current.issue_key != issue_key:
                 raise IssueLabelReadError(
                     classification=classification,
                     reason="classification read returned another issue",
                 )
+            return current
+
+        async def attempt() -> TrackerIssue:
+            current = await read_current()
             if holder is not None:
-                await self._require_surface_holder(surface=surface, holder=holder)
+                markers = await self._markers_on(
+                    _GrantKind.LEASE,
+                    targets=(
+                        _LEASE_ADDRESSING.target(classification_surface(current)),
+                    ),
+                )
+                current = await read_current()
+                self._assert_surface_holder(
+                    surface=classification_surface(current),
+                    holder=holder,
+                    markers=markers,
+                )
             if classification in current.issue_labels:
                 return current
             payload = await self._send(

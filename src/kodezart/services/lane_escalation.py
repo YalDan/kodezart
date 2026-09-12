@@ -9,8 +9,8 @@ from kodezart.core.outbound_write import gated_write
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
 from kodezart.domain.comment_markers import compose_comment_marker
-from kodezart.domain.errors import OutboundContentBlockedError
-from kodezart.domain.tracker_writes import marked_comment_body
+from kodezart.domain.errors import IssueLabelReadError, OutboundContentBlockedError
+from kodezart.domain.tracker_writes import classification_surface, marked_comment_body
 from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.gating import (
     ContentClass,
@@ -106,13 +106,19 @@ class LaneEscalationWriter:
                 writer=OutboundDestination.TRACKER_COMMENT.value,
                 categories=[],
             )
+        current = await self._tracker.read_issue(issue_key=escalation.issue_id)
+        if current.issue_key != escalation.issue_id:
+            raise IssueLabelReadError(
+                classification="decision",
+                reason="escalation read returned another issue",
+            )
         ref = ScopeRef(kind=ScopeKind.ISSUE, key=escalation.issue_id)
         surfaces = frozenset(
             {
                 WritableSurface(
                     kind=SurfaceKind.MARKER_COMMENT, ref=ref, marker=marker
                 ),
-                WritableSurface(kind=SurfaceKind.ISSUE_LABEL_SET, ref=ref),
+                classification_surface(current),
             }
         )
         async with RunSurfaceLease(
