@@ -31,7 +31,7 @@ async def test_escalation_label_write_requires_current_grant_after_waits(
         caller=board,
         max_retries=2,
         clock=lambda: board.now,
-        issue_labels={"decision": "decision-needed"},
+        issue_labels={"criterion": "criterion", "decision": "decision-needed"},
     )
     writer = LaneEscalationWriter(
         tracker=tracker,
@@ -41,7 +41,7 @@ async def test_escalation_label_write_requires_current_grant_after_waits(
             operation_name="fixture",
             workspace="fixture",
             marker_prefixes={"escalation": "escalation"},
-            issue_labels={"decision": "decision-needed"},
+            issue_labels={"criterion": "criterion", "decision": "decision-needed"},
         ),
     )
     actual = board.call_tool
@@ -124,7 +124,7 @@ async def test_actual_label_readback_failure_cannot_resend_completed_write(
         caller=board,
         max_retries=2,
         clock=lambda: board.now,
-        issue_labels={"decision": "decision-needed"},
+        issue_labels={"criterion": "criterion", "decision": "decision-needed"},
     )
     surface = WritableSurface(
         kind=SurfaceKind.ISSUE_LABEL_SET,
