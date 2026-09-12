@@ -122,6 +122,10 @@ class OutboundDestination(StrEnum):
     ARTIFACT_CRITERIA_JSON = "artifact_criteria_json"
     TRACKER_COMMENT = "tracker_comment"
 
+    TRACKER_TITLE = "tracker_title"
+
+    TRACKER_DESCRIPTION = "tracker_description"
+
 
 #: Total over :class:`OutboundDestination`; a test asserts the totality so a
 #: new member cannot be added without classifying its surface.
@@ -135,6 +139,8 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_DESCRIPTION: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_TITLE: OutboundSurface.TRACKER,
 }
 
 

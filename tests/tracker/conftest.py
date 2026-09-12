@@ -241,10 +241,12 @@ def linear_over_fake_mcp(
     server: FakeLinearMcpServer,
     *,
     clock: Callable[[], datetime] = _frozen_now,
+    scope_labels: Mapping[str, str] | None = None,
 ) -> TrackerPort:
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
-        issue_labels={},
+        issue_labels={"criterion": "acceptance-condition"},
+        scope_labels=scope_labels or {},
         marker_prefixes=MARKER_PREFIXES,
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
@@ -419,3 +421,8 @@ def tracker_writes(
     return lambda: tuple(
         call for call in server.calls if call[0] in {"save_comment", "save_issue"}
     )
+
+
+FIRE_SCOPE_LABEL = "execution-consent"
+FIRE_STAGE_LABEL = "criteria-prepared"
+FIRE_ENTRY_LABELS = [FIRE_SCOPE_LABEL, FIRE_STAGE_LABEL]

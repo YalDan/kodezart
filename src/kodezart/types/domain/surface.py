@@ -27,6 +27,10 @@ class SurfaceKind(StrEnum):
     CRITERION_SUB_ISSUE = "criterion_sub_issue"
     CRITERION_CHILD_SET = "criterion_child_set"
 
+    ISSUE_GRAPH = "issue_graph"
+
+    ISSUE_SPLIT_SET = "issue_split_set"
+
 
 _CONTAINER_KINDS: frozenset[SurfaceKind] = frozenset(
     {SurfaceKind.CONTAINER_DESCRIPTION, SurfaceKind.CONTAINER_STATUS_UPDATE},
@@ -80,3 +84,22 @@ class SurfaceLease:
             raise ValueError("a surface lease requires a nonblank holder")
         if not self.surfaces:
             raise ValueError("a surface lease requires at least one surface")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DescriptionWriteAuthority:
+    """The actual holder and explicit independently leased description surface."""
+
+    holder: str
+    surface: WritableSurface
+
+    def __post_init__(self) -> None:
+        if not self.holder.strip():
+            raise ValueError("description authority requires a nonblank holder")
+        if self.surface.kind not in {
+            SurfaceKind.ISSUE_DESCRIPTION,
+            SurfaceKind.CRITERION_SUB_ISSUE,
+        }:
+            raise ValueError(
+                "description authority requires an issue or criterion description"
+            )

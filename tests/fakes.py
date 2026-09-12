@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,10 +35,14 @@ from kodezart.core.protocols import (
 )
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.criteria import mint_criteria
+from kodezart.domain.criterion_amendment import require_criterion_source
+from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
+    DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     MergeConflictError,
+    OrganizeWriteRefusalError,
     RateLimitError,
     ScopeReadError,
     SurfaceLeaseError,
@@ -45,10 +50,17 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.organize_graph import (
+    changed_peers,
+    graph_snapshot,
+    validate_graph_change,
+)
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import live_conflict, surface_address
 from kodezart.domain.tracker_writes import (
     classification_surface,
     comment_under_marker,
+    description_replacement,
     marked_comment_body,
     require_expected_comment,
 )
@@ -94,12 +106,15 @@ from kodezart.types.domain.gating import (
     ScanResult,
     WriterShape,
 )
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord, JobState
 from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
+from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
@@ -118,7 +133,12 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -136,9 +156,11 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 from tests.prompt_census import configured_investigation_cap
@@ -2180,6 +2202,10 @@ class FakeMcpIssue:
             "teamId": f"{self.team}-id",
             "labels": list(self.labels),
             "parentId": self.parent_id,
+            "projectId": self.project_id,
+            "projectMilestone": {"id": self.milestone_id, "name": self.milestone_id}
+            if self.milestone_id is not None
+            else None,
             "assignee": self.assignee,
             "createdAt": self.created_at.isoformat(),
             "updatedAt": self.updated_at.isoformat(),
@@ -2223,6 +2249,10 @@ class FakeMcpIssue:
                 msg = f"the vendor's relations object has no arm named {kind!r}"
                 raise LookupError(msg)
         return {**arms, "duplicateOf": duplicate_of}
+
+    project_id: str | None = None
+
+    milestone_id: str | None = None
 
 
 @dataclass
@@ -2486,13 +2516,36 @@ class FakeLinearMcpServer:
         self,
         arguments: Mapping[str, object],
     ) -> Mapping[str, object]:
+        state = str(arguments.get("state", "Backlog"))
+        if "state" in arguments and state not in self.state_types:
+            matches = [
+                name
+                for team, names in self.statuses.items()
+                for name in names
+                if f"{team}-{name}-id" == state
+            ]
+            if len(matches) != 1:
+                raise LookupError(f"unknown or ambiguous native state {state!r}")
+            state = matches[0]
         if "id" not in arguments:
             self._sequence += 1
             created = FakeMcpIssue(
                 id=f"NEW-{self._sequence}",
                 title=str(arguments.get("title", "")),
                 description=str(arguments.get("description", "")),
+                team=str(arguments["team"]),
                 priority_raw=int(str(arguments.get("priority", 0))),
+                parent_id=str(arguments["parentId"])
+                if "parentId" in arguments
+                else None,
+                labels=list(arguments.get("labels", [])),
+                project_id=str(arguments["project"])
+                if arguments.get("project") is not None
+                else None,
+                status=state,
+                status_type=self.state_types[state]
+                if "state" in arguments
+                else "backlog",
             )
             self.issues[created.id] = created
             return created.wire()
@@ -2501,8 +2554,32 @@ class FakeLinearMcpServer:
             issue.title = str(arguments["title"])
         if "description" in arguments:
             issue.description = str(arguments["description"])
+        if "priority" in arguments:
+            issue.priority_raw = int(str(arguments["priority"]))
+        if "parentId" in arguments:
+            issue.parent_id = (
+                None if arguments["parentId"] is None else str(arguments["parentId"])
+            )
+        if "milestone" in arguments:
+            issue.milestone_id = str(arguments["milestone"])
+        for relation, inverse in (("blockedBy", "blocks"), ("relatedTo", "relatedTo")):
+            removal = "remove" + relation[0].upper() + relation[1:]
+            for key in arguments.get(removal, []):
+                issue.relations = [
+                    edge for edge in issue.relations if edge != (relation, key)
+                ]
+                peer = self.issues[key]
+                peer.relations = [
+                    edge for edge in peer.relations if edge != (inverse, issue.id)
+                ]
+            for key in arguments.get(relation, []):
+                if (relation, key) not in issue.relations:
+                    issue.relations.append((relation, key))
+                peer = self.issues[key]
+                if (inverse, issue.id) not in peer.relations:
+                    peer.relations.append((inverse, issue.id))
         if "state" in arguments:
-            issue.status = str(arguments["state"])
+            issue.status = state
             issue.status_type = self.state_types[issue.status]
         if "labels" in arguments:
             raw_labels = arguments["labels"]
@@ -2915,6 +2992,9 @@ class FakeTrackerPort:
         self,
         *,
         issues: Sequence[TrackerIssue] = (),
+        issue_identities: Mapping[str, IssueIdentity] | None = None,
+        marker_prefixes: Mapping[str, str] | None = None,
+        scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
         assets: Mapping[str, Sequence[TrackerAsset]] | None = None,
@@ -2932,6 +3012,11 @@ class FakeTrackerPort:
         self.issues: dict[str, TrackerIssue] = {
             issue.issue_key: issue for issue in issues
         }
+        self.issue_identities: dict[str, IssueIdentity] = dict(issue_identities or {})
+        self.marker_prefixes: dict[str, str] = dict(marker_prefixes or {})
+        self.scope_label_members = dict(scope_label_members or {})
+        self.issue_creations: list[str] = []
+        self.issue_writes: list[tuple[str, str | None, str | None]] = []
         self.scope_containers: dict[ScopeRef, ScopeContainer] = {
             container.ref: container for container in scope_containers
         }
@@ -3137,6 +3222,8 @@ class FakeTrackerPort:
         priority: IssuePriority,
     ) -> TrackerIssue:
         self._sequence += 1
+        while f"FAKE-{self._sequence}" in self.issues:
+            self._sequence += 1
         issue = TrackerIssue(
             issue_key=f"FAKE-{self._sequence}",
             title=title,
@@ -3151,6 +3238,8 @@ class FakeTrackerPort:
             url=f"https://tracker.invalid/issue/FAKE-{self._sequence}",
         )
         self.issues[issue.issue_key] = issue
+        self.issue_creations.append(issue.issue_key)
+        self.issue_state_changes[issue.issue_key] = issue.created_at
         return issue
 
     async def update_issue(
@@ -3160,6 +3249,7 @@ class FakeTrackerPort:
         title: str | None = None,
         body: str | None = None,
     ) -> TrackerIssue:
+        self.issue_writes.append((issue_key, title, body))
         issue = self.issues[issue_key]
         updated = issue.model_copy(
             update={
@@ -3169,7 +3259,7 @@ class FakeTrackerPort:
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
-        return updated
+        return self.issues[issue_key]
 
     async def set_workflow_state(
         self,
@@ -3790,6 +3880,339 @@ class FakeTrackerPort:
         self.comment_writes.append((existing.comment_key, content))
         self._wrote(target)
         return updated
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+        )
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        ref = ScopeRef(kind=ScopeKind.PROJECT, key=project_key)
+        project = await self.container_metadata(ref=ref)
+        if project.ref != ref:
+            raise ScopeReadError("project identity changed", ref=ref)
+        return tuple(
+            sorted(
+                [
+                    await self.container_metadata(ref=key)
+                    for key, value in self.scope_containers.items()
+                    if key.kind is ScopeKind.MILESTONE and value.parent == ref
+                ],
+                key=lambda value: value.ref.key,
+            )
+        )
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
+            ref = ScopeRef(kind=ScopeKind.ISSUE, key=key)
+            if key not in self.issues:
+                raise ScopeReadError("issue is missing", ref=ref)
+            return (
+                await self.read_issue(issue_key=key),
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+            )
+
+        subject = await hydrate(issue_key)
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == issue_key else await hydrate(key)
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            await asyncio.sleep(0)
+            if ref not in self.scope_containers:
+                raise ScopeReadError("container is missing", ref=ref)
+            container = self.scope_containers[ref]
+            if container.ref != ref:
+                raise ScopeReadError("container approval identity changed", ref=ref)
+            return (
+                ScopeLabel.APPROVED in self.scope_label_members.get(ref, frozenset()),
+                container.parent,
+            )
+
+        approved = await resolve_execution_approval(
+            issue_key=issue_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
+        return subject[0], approved
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            issue = await self.read_issue(issue_key=ref.key)
+            if issue.issue_key != ref.key:
+                raise ScopeReadError("scope label identity changed", ref=ref)
+        else:
+            await self.container_metadata(ref=ref)
+        return self.scope_label_members.get(ref, frozenset())
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> TrackerIssue:
+        current = tuple(
+            [await self.read_issue(issue_key=row.issue_key) for row in expected]
+        )
+        if tuple(graph_snapshot(issue) for issue in current) != expected:
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key, reason="native graph changed"
+            )
+        candidate, peers = validate_graph_change(
+            issue_key=issue_key,
+            changes=changes,
+            issues=current,
+            member_keys=frozenset(row.issue_key for row in expected),
+        )
+        for peer in peers:
+            self._require_graph_holder(
+                kind=SurfaceKind.ISSUE_GRAPH, issue_key=peer, holder=holder
+            )
+        self.issues[issue_key] = candidate
+        for peer in changed_peers(issue_key=issue_key, changes=changes, issues=current):
+            self.issues[peer.issue_key] = peer
+        return candidate
+
+    def _require_graph_holder(
+        self, *, kind: SurfaceKind, issue_key: str, holder: str
+    ) -> None:
+        surface = WritableSurface(
+            kind=kind, ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key)
+        )
+        lease = self.leases.get(surface)
+        owner = (
+            lease.holder
+            if lease is not None and lease.expires_at > self._clock()
+            else None
+        )
+        if owner != holder:
+            raise SurfaceLeaseError(
+                "graph write requires its addressed grant",
+                surface=surface,
+                current_holder=owner,
+            )
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
+        children: dict[str, TrackerIssue] = {}
+        for issue in self.issues.values():
+            identity = await self.read_issue_identity(issue_key=issue.issue_key)
+            if identity is None or identity.scope_key != scope:
+                continue
+            if identity.deliverable_key in children:
+                raise DuplicateIssueIdentityError(
+                    scope_key=scope,
+                    deliverable_key=identity.deliverable_key,
+                    issue_keys=[
+                        children[identity.deliverable_key].issue_key,
+                        issue.issue_key,
+                    ],
+                )
+            if (
+                issue.parent_key != source_key
+                or {"criterion", "decision"} & issue.issue_labels
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=source_key, reason="split identity is misplaced"
+                )
+            children[identity.deliverable_key] = issue
+        return tuple(sorted(children.values(), key=lambda child: child.issue_key))
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue:
+        identity = IssueIdentity(
+            scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
+            deliverable_key=deliverable_key,
+        )
+        for child in await self.read_split_children(source_key=source_key):
+            if await self.read_issue_identity(issue_key=child.issue_key) == identity:
+                return child
+        self._require_graph_holder(
+            kind=SurfaceKind.ISSUE_SPLIT_SET, issue_key=source_key, holder=holder
+        )
+        current = tuple(
+            [await self.read_issue(issue_key=row.issue_key) for row in expected]
+        )
+        if (
+            not expected
+            or tuple(graph_snapshot(issue) for issue in current) != expected
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key, reason="split source graph changed"
+            )
+        source = await self.read_issue(issue_key=source_key)
+        if source.team_key is None or not all(
+            value.strip() for value in (deliverable_key, title, body)
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="split creation requires a team, identity and specification",
+            )
+        created = await self.upsert_issue(
+            scope_key=identity.scope_key,
+            deliverable_key=deliverable_key,
+            title=title,
+            body=body,
+            team_key=source.team_key,
+            priority=IssuePriority.NONE,
+        )
+        child = TrackerIssue.model_validate(
+            {
+                **created.model_dump(),
+                "parent_key": source_key,
+                "project_id": source.project_id,
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
+            }
+        )
+        self.issues[child.issue_key] = child
+        return child
+
+    async def create_criterion_if_absent(
+        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+    ) -> TrackerIssue:
+        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        children = await self.read_criteria(issue_key=parent_key)
+        existing = existing_criterion(
+            parent_key=parent_key, check=check, children=children
+        )
+        if existing is not None:
+            return existing
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_CHILD_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
+        )
+        lease = self.leases.get(surface)
+        owner = (
+            lease.holder
+            if lease is not None and lease.expires_at > self._clock()
+            else None
+        )
+        if holder != owner:
+            raise SurfaceLeaseError(
+                "criterion creation requires its child-set grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        parent = await self.read_issue(issue_key=parent_key)
+        if parent.team_key is None or not title.strip():
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion creation requires title and declared team",
+            )
+        created = await self.create_issue(
+            title=title,
+            body=body,
+            team_key=parent.team_key,
+            priority=IssuePriority.NONE,
+        )
+        child = created.model_copy(
+            update={
+                "parent_key": parent_key,
+                "issue_labels": frozenset({"criterion"}),
+                "state_name": "Todo",
+                "state_kind": WorkflowStateKind.UNSTARTED,
+            }
+        )
+        self.issues[child.issue_key] = child
+        return child
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        await self.read_issue(issue_key=issue_key)
+        return self.issue_identities.get(issue_key)
+
+    async def upsert_issue(
+        self,
+        *,
+        scope_key: ScopeRef,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        team_key: str,
+        priority: IssuePriority,
+    ) -> TrackerIssue:
+        identity = IssueIdentity(scope_key=scope_key, deliverable_key=deliverable_key)
+        keys = [
+            key for key, value in self.issue_identities.items() if value == identity
+        ]
+        if len(keys) > 1:
+            raise DuplicateIssueIdentityError(
+                scope_key=scope_key, deliverable_key=deliverable_key, issue_keys=keys
+            )
+        if not keys:
+            created = await self.create_issue(
+                title=title, body=body, team_key=team_key, priority=priority
+            )
+            self.issue_identities[created.issue_key] = identity
+            return created
+        current = await self.read_issue(issue_key=keys[0])
+        if current.body != body:
+            await self.edit_description(
+                target=current.issue_key, expected=current.body, replacement=body
+            )
+        if current.title != title:
+            await self.update_issue(issue_key=current.issue_key, title=title)
+        return await self.read_issue(issue_key=current.issue_key)
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult:
+        if authorization is not None and authorization.surface.ref.key != target:
+            raise ValueError("description authority addresses another target")
+        current = await self.read_issue(issue_key=target)
+        if authorization is not None:
+            surface = authorization.surface
+            if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                require_criterion_source(expected=current, current=current)
+            elif "criterion" in current.issue_labels:
+                raise ValueError(
+                    "description authority must match the target's "
+                    "current native surface"
+                )
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if authorization.holder != owner:
+                raise SurfaceLeaseError(
+                    "native criterion amendment requires its grant",
+                    surface=surface,
+                    current_holder=owner,
+                )
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
 
 
 class FakeDeliveryProbe:

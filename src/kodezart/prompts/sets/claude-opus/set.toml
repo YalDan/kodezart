@@ -37,3 +37,8 @@ grooming_pass = []
 content_audit = []
 write_back_verify = ["code-review"]
 knowledge_map = []
+
+organize_assess = ["code-review"]
+organize_author = ["code-review"]
+organize_verify = ["code-review"]
+organize_criteria_author = ["code-review"]

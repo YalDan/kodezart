@@ -5,6 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
@@ -21,12 +22,15 @@ from kodezart.types.domain.gating import (
     ScanResult,
     WriterShape,
 )
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
 from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
     RecordDestination,
+    ScopeLabel,
 )
+from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
@@ -41,7 +45,11 @@ from kodezart.types.domain.subagents import (
     AgentDefinition,
     SessionPolicy,
 )
-from kodezart.types.domain.surface import SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     ClaimResult,
     IssuePriority,
@@ -52,8 +60,10 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
@@ -1010,6 +1020,126 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         """
         ...
 
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Read one issue and its body digest from the same body snapshot.
+
+        Applies identically to issue bodies and criterion sub-issue bodies.
+        Repeated unchanged reads agree; body changes move the digest;
+        comments, labels, workflow state and UNCHANGED body replays do not.
+        An unavailable digest raises, never substitutes an empty or live one.
+        """
+        ...
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        """Read configured labels on this exact scope, without approval cascade."""
+        ...
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve the configured scope approval label from current ancestry.
+
+        Check the issue and parent issues, then its own project and initiative
+        ancestry. Milestone members use their project approval. Label presence
+        decides; there is no approval-actor carrier. Every call reads again,
+        and missing or unreadable ancestry raises instead of returning false.
+        """
+        ...
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        """Read all native project milestones without selection policy."""
+        ...
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> TrackerIssue:
+        """Apply explicit graph deltas under source and affected peer grants.
+
+        Re-read the supplied native snapshot after awaited ownership checks;
+        this is a refusal check, not an atomic backend compare-and-set.
+        """
+        ...
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        """Read ordinary children with the source's unique split identities."""
+        ...
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue:
+        """Create one ordinary unstarted child under ISSUE_SPLIT_SET authority.
+
+        Return a unique matching child unchanged; refuse duplicate or misplaced
+        identities. A declared parent creation surface grants no existing child edit.
+        """
+        ...
+
+    async def create_criterion_if_absent(
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+    ) -> TrackerIssue:
+        """Mint one Todo criterion under a held CRITERION_CHILD_SET surface.
+
+        Exact parent + current Check identifies a replay. Duplicate matches
+        refuse; an existing child is returned without rewriting any field.
+        New content has Check, Do and empty Evidence, configured criterion
+        classification and the team's unique unstarted state. Existing
+        child edits require their own CRITERION_SUB_ISSUE authority.
+        """
+        ...
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        """The issue's recorded deliverable identity, or no owned identity."""
+        ...
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult:
+        """Replace the complete expected description; state moves separately.
+
+        Exact desired bytes or identical expected/replacement return UNCHANGED.
+        Exact expected bytes return EDITED; any other current body raises
+        StaleWriteError with no write. Substrings do not identify the target.
+        Callers serialize writes; this is not an atomic compare-and-swap.
+
+        Explicit authorization selects its own ISSUE_DESCRIPTION or
+        CRITERION_SUB_ISSUE grant. Reject a target mismatch before reads,
+        and repeat expected source and lease checks on every unsent retry.
+
+        No write on this port carries a body and a workflow state
+        together, and a backend offering to do both in one act is refused
+        rather than used: one act cannot be ordered and cannot be
+        half-undone, so a body that did not land the way its caller
+        asserted would have moved the state anyway and the issue would
+        read as reviewed carrying text nobody reviewed.  A caller needing
+        both issues two writes in one order — this one first, under its
+        precondition, and the transition only after it — so a refused
+        edit leaves the state where its reader found it.
+        """
+        ...
+
 
 @runtime_checkable
 class ArtifactPersister(Protocol):
@@ -1391,4 +1521,34 @@ class OutboundContentGate(Protocol):
         default would let a payload take the cheap path without anyone
         saying so.
         """
+        ...
+
+
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
+
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
+        """Return None only for a successfully read, absent path at that commit."""
+        ...
+
+
+@runtime_checkable
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
         ...

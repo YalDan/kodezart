@@ -1,6 +1,24 @@
 """Pure domain logic for agent operations — no I/O, no side effects."""
 
+import hashlib
+import json
 import uuid
+
+from kodezart.types.domain.agent import RulingId
+
+
+def mint_ruling_id(*, issue_ref: str, question: str) -> RulingId:
+    """Name an exact issue/question pair, independently of its answer or run.
+
+    JSON framing preserves component boundaries; no normalization folds
+    distinct issue keys or reworded questions into an existing ruling.
+    """
+    if not issue_ref.strip() or not question.strip():
+        raise ValueError("a ruling requires a nonempty issue reference and question")
+    framed = json.dumps(
+        (issue_ref, question), ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return RulingId(hashlib.sha256(framed).hexdigest())
 
 
 def generate_workspace_id() -> str:

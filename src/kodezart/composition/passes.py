@@ -11,6 +11,10 @@ from functools import partial
 from pathlib import Path
 
 from kodezart.adapters.no_forge_delivery import NoForgeDeliveryProbe
+from kodezart.composition.organize import (
+    build_organize_tick,
+    verify_organize_configuration,
+)
 from kodezart.composition.records import RECORD_KIND_BY_PASS, run_report
 from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
@@ -31,6 +35,7 @@ from kodezart.core.protocols import (
     PromptSetProvider,
     RepoCache,
     TrackerPort,
+    WorkspaceProvider,
 )
 from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.base_resolver import BaseResolver
@@ -39,6 +44,7 @@ from kodezart.services.dispatch_pass import GatedDispatchPass
 from kodezart.services.fire_context import FireContextAssembler
 from kodezart.services.fire_dispatcher import FireDispatcher, LaneCooldown
 from kodezart.services.lifecycle_watcher import FireReport, LifecycleWatcher
+from kodezart.services.organize_tick import OrganizeTick
 from kodezart.services.pass_gate import PassGate
 from kodezart.services.pass_scheduler import PassScheduler, ScheduledPass
 from kodezart.services.prompt_pass import pass_render_bindings, run_prompt_pass
@@ -261,42 +267,30 @@ async def build_prompt_passes(
     runner: AgentRunner,
     skills: SkillsSelection,
     recorder: RunRecorder,
+    organize: OrganizeTick | None,
 ) -> list[ScheduledPass]:
-    """The scheduled prompt passes — one table row each, and nothing in between.
+    """Bind the configured Organize owner and remaining legacy prompt passes.
 
-    A row is a prompt key, its cadence, and the signals its gate asks; all
-    three are configuration.  The cron fires, the prompt renders from the
-    operation configuration, and the rendered text goes to the query path
-    as one session.  **Adding a pass is a row and its config fields** — no
-    second render path to keep in parity with the first, which is the
-    defect this shape exists to remove.
-
-    Wired only over a config that carries a ROSTER.  Every shipped template
-    enumerates the declared teams and the declared repositories, so a pass
-    scheduled over an operation declaring neither would render a hole every
-    interval, on a board nobody is watching.  Loading such a config stays
-    legitimate — an empty board boots — and what it costs is named here
-    rather than paid silently: the collections that are empty are logged,
-    and no pass is registered.  The boot render that guards the passes this
-    DOES wire is :func:`verify_pass_preflight`'s (KOD-150).
-
-    The ``PromptKey`` is still what the tick is bound to, not the rendered
-    string: the render stays inside the tick, where the gate has already
-    said there is work, so a quiet board pays for neither.
-    ``functools.partial`` rather than a closure, because a closure over
-    the loop variable would hand every pass the LAST key and one prompt
-    would silently never be sent.
-
-    A prompt pass acts on the whole operation, so its gate is scoped to
-    every declared team and every declared repository — the narrowing the
-    per-repository dispatch pass makes is a property of that pass, not of
-    the mechanism.
-
-    *dialled* is the tracker AND the ledger of this process's own writes,
-    as one value: a pass gated on a port whose self-writes it cannot
-    recognise wakes on the operation's own churn every tick (KOD-289).
+    Organize uses the existing grooming cadence and report identity, with its
+    own fresh scope reads and explicit repository bindings. The remaining
+    prompt rows require the legacy team/repository roster and use their
+    configured signal gates. Preflight validates exactly those active rows.
     """
     log: BoundLogger = get_logger(__name__)
+    schedule = prompt_pass_schedule(config)
+    scheduled: list[ScheduledPass] = []
+    if organize is not None:
+        key = PromptKey.GROOMING_PASS
+        row = schedule.pop(key)
+        scheduled.append(
+            ScheduledPass(
+                name=key.value,
+                interval_seconds=row.interval_seconds,
+                timeout_seconds=row.timeout_seconds,
+                run=organize.run,
+                report=run_report(recorder, _record_kind_for(key), key.value),
+            )
+        )
     absent = absent_roster(operation)
     if absent:
         await log.ainfo(
@@ -304,17 +298,16 @@ async def build_prompt_passes(
             operation_config_present=True,
             absent=list(absent),
         )
-        return []
+        return scheduled
     working_dir = Path(config.scheduled_pass_working_dir).expanduser()
     working_dir.mkdir(parents=True, exist_ok=True)
-    schedule = prompt_pass_schedule(config)
     # Read only where a gate will actually be built: naming the operation's
     # teams REFUSES when it declares none, and a deployment whose passes are
     # all ungated has no scan for that refusal to be about.
     gated = dialled is not None and any(row.signals for row in schedule.values())
     team_keys = operation.team_keys() if gated else ()
     repo_urls = [repo.url for repo in operation.repos]
-    return [
+    return scheduled + [
         ScheduledPass(
             name=key.value,
             interval_seconds=row.interval_seconds,
@@ -324,7 +317,7 @@ async def build_prompt_passes(
                 # The record identity's other two thirds, read from the same
                 # two pure functions of the key the report below reads, so
                 # the title the session is given and the title the runner
-                # verifies by are one string (KOD-290).
+                # verifies by are one string.
                 kind=_record_kind_for(key),
                 key=key,
                 prompts=prompts,
@@ -546,7 +539,9 @@ async def _verify_wired_gates(
         {}
         if absent_roster(operation)
         else {
-            key.value: row.signals for key, row in prompt_pass_schedule(config).items()
+            key.value: row.signals
+            for key, row in prompt_pass_schedule(config).items()
+            if key is not PromptKey.GROOMING_PASS or not operation.organize_scopes
         }
     )
     if github_api is not None and any(
@@ -697,6 +692,9 @@ async def verify_pass_preflight(
     :func:`build_prompt_passes`), and rendering a template it will never
     send would refuse a boot over a hole nothing reaches.
     """
+    organize = verify_organize_configuration(
+        config=config, operation=operation, tracker=tracker
+    )
     _verify_knowledge_destinations(config=config, operation=operation)
     await _verify_wired_gates(
         config=config,
@@ -707,6 +705,8 @@ async def verify_pass_preflight(
     if operation is None or absent_roster(operation):
         return
     for key in prompt_pass_schedule(config):
+        if organize and key is PromptKey.GROOMING_PASS:
+            continue
         _assert_renders(key=key, prompts=prompts)
 
 
@@ -721,6 +721,7 @@ async def build_dispatch_runtime(
     gate: OutboundContentGate,
     git: GitService,
     cache: RepoCache,
+    workspace: WorkspaceProvider,
     prompts: PromptSetProvider,
     runner: AgentRunner,
     skills: SkillsSelection,
@@ -801,6 +802,17 @@ async def build_dispatch_runtime(
                 runner=runner,
                 skills=skills,
                 recorder=recorder,
+                organize=build_organize_tick(
+                    config=config,
+                    operation=operation,
+                    tracker=None if dialled is None else dialled.tracker,
+                    runner=runner,
+                    workspace=workspace,
+                    git=git,
+                    prompts=prompts,
+                    skills=skills,
+                    gate=gate,
+                ),
             ),
         )
     else:

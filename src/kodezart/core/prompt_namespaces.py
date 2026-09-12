@@ -26,6 +26,14 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 # compares it against what the shipped templates actually reference.
 PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
     {
+        "organize_context",
+        "mandate_rubric",
+        "issue_body",
+        "issue_key",
+        "linked_issue_bodies",
+        "refusal_evidence",
+        "defect_classes",
+        "criterion_issue_bodies",
         "task",
         "task_md",
         "task_description",
@@ -118,6 +126,27 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "operation_name": config.operation_name,
         "workspace": config.workspace,
     }
+    _bind_absentable(
+        bindings,
+        "scope_labels",
+        dict(config.scope_labels),
+        absent=not config.scope_labels,
+    )
+
+    _bind_absentable(
+        bindings,
+        "organize_mandates",
+        [
+            {
+                "kind": phase.spec.kind.value,
+                "gate_label": phase.gate_label,
+                "terminal_marker": phase.terminal_marker,
+            }
+            for phase in config.resolve_organize_mandates()
+        ],
+        absent=not config.organize_mandates,
+    )
+
     _bind_absentable(
         bindings,
         "queue_states",
@@ -380,5 +409,7 @@ def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
         assert_namespaces_disjoint(())
         return {}
     bindings = operation_bindings(config)
-    assert_namespaces_disjoint(sorted(bindings))
+    # Check declared roots too: a new configuration field must not collide
+    # even before its projection into operation_bindings is implemented.
+    assert_namespaces_disjoint(sorted(set(type(config).model_fields) | set(bindings)))
     return bindings

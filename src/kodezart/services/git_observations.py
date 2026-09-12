@@ -12,3 +12,11 @@ async def read_workspace_head(*, git: GitService, workspace: str) -> tuple[str, 
 
     observed = await settle(observe())
     return observed
+
+
+async def read_remote_head(
+    *, git: GitService, repository: str, remote: str, branch: str
+) -> str | None:
+    """Finish the native remote lookup before cancellation leaves its caller."""
+    head = await settle(git.remote_branch_sha(repository, remote, branch))
+    return head

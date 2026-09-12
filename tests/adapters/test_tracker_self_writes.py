@@ -62,6 +62,7 @@ def _server() -> FakeLinearMcpServer:
 
 def _tracker(server: McpToolCaller, ledger: SelfWriteLedger) -> LinearMcpTracker:
     return LinearMcpTracker(
+        scope_labels={},
         issue_labels={},
         marker_prefixes=MARKER_PREFIXES,
         caller=server,
@@ -170,6 +171,7 @@ async def test_a_read_back_that_fails_does_not_fail_the_write_it_recorded() -> N
     server = _server()
     ledger = SelfWriteLedger()
     tracker = LinearMcpTracker(
+        scope_labels={},
         issue_labels={},
         marker_prefixes=MARKER_PREFIXES,
         caller=_ReadBackGone(server),

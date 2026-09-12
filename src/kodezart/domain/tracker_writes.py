@@ -2,7 +2,11 @@
 
 from collections.abc import Sequence
 
-from kodezart.domain.errors import DuplicateCommentMarkerError, StaleCommentWriteError
+from kodezart.domain.errors import (
+    DuplicateCommentMarkerError,
+    StaleCommentWriteError,
+    StaleWriteError,
+)
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 from kodezart.types.domain.tracker import TrackerComment, TrackerIssue
@@ -88,3 +92,18 @@ def require_expected_comment(
             expected_comment_key=expected.comment_key,
             reason=reason,
         )
+
+
+def description_replacement(
+    *, target: str, body: str, expected: str, replacement: str
+) -> str | None:
+    """Replace one complete description, refusing partial or ambiguous anchors.
+
+    None means the desired bytes are already present or the request is a no-op.
+    The complete expected body identifies the target without a span selector.
+    """
+    if expected == replacement or body == replacement:
+        return None
+    if body == expected:
+        return replacement
+    raise StaleWriteError(target=target, expected=expected)

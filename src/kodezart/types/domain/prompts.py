@@ -45,6 +45,14 @@ class PromptKey(StrEnum):
     #: rule covers it like every other role.
     KNOWLEDGE_MAP = "knowledge_map"
 
+    ORGANIZE_ASSESS = "organize_assess"
+
+    ORGANIZE_AUTHOR = "organize_author"
+
+    ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
+
+    ORGANIZE_VERIFY = "organize_verify"
+
 
 class OrchestrationPrimitive(StrEnum):
     """How a generative role is told to fan its investigation out.

@@ -452,3 +452,13 @@ class LinearCriterionIssueWire(LinearIssueDetailWire):
 
     labels: list[str]
     parent_id: str | None
+
+
+class LinearWorkflowStateWire(LinearNamedWire):
+    """Native status identity and category for exact team-state selection."""
+
+    id: str = Field(min_length=1, pattern=r"\S")
+    type: str
+
+
+LINEAR_WORKFLOW_STATES = TypeAdapter(list[LinearWorkflowStateWire])

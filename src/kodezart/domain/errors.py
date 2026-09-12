@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 
 from kodezart.types.domain.gating import ScanFailureKind, ScanHit
+from kodezart.types.domain.organize_owner import OrganizeReport
 from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.surface import WritableSurface
 
@@ -430,3 +431,122 @@ class CriterionReadError(Exception):
         self.issue_key = issue_key
         self.reason = reason
         super().__init__(f"criteria of {issue_key!r} could not be read: {reason}")
+
+
+class OrganizeAdmissionIdentityError(Exception):
+    """The judgment did not address the source issue that was dispatched."""
+
+    def __init__(self, *, expected: str, observed: str) -> None:
+        self.expected = expected
+        self.observed = observed
+        super().__init__(
+            f"organize admission returned issue {observed!r}, expected {expected!r}"
+        )
+
+
+class OrganizeDecisionRequiredError(Exception):
+    """An author found a human decision, before proposing any permitted write."""
+
+    def __init__(self, *, issue_key: str, question: str, evidence: str) -> None:
+        self.issue_key, self.question, self.evidence = issue_key, question, evidence
+        super().__init__(
+            f"organize author for {issue_key!r} needs a decision: {question}"
+        )
+
+
+class OrganizeHaltError(Exception):
+    """A completed Organize tick retains its exact addressed halt report."""
+
+    def __init__(self, *, scope: ScopeRef, report: OrganizeReport) -> None:
+        if report.halt is None:
+            raise ValueError("an Organize halt requires a halted report")
+        self.scope = scope
+        self.report = report
+        super().__init__(
+            f"Organize for {scope.kind.value} {scope.key!r} halted: "
+            f"{report.halt.cause.value}"
+        )
+
+
+class OrganizeWriteRefusalError(Exception):
+    """A proposed or stale write is outside this operation's current authority."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"organize write for {issue_key!r} refused: {reason}")
+
+
+class ScopeCycleError(Exception):
+    """A cycle in the scope's dependency graph prevents any plan being returned.
+
+    ``issue_keys`` is one offending directed cycle, without unrelated issues
+    that merely lead into it. No edge is removed or invented to produce an
+    order; the caller receives the tracker keys that require repair.
+    """
+
+    def __init__(self, *, issue_keys: Sequence[str]) -> None:
+        self.issue_keys: tuple[str, ...] = tuple(issue_keys)
+        super().__init__(f"scope dependency cycle: {', '.join(self.issue_keys)}")
+
+
+class DuplicateIssueIdentityError(Exception):
+    """Several issues claim one scope-and-deliverable identity."""
+
+    def __init__(
+        self, *, scope_key: ScopeRef, deliverable_key: str, issue_keys: Sequence[str]
+    ) -> None:
+        super().__init__(
+            f"duplicate deliverable {deliverable_key!r} in "
+            f"{scope_key.kind.value}:{scope_key.key}: {', '.join(issue_keys)}"
+        )
+        self.scope_key = scope_key
+        self.deliverable_key = deliverable_key
+        self.issue_keys = tuple(issue_keys)
+
+
+class StaleWriteError(Exception):
+    """Neither the asserted anchor nor its replacement is on the target."""
+
+    def __init__(self, *, target: str, expected: str) -> None:
+        super().__init__(f"stale description write on {target!r}: anchor {expected!r}")
+        self.target = target
+        self.expected = expected
+
+
+class GitSourceReadError(Exception):
+    """The requested immutable repository object cannot supply source bytes."""
+
+    def __init__(self, *, ref: str, path: str | None, reason: str) -> None:
+        self.ref = ref
+        self.path = path
+        self.reason = reason
+        super().__init__(f"source {ref!r}:{path!r} could not be read: {reason}")
+
+
+class RulingRecordReadError(Exception):
+    """The addressed issue's ruling records are unreadable or ambiguous."""
+
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
+        self.issue_key = issue_key
+        self.lane_key = lane_key
+        self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
+        super().__init__(
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
+        )
+
+
+class InvalidFireCriterionError(Exception):
+    """A criterion cannot supply its required specification at fire entry."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of fire subject {issue_key!r} "
+            f"cannot be consumed: {reason}"
+        )

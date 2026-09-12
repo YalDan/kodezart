@@ -339,3 +339,86 @@ Terminal outcome comments require `marker_prefixes.run_outcome` in the operation
 configuration. The writer validates this purpose at construction, acquires the
 marker surface under the actual queue job id, renews after content gating, and
 releases after settlement. Fire-claim renewal remains separately configured.
+
+## Organize phase configuration
+
+The operation TOML may declare `[[organize_mandates]]` entries. Omission is
+valid and declares no phase table. A populated table must include `groom`,
+`ticket` and `criteria` exactly once each. Every entry is frozen, rejects
+unknown fields and requires these fields:
+
+| Field | Value |
+| -- | -- |
+| `kind` | `groom`, `ticket` or `criteria` |
+| `gate_label_key` | A qualified `scope_labels.<key>` or `issue_labels.<key>` reference |
+| `rubric_prompt_key` | A registered `PromptKey` value |
+| `admission_prompt_key` | A registered `PromptKey` value |
+| `terminal_marker_key` | A qualified `issue_labels.<key>` reference |
+
+Keys name entries in the operation's label mappings; they never contain
+tracker label names directly. Qualification distinguishes the two mappings
+even when they use the same key. Dots after the namespace belong to the key.
+All declared references resolve while loading the operation configuration,
+before tracker startup or dispatch. Missing or empty mappings abort loading
+and report every unresolved reference.
+
+Organize runs before scope approval. The configured `scope_labels.approved`
+label cannot gate a phase or be its completion marker, including when another
+key aliases that label. Each phase completes with an issue marker. The table
+validates phase configuration; it does not schedule an organize pass.
+
+## Organize prompt roles
+
+Every prompt set supplies a separate data file for each organize role:
+
+| Key | Role |
+| -- | -- |
+| `organize_assess` | Assess the current issue against its mandate |
+| `organize_author` | Propose specification repairs |
+| `organize_verify` | Independently verify the current issue |
+| `organize_criteria_author` | Propose criterion sub-issues |
+
+The registry resolves each role independently. Removing any required file
+from the selected set aborts prompt boot and names the missing key. The
+roles inherit the set's existing authoring or judgment session policy.
+The configured native Organize owner dispatches these roles and owns tracker
+mutation through the narrow declared surfaces. The shared `write_back_verify`
+role independently checks the exact reread artifact through the canonical
+write-back repair loop.
+
+The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
+`linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and
+`defect_classes`. They are reserved outside operation configuration and set
+fragments. Boot rejects a colliding configuration root or projected binding.
+Refusal evidence carries the admission result for an authoring repair; assess
+and verify render the current source bodies without that prior refusal.
+
+`OrganizeAdmission.assess` and `.verify` read the current subject, linked
+issues and criterion children through the tracker port on every call. The
+source `issue_key` is supplied separately from the verbatim bodies. Each
+call acquires the requested repository base and starts a read-only
+`organize_pass` session, with no prior session or author transcript. These
+entry points return typed admission results to the configured owner. That
+owner bounds admission repair separately from full-scope convergence, and
+writes phase markers only from fresh current evidence. Caller cancellation waits for an
+in-flight workspace acquisition or release to settle. A cancellation during
+acquisition releases the resulting workspace without starting the session;
+repeated cancellation cannot interrupt that cleanup.
+
+
+The native Organize owner requires explicit `[[organize_scopes]]` rows, each with
+`scope = { kind = "issue", key = "<native key>" }` (or another supported scope
+kind) and `repo_url` matching exactly one declared repository. A scope has one
+repository binding; duplicates and ambiguous mappings refuse configuration.
+These bindings require the full configured mandate table. No team/repository
+cross-product is inferred.
+
+When those bindings are configured, set both
+`KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
+`KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
+has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
+`max_admission_rounds` and `max_convergence_rounds` fields. Partial owner
+configuration refuses scheduling. Retired flat Organize bound spellings remain
+rejected. Each native tick uses the
+existing grooming run identity and resolves the configured repository trunk to
+a fresh immutable remote commit before assessment.

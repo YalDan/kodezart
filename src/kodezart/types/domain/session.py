@@ -64,6 +64,8 @@ class SessionType(StrEnum):
     #: grant has to name one and not the other is additive.
     SCHEDULED_PASS = "scheduled_pass"
 
+    ORGANIZE_PASS = "organize_pass"
+
 
 class KnowledgeTransport(StrEnum):
     """How a granted session reaches the knowledge MCP server.

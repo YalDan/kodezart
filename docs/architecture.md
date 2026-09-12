@@ -365,15 +365,14 @@ tool policy. It owns a detached workspace at a complete commit SHA, checks head,
 dirtiness and native Git replacement refs before and after judgment, and settles
 owned reads and workspace cleanup before propagating cancellation.
 
-The extracted artifact reader supports issue descriptions, exact marker-keyed
-comments, container descriptions, configured issue labels, individual native
-criteria and complete current criterion families. Structured native reads require
-reported fields instead of treating omissions as empty facts. Other declared
-surfaces raise `WriteBackReadError` before the step writes; graph and split readers
-belong to their later Organize integration. This slice
-does not add scheduler consumers, state transitions, content-gate bypasses or
-backend fencing. Configured adoption of the shared verification bound and every
-lane's actual writer remains with those consumers.
+The artifact reader supports issue descriptions, exact marker-keyed comments,
+container descriptions, configured issue labels, individual native criteria,
+complete current criterion families, native issue graphs and split children.
+Structured native reads require reported fields instead of treating omissions as
+empty facts. Unsupported surfaces raise `WriteBackReadError` before writing.
+The configured Organize owner consumes the shared verifier with its explicitly
+declared verification bound. These reads and leases do not provide backend fencing;
+universal writer adoption and criterion state transitions remain separate work.
 
 ## Native criterion reads
 
@@ -389,3 +388,32 @@ The ordinary issue reader retains its existing compatibility contract.
 classification capability methods reject absent or blank required mappings before
 I/O. These shared readers grant no authority to create, execute, grade or change
 criteria and add no scope-label or state-transition policy.
+
+## Organize current-source admission
+
+Body revisions retain the exact same-read body and a nonempty digest. Shared
+conformance checks cover body changes, unchanged replays and metadata-only
+writes. An unreadable or invalid revision refuses at the actual read; no
+consumer substitutes an empty digest or treats it as live.
+
+Admission sessions return an `AdmissionJudgment`. The caller creates the
+`AdmissionResult` by attaching the body digest from the revision supplied to
+that session; the agent never supplies that metadata. A body changed while
+the session runs therefore leaves a result about the earlier body.
+`OrganizeAdmission.is_live` reads the surface's current revision and calls the
+pure two-digest comparison. It starts no session and never restamps a result.
+An issue body and each criterion body are graded and checked independently.
+Persistence, phase markers and issue readiness orchestration remain separate
+consumers of those results.
+
+The pure `organize_gap` function takes a complete scope revision snapshot,
+admissions keyed by each surface identity, open findings and the configured
+semantic body marker. It returns original issue records in snapshot order.
+Missing markers, absent or stale admissions, missing non-Canceled criterion
+children, or open findings put an issue in the work set. A stale criterion
+body puts its parent there through the same comparison, without lapsing the
+parent body judgment; execution-state changes alone do not. Record-shaped
+`tracker` and `decision` members and criterion children are never work targets.
+Incomplete parent identity or duplicate revision/admission records refuse
+computation. Collecting and persisting these snapshots and running leased
+author sessions remain orchestration work outside this pure function.

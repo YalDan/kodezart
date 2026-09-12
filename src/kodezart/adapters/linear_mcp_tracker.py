@@ -14,15 +14,18 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from hashlib import sha256
 from typing import Final, assert_never
 from urllib.parse import quote
 from uuid import uuid4
 
 from pydantic import ValidationError
 
+from kodezart.adapters.linear_issue_identity import LinearIssueIdentityCarrier
 from kodezart.adapters.linear_markers import LinearMarkers
 from kodezart.adapters.linear_mcp_types import (
     LINEAR_NAMED_ARRAY,
+    LINEAR_WORKFLOW_STATES,
     LinearAddressedIssueWire,
     LinearCommentEntryWire,
     LinearCommentListWire,
@@ -47,7 +50,10 @@ from kodezart.adapters.linear_mcp_types import (
     LinearWireModel,
 )
 from kodezart.adapters.linear_scope_reader import SCOPE_READ_TOOLS, LinearScopeReader
-from kodezart.adapters.linear_scope_types import LinearScopeIssuesWire
+from kodezart.adapters.linear_scope_types import (
+    LinearApprovalIssueWire,
+    LinearScopeIssuesWire,
+)
 from kodezart.adapters.pagination import cursor_pages
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.errors import (
@@ -62,15 +68,26 @@ from kodezart.core.errors import (
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
+from kodezart.domain.criterion_amendment import require_criterion_source
+from kodezart.domain.criterion_creation import criterion_body, existing_criterion
 from kodezart.domain.errors import (
     CriterionReadError,
+    DuplicateIssueIdentityError,
     DuplicateWorkRefError,
     IssueLabelReadError,
+    OrganizeWriteRefusalError,
+    ScopeReadError,
     SurfaceLeaseError,
     SurfaceWriteAttributionError,
     TransientAPIError,
 )
 from kodezart.domain.git_url import extract_owner_repo
+from kodezart.domain.organize_graph import (
+    changed_peers,
+    graph_snapshot,
+    validate_graph_change,
+)
+from kodezart.domain.scope_approval import resolve_execution_approval
 from kodezart.domain.surface_lease import (
     live_conflict,
     one_ownership,
@@ -81,15 +98,26 @@ from kodezart.domain.surface_lease import (
 from kodezart.domain.tracker_writes import (
     classification_surface,
     comment_under_marker,
+    description_replacement,
     marked_comment_body,
     require_expected_comment,
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.operation import (
     LifecycleStage,
     OperationMemberAbsentError,
     QueueState,
+    ScopeLabel,
+)
+from kodezart.types.domain.organize_graph import (
+    BlockedByChange,
+    GraphChange,
+    IssueGraphSnapshot,
+    MilestoneChange,
+    ParentChange,
+    PriorityChange,
 )
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import (
@@ -99,7 +127,12 @@ from kodezart.types.domain.self_writes import (
     field_value,
     field_values,
 )
-from kodezart.types.domain.surface import SurfaceKind, SurfaceLease, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    SurfaceLease,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
     ClaimResult,
@@ -116,9 +149,11 @@ from kodezart.types.domain.tracker import (
     TrackerAsset,
     TrackerComment,
     TrackerIssue,
+    TrackerIssueRevision,
     TrackerReview,
     WorkflowStateKind,
 )
+from kodezart.types.domain.tracker_writes import DescriptionEditResult
 
 _TOOL_LIST_ISSUES = "list_issues"
 _TOOL_LIST_DIFFS = "list_diffs"
@@ -732,6 +767,15 @@ def refuse_combined_issue_write(arguments: Mapping[str, object]) -> None:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _SplitCreation:
+    """Actual native save receipt and the facts needed for its separate readback."""
+
+    saved: TrackerIssue
+    source: TrackerIssue
+    content: str
+
+
 class LinearMcpTracker:
     """``TrackerPort`` over the Linear MCP server.
 
@@ -747,6 +791,7 @@ class LinearMcpTracker:
         caller: McpToolCaller,
         queue_state_labels: Mapping[str, str],
         issue_labels: Mapping[str, str],
+        scope_labels: Mapping[str, str],
         workflow_state_names: Mapping[LifecycleStage, str],
         team_identifiers: Mapping[str, str],
         marker_prefixes: Mapping[str, str],
@@ -756,6 +801,8 @@ class LinearMcpTracker:
     ) -> None:
         self._caller: McpToolCaller = caller
         self._issue_labels = dict(issue_labels)
+        self._scope_labels = dict(scope_labels)
+        self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._markers = LinearMarkers(marker_prefixes)
         self._retry = retry
         self._clock: Callable[[], datetime] = clock
@@ -3280,3 +3327,629 @@ class LinearMcpTracker:
                     )
                 comments[wire.id] = field_values(raw)
         return tuple(sorted(comments.items()))
+
+    async def read_issue_revision(self, *, issue_key: str) -> TrackerIssueRevision:
+        """Hash exactly the returned body, independently of vendor timestamps."""
+        issue = await self.read_issue(issue_key=issue_key)
+        return TrackerIssueRevision(
+            issue=issue,
+            body_digest=sha256(issue.body.encode("utf-8")).hexdigest(),
+        )
+
+    async def read_scope_labels(self, *, ref: ScopeRef) -> frozenset[ScopeLabel]:
+        if ref.kind is ScopeKind.ISSUE:
+            _, members = await self._read_scope_issue(ref.key)
+            return members
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+        if ref.kind is ScopeKind.MILESTONE:
+            await reader.container_metadata(ref=ref)
+            return frozenset()
+        labels, _ = await reader.labels_parent(ref=ref)
+        return self._scope_label_members(tuple(labels))
+
+    async def execution_approved(self, *, issue_key: str) -> bool:
+        """Resolve configured label presence through fresh native ancestry."""
+        _, approved = await self._read_execution_approval(issue_key=issue_key)
+        return approved
+
+    async def _read_execution_approval(
+        self, *, issue_key: str
+    ) -> tuple[TrackerIssue, bool]:
+        label = self._scope_labels.get(ScopeLabel.APPROVED.value)
+        if not label:
+            raise OperationMemberAbsentError(
+                missing=f"scope_labels.{ScopeLabel.APPROVED.value}",
+                stops="cannot resolve scope approval",
+            )
+        reader = LinearScopeReader(call=self._call, read_issue=self.read_issue)
+
+        async def hydrate(key: str) -> tuple[TrackerIssue, bool]:
+            issue, members = await self._read_scope_issue(key)
+            return issue, ScopeLabel.APPROVED in members
+
+        subject = await hydrate(issue_key)
+        canonical_key = subject[0].issue_key
+
+        async def read_issue(key: str) -> tuple[TrackerIssue, bool]:
+            return subject if key == canonical_key else await hydrate(key)
+
+        async def read_container(ref: ScopeRef) -> tuple[bool, ScopeRef | None]:
+            return await reader.approval_parent(ref=ref, approved_label=label)
+
+        approved = await resolve_execution_approval(
+            issue_key=canonical_key,
+            read_issue=read_issue,
+            read_container=read_container,
+        )
+        return subject[0], approved
+
+    async def project_milestones(
+        self, *, project_key: str
+    ) -> tuple[ScopeContainer, ...]:
+        return await LinearScopeReader(
+            call=self._call, read_issue=self.read_issue
+        ).project_milestones(project_key=project_key)
+
+    async def _read_unchanged_graph(
+        self, *, issue_key: str, expected: tuple[IssueGraphSnapshot, ...]
+    ) -> tuple[TrackerIssue, ...]:
+        current = tuple(
+            [await self.read_issue(issue_key=row.issue_key) for row in expected]
+        )
+        if (
+            not expected
+            or len({row.issue_key for row in expected}) != len(expected)
+            or issue_key not in {row.issue_key for row in expected}
+            or tuple(graph_snapshot(issue) for issue in current) != expected
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key, reason="the native graph changed before writing"
+            )
+        return current
+
+    async def update_issue_graph(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> TrackerIssue:
+        async def attempt() -> tuple[TrackerIssue, ...]:
+            return await self._update_issue_graph_once(
+                issue_key=issue_key, expected=expected, changes=changes, holder=holder
+            )
+
+        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        # A completed save must never be retried because a later read cannot answer.
+        for expected_issue in written:
+            observed = await self.read_issue(issue_key=expected_issue.issue_key)
+            if graph_snapshot(observed) != graph_snapshot(expected_issue):
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=(
+                        "the backend did not retain the exact graph delta and "
+                        "inverse edges"
+                    ),
+                )
+        return await self.read_issue(issue_key=issue_key)
+
+    async def _update_issue_graph_once(
+        self,
+        *,
+        issue_key: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+        changes: tuple[GraphChange, ...],
+        holder: str,
+    ) -> tuple[TrackerIssue, ...]:
+        facts = await self._read_unchanged_graph(issue_key=issue_key, expected=expected)
+        candidate, peers = validate_graph_change(
+            issue_key=issue_key,
+            changes=changes,
+            issues=facts,
+            member_keys=frozenset(row.issue_key for row in expected),
+        )
+
+        async def require_milestone(change: MilestoneChange) -> None:
+            if change.milestone_id is None:
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=(
+                        "the backend cannot clear a milestone through its "
+                        "declared save schema"
+                    ),
+                )
+            if candidate.project_id is None:
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason="milestone assignment requires a current native project",
+                )
+            milestone = await self.container_metadata(
+                ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id)
+            )
+            if milestone.ref.key != change.milestone_id or milestone.parent != ScopeRef(
+                kind=ScopeKind.PROJECT, key=candidate.project_id
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=("milestone does not belong to the current native project"),
+                )
+
+        arguments: dict[str, object] = {"id": issue_key}
+        for change in changes:
+            if isinstance(change, ParentChange):
+                arguments["parentId"] = change.parent_id
+            elif isinstance(change, PriorityChange):
+                arguments["priority"] = _RAW_BY_PRIORITY[change.priority]
+            elif isinstance(change, MilestoneChange):
+                await require_milestone(change)
+                arguments["milestone"] = change.milestone_id
+            else:
+                add_name, remove_name = (
+                    ("blockedBy", "removeBlockedBy")
+                    if isinstance(change, BlockedByChange)
+                    else ("relatedTo", "removeRelatedTo")
+                )
+                if change.add:
+                    arguments[add_name] = list(change.add)
+                if change.remove:
+                    arguments[remove_name] = list(change.remove)
+        surfaces = tuple(
+            WritableSurface(
+                kind=SurfaceKind.ISSUE_GRAPH,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
+            )
+            for peer in sorted(peers)
+        )
+        markers = await self._markers_on(
+            _GrantKind.LEASE,
+            targets=tuple(_LEASE_ADDRESSING.target(surface) for surface in surfaces),
+        )
+        for surface in surfaces:
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+        facts = await self._read_unchanged_graph(issue_key=issue_key, expected=expected)
+        for change in changes:
+            if isinstance(change, MilestoneChange):
+                await require_milestone(change)
+        # Recheck the actual deadline after every awaited preparation read. These
+        # observed grants cannot prove that an unseen rival did not arrive later.
+        for surface in surfaces:
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+        if graph_snapshot(
+            next(issue for issue in facts if issue.issue_key == issue_key)
+        ) == graph_snapshot(candidate):
+            return (candidate,)
+        saved = self._saved_issue(await self._send(_TOOL_SAVE_ISSUE, arguments))
+        if saved.issue_key != issue_key:
+            raise OrganizeWriteRefusalError(
+                issue_key=issue_key,
+                reason="graph save returned another native identity",
+            )
+        return (
+            candidate,
+            *changed_peers(issue_key=issue_key, changes=changes, issues=facts),
+        )
+
+    async def read_split_children(self, *, source_key: str) -> tuple[TrackerIssue, ...]:
+        self._issue_identity.require_prefix()
+        scope = ScopeRef(kind=ScopeKind.ISSUE, key=source_key)
+        children: dict[str, TrackerIssue] = {}
+        for identity, issue in await self._identity_issues():
+            if identity.scope_key != scope:
+                continue
+            if identity.deliverable_key in children:
+                raise DuplicateIssueIdentityError(
+                    scope_key=scope,
+                    deliverable_key=identity.deliverable_key,
+                    issue_keys=[
+                        children[identity.deliverable_key].issue_key,
+                        issue.issue_key,
+                    ],
+                )
+            if (
+                issue.parent_key != source_key
+                or {"criterion", "decision"} & issue.issue_labels
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=source_key,
+                    reason=(
+                        "split identity is misplaced or no longer an ordinary "
+                        "deliverable"
+                    ),
+                )
+            children[identity.deliverable_key] = issue
+        return tuple(sorted(children.values(), key=lambda issue: issue.issue_key))
+
+    async def create_split_if_absent(
+        self,
+        *,
+        source_key: str,
+        deliverable_key: str,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue:
+        if not all(
+            value.strip() for value in (source_key, deliverable_key, title, body)
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="split creation requires nonblank identity and specification",
+            )
+        identity = IssueIdentity(
+            scope_key=ScopeRef(kind=ScopeKind.ISSUE, key=source_key),
+            deliverable_key=deliverable_key,
+        )
+
+        async def attempt() -> TrackerIssue | _SplitCreation:
+            return await self._create_split_once(
+                identity=identity,
+                title=title,
+                body=body,
+                holder=holder,
+                expected=expected,
+            )
+
+        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if isinstance(written, TrackerIssue):
+            return written
+        created, source, content = written.saved, written.source, written.content
+        # This verification is outside the resend boundary even when it fails.
+        current = await self.read_issue(issue_key=created.issue_key)
+        if (
+            current.issue_key != created.issue_key
+            or current.parent_key != source_key
+            or current.team_key != source.team_key
+            or current.project_id != source.project_id
+            or current.title != title
+            or current.body != content
+            or current.state_kind is not WorkflowStateKind.UNSTARTED
+            or {"criterion", "decision"} & current.issue_labels
+            or await self.read_issue_identity(issue_key=current.issue_key) != identity
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="created split did not retain its required native shape",
+            )
+        return current
+
+    async def _create_split_once(
+        self,
+        *,
+        identity: IssueIdentity,
+        title: str,
+        body: str,
+        holder: str,
+        expected: tuple[IssueGraphSnapshot, ...],
+    ) -> TrackerIssue | _SplitCreation:
+        source_key = identity.scope_key.key
+        self._issue_identity.require_prefix()
+
+        async def existing_split() -> TrackerIssue | None:
+            # Validate the complete identity set and use each returned child's
+            # same observed body; a separate identity read could mix revisions.
+            for existing in await self.read_split_children(source_key=source_key):
+                held = self._issue_identity.decode(
+                    existing.body, issue_key=existing.issue_key
+                )
+                if held == identity:
+                    return existing
+            return None
+
+        existing = await existing_split()
+        if existing is not None:
+            return existing
+        source = await self.read_issue(issue_key=source_key)
+        if source.issue_key != source_key or source.team_key is None:
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key, reason="split source has no declared native team"
+            )
+        team = self._team_identifier(source.team_key)
+        state = await self._unstarted_state_id(team_id=team, issue_key=source_key)
+        content = self._issue_identity.encode(
+            identity, body=body, issue_key="new split child"
+        )
+        arguments: dict[str, object] = {
+            "title": title,
+            "description": content,
+            "team": team,
+            "parentId": source_key,
+            "state": state,
+        }
+        if source.project_id is not None:
+            arguments["project"] = source.project_id
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_SPLIT_SET, ref=identity.scope_key
+        )
+        markers = await self._markers_on(
+            _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+        )
+        self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+        await self._read_unchanged_graph(issue_key=source_key, expected=expected)
+        # State resolution and lease acquisition may have allowed another writer
+        # to prepare this identity. Return its current child without overwriting.
+        existing = await existing_split()
+        if existing is not None:
+            return existing
+        current_source = await self.read_issue(issue_key=source_key)
+        expected_source = next(row for row in expected if row.issue_key == source_key)
+        if (
+            graph_snapshot(current_source) != expected_source
+            or current_source.team_key != source.team_key
+        ):
+            raise OrganizeWriteRefusalError(
+                issue_key=source_key,
+                reason="split source changed before creation",
+            )
+        # No await separates this deadline check from issuing the save. The
+        # earlier native snapshot is not an atomic uniqueness or fencing token.
+        self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+        created = self._saved_issue(await self._send(_TOOL_SAVE_ISSUE, arguments))
+        return _SplitCreation(saved=created, source=source, content=content)
+
+    async def _unstarted_state_id(self, *, team_id: str, issue_key: str) -> str:
+        payload = await self._call(_TOOL_LIST_ISSUE_STATUSES, {"team": team_id})
+        try:
+            states = LINEAR_WORKFLOW_STATES.validate_python(payload)
+        except ValidationError as exc:
+            raise TrackerProtocolError(
+                "invalid initial state vocabulary",
+                tool=_TOOL_LIST_ISSUE_STATUSES,
+                detail=str(exc),
+            ) from exc
+        unstarted = [
+            state.id
+            for state in states
+            if state.type == WorkflowStateKind.UNSTARTED.value
+        ]
+        if len(unstarted) != 1:
+            raise CriterionReadError(
+                issue_key=issue_key,
+                reason="initialization requires exactly one unstarted team state",
+            )
+        return unstarted[0]
+
+    async def create_criterion_if_absent(
+        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+    ) -> TrackerIssue:
+        body = criterion_body(parent_key=parent_key, check=check, do=do)
+        if not title.strip():
+            raise CriterionReadError(
+                issue_key=parent_key, reason="criterion title is empty"
+            )
+        children = await self.read_criteria(issue_key=parent_key)
+        existing = existing_criterion(
+            parent_key=parent_key, check=check, children=children
+        )
+        if existing is not None:
+            return existing
+        parent = await self.read_issue(issue_key=parent_key)
+        if parent.issue_key != parent_key or parent.team_key is None:
+            raise CriterionReadError(
+                issue_key=parent_key, reason="criterion parent has no declared team"
+            )
+        label = self._issue_labels.get("criterion")
+        if not label:
+            raise OperationMemberAbsentError(
+                missing="issue_labels.criterion", stops="criterion creation"
+            )
+        if label == self._scope_labels.get("approved"):
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="criterion classification aliases human approval",
+            )
+        team = self._team_identifier(parent.team_key)
+        state = await self._unstarted_state_id(team_id=team, issue_key=parent_key)
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_CHILD_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=parent_key),
+        )
+        await self._require_surface_holder(surface=surface, holder=holder)
+        created = self._saved_issue(
+            await self._call(
+                _TOOL_SAVE_ISSUE,
+                {
+                    "title": title,
+                    "description": body,
+                    "team": team,
+                    "parentId": parent_key,
+                    "labels": [label],
+                    "state": state,
+                },
+            )
+        )
+        current = await self.read_issue(issue_key=created.issue_key)
+        if (
+            current.issue_key != created.issue_key
+            or current.parent_key != parent_key
+            or current.body != body
+            or current.title != title
+            or current.state_kind is not WorkflowStateKind.UNSTARTED
+            or "criterion" not in current.issue_labels
+        ):
+            raise CriterionReadError(
+                issue_key=parent_key,
+                reason="created criterion did not retain its required shape",
+            )
+        return current
+
+    async def read_issue_identity(self, *, issue_key: str) -> IssueIdentity | None:
+        self._issue_identity.require_prefix()
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        current = self._validate(LinearAddressedIssueWire, payload, _TOOL_GET_ISSUE)
+        if not current.matches_requested(issue_key):
+            raise TrackerProtocolError(
+                "issue identity read returned another native key",
+                tool=_TOOL_GET_ISSUE,
+                detail=issue_key,
+            )
+        return self._issue_identity.decode(
+            current.description or "", issue_key=current.id
+        )
+
+    async def _identity_issues(self) -> tuple[tuple[IssueIdentity, TrackerIssue], ...]:
+        arguments: dict[str, object] = {
+            "includeArchived": True,
+            "limit": _ISSUE_IDENTITY_PAGE_SIZE,
+            "fields": ["id"],
+        }
+        seen_keys: set[str] = set()
+        matches: list[tuple[IssueIdentity, TrackerIssue]] = []
+
+        async def read(
+            request: Mapping[str, object],
+        ) -> tuple[LinearScopeIssuesWire, bool, str | None]:
+            payload = await self._call(_TOOL_LIST_ISSUES, request)
+            page = self._validate(LinearScopeIssuesWire, payload, _TOOL_LIST_ISSUES)
+            return page, page.has_next_page, page.cursor
+
+        async for page in cursor_pages(
+            read,
+            arguments=arguments,
+            refusal=lambda _: TrackerProtocolError(
+                "issue identity lookup pagination cannot advance",
+                tool=_TOOL_LIST_ISSUES,
+                detail="missing or repeated cursor",
+            ),
+        ):
+            for entry in page.issues:
+                if entry.id in seen_keys:
+                    continue
+                seen_keys.add(entry.id)
+                # Listing descriptions truncate even with fields=['description'];
+                # only the full read can establish that a carrier is absent.
+                wire = await self._read_issue_wire(entry.id)
+                held = self._issue_identity.decode(
+                    wire.description or "", issue_key=wire.id
+                )
+                if wire.id != entry.id:
+                    raise TrackerProtocolError(
+                        "issue identity read returned another native key",
+                        tool=_TOOL_GET_ISSUE,
+                        detail=entry.id,
+                    )
+                if held is not None:
+                    matches.append((held, self._to_issue(wire)))
+        return tuple(matches)
+
+    async def _find_issue_identity(
+        self, identity: IssueIdentity
+    ) -> TrackerIssue | None:
+        matches = [
+            issue for held, issue in await self._identity_issues() if held == identity
+        ]
+        if len(matches) > 1:
+            raise DuplicateIssueIdentityError(
+                scope_key=identity.scope_key,
+                deliverable_key=identity.deliverable_key,
+                issue_keys=[issue.issue_key for issue in matches],
+            )
+        return matches[0] if matches else None
+
+    async def edit_description(
+        self,
+        *,
+        target: str,
+        expected: str,
+        replacement: str,
+        authorization: DescriptionWriteAuthority | None = None,
+    ) -> DescriptionEditResult:
+        """Assert the complete expected body before a description-only write."""
+        if authorization is not None:
+            surface = authorization.surface
+            if surface.ref.key != target:
+                raise ValueError("description authority addresses another target")
+            self._classification_label(
+                "criterion", stops="cannot select protected description authority"
+            )
+            original = await self.read_planning_issue(issue_key=target)
+
+            def require_surface(issue: TrackerIssue) -> None:
+                if (
+                    surface.kind is SurfaceKind.ISSUE_DESCRIPTION
+                    and "criterion" in issue.issue_labels
+                ):
+                    raise ValueError(
+                        "description authority must match the target's "
+                        "current native surface"
+                    )
+
+            require_surface(original)
+
+            async def attempt() -> DescriptionEditResult:
+                markers = await self._markers_on(
+                    _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+                )
+                current = await self.read_planning_issue(issue_key=target)
+                require_surface(current)
+                if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
+                    require_criterion_source(
+                        expected=TrackerIssue.model_validate(
+                            {**original.model_dump(), "body": current.body}
+                        ),
+                        current=current,
+                    )
+                elif original.model_dump(
+                    exclude={"body", "updated_at"}
+                ) != current.model_dump(exclude={"body", "updated_at"}):
+                    raise TrackerProtocolError(
+                        "description target facts changed",
+                        tool=_TOOL_GET_ISSUE,
+                        detail=target,
+                    )
+                body = description_replacement(
+                    target=target,
+                    body=current.body,
+                    expected=expected,
+                    replacement=replacement,
+                )
+                self._assert_surface_holder(
+                    surface=surface, holder=authorization.holder, markers=markers
+                )
+                if body is None:
+                    return DescriptionEditResult.UNCHANGED
+                identity = self._issue_identity.decode(current.body, issue_key=target)
+                if identity is not None:
+                    body = self._issue_identity.encode(
+                        identity, body=body, issue_key=target
+                    )
+                payload = await self._send(
+                    _TOOL_SAVE_ISSUE, {"id": target, "description": body}
+                )
+                self._saved_issue(payload, written={"description": body})
+                return DescriptionEditResult.EDITED
+
+            return await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        current = await self.read_issue(issue_key=target)
+        body = description_replacement(
+            target=target, body=current.body, expected=expected, replacement=replacement
+        )
+        if body is None:
+            return DescriptionEditResult.UNCHANGED
+        await self.update_issue(issue_key=target, body=body)
+        return DescriptionEditResult.EDITED
+
+    def _scope_label_members(self, labels: Sequence[str]) -> frozenset[ScopeLabel]:
+        return frozenset(
+            member
+            for member in ScopeLabel
+            if self._scope_labels.get(member.value) in labels
+        )
+
+    async def _read_scope_issue(
+        self, issue_key: str
+    ) -> tuple[TrackerIssue, frozenset[ScopeLabel]]:
+        payload = await self._call(
+            _TOOL_GET_ISSUE, {"id": issue_key, "includeRelations": True}
+        )
+        wire = self._validate(LinearApprovalIssueWire, payload, _TOOL_GET_ISSUE)
+        issue = self._to_issue(wire)
+        if not wire.matches_requested(issue_key):
+            raise ScopeReadError(
+                "scope label identity changed",
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            )
+        return issue, self._scope_label_members(wire.labels)

@@ -179,6 +179,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             git=stack.git,
             cache=stack.cache,
+            workspace=stack.workspace,
             prompts=prompts,
             runner=agent_service,
             skills=skills,
