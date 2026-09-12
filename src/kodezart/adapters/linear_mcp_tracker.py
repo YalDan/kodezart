@@ -1412,6 +1412,32 @@ class LinearMcpTracker:
             issues=facts,
             member_keys=frozenset(row.issue_key for row in expected),
         )
+
+        async def require_milestone(change: MilestoneChange) -> None:
+            if change.milestone_id is None:
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=(
+                        "the backend cannot clear a milestone through its "
+                        "declared save schema"
+                    ),
+                )
+            if candidate.project_id is None:
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason="milestone assignment requires a current native project",
+                )
+            milestone = await self.container_metadata(
+                ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id)
+            )
+            if milestone.ref.key != change.milestone_id or milestone.parent != ScopeRef(
+                kind=ScopeKind.PROJECT, key=candidate.project_id
+            ):
+                raise OrganizeWriteRefusalError(
+                    issue_key=issue_key,
+                    reason=("milestone does not belong to the current native project"),
+                )
+
         arguments: dict[str, object] = {"id": issue_key}
         for change in changes:
             if isinstance(change, ParentChange):
@@ -1419,33 +1445,7 @@ class LinearMcpTracker:
             elif isinstance(change, PriorityChange):
                 arguments["priority"] = _RAW_BY_PRIORITY[change.priority]
             elif isinstance(change, MilestoneChange):
-                if change.milestone_id is None:
-                    raise OrganizeWriteRefusalError(
-                        issue_key=issue_key,
-                        reason=(
-                            "the backend cannot clear a milestone through its "
-                            "declared save schema"
-                        ),
-                    )
-                if candidate.project_id is None:
-                    raise OrganizeWriteRefusalError(
-                        issue_key=issue_key,
-                        reason="milestone assignment requires a current native project",
-                    )
-                milestone = await self.container_metadata(
-                    ref=ScopeRef(kind=ScopeKind.MILESTONE, key=change.milestone_id)
-                )
-                if (
-                    milestone.ref.key != change.milestone_id
-                    or milestone.parent
-                    != ScopeRef(kind=ScopeKind.PROJECT, key=candidate.project_id)
-                ):
-                    raise OrganizeWriteRefusalError(
-                        issue_key=issue_key,
-                        reason=(
-                            "milestone does not belong to the current native project"
-                        ),
-                    )
+                await require_milestone(change)
                 arguments["milestone"] = change.milestone_id
             else:
                 add_name, remove_name = (
@@ -1457,15 +1457,27 @@ class LinearMcpTracker:
                     arguments[add_name] = list(change.add)
                 if change.remove:
                     arguments[remove_name] = list(change.remove)
-        for peer in sorted(peers):
-            await self._require_surface_holder(
-                surface=WritableSurface(
-                    kind=SurfaceKind.ISSUE_GRAPH,
-                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
-                ),
-                holder=holder,
+        surfaces = tuple(
+            WritableSurface(
+                kind=SurfaceKind.ISSUE_GRAPH,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=peer),
             )
+            for peer in sorted(peers)
+        )
+        markers = await self._markers_on(
+            _GrantKind.LEASE,
+            targets=tuple(_LEASE_ADDRESSING.target(surface) for surface in surfaces),
+        )
+        for surface in surfaces:
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
         facts = await self._read_unchanged_graph(issue_key=issue_key, expected=expected)
+        for change in changes:
+            if isinstance(change, MilestoneChange):
+                await require_milestone(change)
+        # Recheck the actual deadline after every awaited preparation read. These
+        # observed grants cannot prove that an unseen rival did not arrive later.
+        for surface in surfaces:
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
         if graph_snapshot(
             next(issue for issue in facts if issue.issue_key == issue_key)
         ) == graph_snapshot(candidate):
@@ -1543,10 +1555,21 @@ class LinearMcpTracker:
             deliverable_key=deliverable_key,
         )
         self._issue_identity.require_prefix()
-        # The whole set read also refuses damaged, duplicate and misplaced peers.
-        for existing in await self.read_split_children(source_key=source_key):
-            if await self.read_issue_identity(issue_key=existing.issue_key) == identity:
-                return existing
+
+        async def existing_split() -> TrackerIssue | None:
+            # Validate the complete identity set and use each returned child's
+            # same observed body; a separate identity read could mix revisions.
+            for existing in await self.read_split_children(source_key=source_key):
+                held = self._issue_identity.decode(
+                    existing.body, issue_key=existing.issue_key
+                )
+                if held == identity:
+                    return existing
+            return None
+
+        existing = await existing_split()
+        if existing is not None:
+            return existing
         source = await self.read_issue(issue_key=source_key)
         if source.issue_key != source_key or source.team_key is None:
             raise OrganizeWriteRefusalError(
@@ -1566,23 +1589,32 @@ class LinearMcpTracker:
         }
         if source.project_id is not None:
             arguments["project"] = source.project_id
-        await self._require_surface_holder(
-            surface=WritableSurface(
-                kind=SurfaceKind.ISSUE_SPLIT_SET, ref=identity.scope_key
-            ),
-            holder=holder,
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_SPLIT_SET, ref=identity.scope_key
         )
+        markers = await self._markers_on(
+            _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+        )
+        self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
         await self._read_unchanged_graph(issue_key=source_key, expected=expected)
+        # State resolution and lease acquisition may have allowed another writer
+        # to prepare this identity. Return its current child without overwriting.
+        existing = await existing_split()
+        if existing is not None:
+            return existing
         current_source = await self.read_issue(issue_key=source_key)
+        expected_source = next(row for row in expected if row.issue_key == source_key)
         if (
-            current_source.issue_key != source_key
+            graph_snapshot(current_source) != expected_source
             or current_source.team_key != source.team_key
-            or current_source.project_id != source.project_id
         ):
             raise OrganizeWriteRefusalError(
                 issue_key=source_key,
-                reason="split source placement changed before creation",
+                reason="split source changed before creation",
             )
+        # No await separates this deadline check from issuing the save. The
+        # earlier native snapshot is not an atomic uniqueness or fencing token.
+        self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
         created = self._saved_issue(await self._call(_TOOL_SAVE_ISSUE, arguments))
         current = await self.read_issue(issue_key=created.issue_key)
         if (
