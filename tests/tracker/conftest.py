@@ -17,7 +17,8 @@ from kodezart.adapters.linear_mcp_tracker import LinearMcpTracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.protocols import TrackerPort
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
-from kodezart.types.domain.operation import LifecycleStage
+from kodezart.types.domain.operation import LifecycleStage, ScopeLabel
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.tracker import IssueQuery, ReviewQuery
 from tests.fakes import (
     FakeLinearMcpServer,
@@ -237,17 +238,26 @@ def fixture_server(
     )
 
 
+FIRE_STAGE_KEY = "criteria_ready"
+
+
 def linear_over_fake_mcp(
     server: FakeLinearMcpServer,
     *,
-    clock: Callable[[], datetime] = _frozen_now,
     scope_labels: Mapping[str, str] | None = None,
+    clock: Callable[[], datetime] = _frozen_now,
 ) -> TrackerPort:
     """The shipped Linear adapter, dialing the in-process fake MCP server."""
     return LinearMcpTracker(
-        issue_labels={"criterion": "acceptance-condition"},
-        scope_labels=scope_labels or {},
         marker_prefixes=MARKER_PREFIXES,
+        issue_labels={
+            "criterion": "acceptance-condition",
+            FIRE_STAGE_KEY: FIRE_STAGE_LABEL,
+        },
+        criteria_stage_label_key=FIRE_STAGE_KEY,
+        scope_labels=scope_labels
+        if scope_labels is not None
+        else {"approved": FIRE_SCOPE_LABEL},
         caller=server,
         queue_state_labels=QUEUE_STATE_LABELS,
         workflow_state_names=WORKFLOW_STATE_NAMES,
@@ -318,6 +328,12 @@ async def fake_port_over_fixture(
     loop and can leak that loop's selector sockets between cases.
     """
     port = await _snapshot(linear_over_fake_mcp(server, clock=clock), clock=clock)
+    port.criteria_stage_label_key = FIRE_STAGE_KEY
+    port.scope_label_members = {
+        ScopeRef(kind=ScopeKind.ISSUE, key=key): frozenset({ScopeLabel.APPROVED})
+        for key, issue in server.issues.items()
+        if FIRE_SCOPE_LABEL in issue.labels
+    }
     return port
 
 

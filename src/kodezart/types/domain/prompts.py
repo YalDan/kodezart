@@ -53,6 +53,12 @@ class PromptKey(StrEnum):
 
     ORGANIZE_VERIFY = "organize_verify"
 
+    NATIVE_WRITER_CONTRACT = "native_writer_contract"
+
+    AMENDMENT_JUDGE = "amendment_judge"
+
+    AMENDMENT_AUTHOR = "amendment_author"
+
 
 class OrchestrationPrimitive(StrEnum):
     """How a generative role is told to fan its investigation out.

@@ -12,12 +12,18 @@ from pydantic import (
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, SherlockFlag
+from kodezart.types.domain.amendment import (
+    AmendmentJudgment,
+    AmendmentReport,
+    NativeWriterOutput,
+    RepeatedUpheld,
+)
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
 from kodezart.types.domain.assertion_drift import ProtectedTestRef
 from kodezart.types.domain.branch import BaseInput, WorkRefRole
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.consolidation import ConsolidationStatus
 from kodezart.types.domain.criteria import (
-    CRITERION_ID_PATTERN,
     ContractCorrection,
     CriteriaValidation,
     CriteriaValidationOutput,
@@ -27,12 +33,14 @@ from kodezart.types.domain.criteria import (
     GeneratedCriterion,
 )
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.organize_owner import OrganizeProposal
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.ruling_id import RulingId as RulingId
+from kodezart.types.domain.run_event import RunEventKind
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
 from kodezart.types.domain.write_back import WriteBackFinding
@@ -48,13 +56,47 @@ from kodezart.types.domain.write_back import WriteBackFinding
 # module; ``ErrorEvent.raise_site`` references it directly.  Drift
 # between two parallel ``Literal`` lists is structurally impossible.
 
+
+# ---------------------------------------------------------------------------
+# Ticket-generation structured outputs
+# ---------------------------------------------------------------------------
+
+
+# Pre-computed WIRE schemas for structured agent output via output_format.
+# Each is the model's OWN schema: the contract the model is shown is the
+# contract its response is judged against, constraints included.
+# Schema for acceptance criteria evaluation results
+# Schema for agent-generated branch name slugs
+# Schema for agent-generated acceptance criteria from ticket analysis
+# Schema for the feasibility sweep's per-criterion findings
+# Schema for structured ticket draft output
+# Schema for structured ticket review output
+# Schema for the judgment scanner's structured audit verdict
+# Schema for the draft-critic lens's verdict on a drafted artifact
+
+
+#: Every wire schema this system dispatches, by constant name. The
+#: wire-contract tests and the dispatch-site guard both read this rather
+#: than keeping their own list.
+
+
+class RulingAuthor(StrEnum):
+    """Authorship explicitly recorded by the ruling artifact's producer."""
+
+    MACHINE = "machine"
+    PRINCIPAL = "principal"
+
+
 RaiseSite = Literal[
-    "organize_assess",
-    "organize_verify",
-    "organize_author",
-    "organize_criteria_author",
     "ticket_creator",
     "ticket_reviewer",
+    "organize_assess",
+    "organize_author",
+    "organize_criteria_author",
+    "organize_verify",
+    "amendment_judge",
+    "amendment_author",
+    "write_back_verify",
     "branch_name",
     "acceptance_criteria",
     "criteria_validation",
@@ -64,12 +106,7 @@ RaiseSite = Literal[
     "commit_message",
     "remediation_ticket",
     "content_audit",
-    "write_back_verify",
 ]
-
-# ---------------------------------------------------------------------------
-# Ticket-generation structured outputs
-# ---------------------------------------------------------------------------
 
 
 class CodeReference(CamelCaseModel):
@@ -285,6 +322,19 @@ class TaskUsageInfo(CamelCaseModel):
     total_tokens: int
     tool_uses: int
     duration_ms: int
+
+
+class NodeSessionStartedEvent(AgentEvent):
+    """An actual native opening, emitted by its addressed harness invocation.
+
+    This stream value does not assert that a tracker event was published.
+    Durable publication remains a separate leased and gated write.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal[RunEventKind.NODE_SESSION_STARTED] = RunEventKind.NODE_SESSION_STARTED
+    invocation: NodeInvocation
+    session_id: str = Field(min_length=1, pattern=r"\S")
 
 
 class UserMessageEvent(AgentEvent):
@@ -541,7 +591,8 @@ class CriterionResult(CamelCaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     criterion_id: CriterionId = Field(
-        pattern=CRITERION_ID_PATTERN,
+        min_length=1,
+        pattern=r"\S",
         description=(
             "The dispatched criterion's id, echoed exactly. Return one result "
             "per dispatched id and invent none."
@@ -671,6 +722,97 @@ class GeneratedCriteriaOutput(CamelCaseModel):
     )
 
 
+class RulingClass(StrEnum):
+    """The four defects a fire-time ruling may resolve."""
+
+    PIN_READING = "pin_reading"
+    PIN_ARTIFACT = "pin_artifact"
+    REGROUND_PREMISE = "reground_premise"
+    RESOLVE_CONTRADICTION = "resolve_contradiction"
+
+
+class RulingProtectedTestRef(ProtectedTestRef):
+    """A native ruling designation retains the canonical typed owner identity."""
+
+    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
+
+
+class Ruling(CamelCaseModel):
+    """One pinned answer, with explicit authorship and its stable question key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ruling_id: RulingId = Field(
+        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
+    )
+    issue_ref: str = Field(
+        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
+    )
+    question: str = Field(
+        min_length=1, pattern=r"\S", description="The exact question being ruled on."
+    )
+    ruling_class: RulingClass = Field(
+        description="Which of the four permitted defects this ruling resolves."
+    )
+    resolution: str = Field(
+        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
+    )
+    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
+        Field(description="The losing reading or contradiction, or explicit absence.")
+    )
+    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
+        Field(
+            description="Repository evidence references supporting the pinned answer."
+        )
+    )
+    authored_by: RulingAuthor = Field(
+        description="Explicit machine or principal authorship, independent of account."
+    )
+    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
+        default=None,
+        description=(
+            "Tests explicitly designated as encoding this ruling. Each source_ref "
+            "is this ruling's identity. Null means designation was not recorded; "
+            "an empty list explicitly declares no protected tests."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def name_rejected_reading(self) -> Self:
+        if (
+            self.ruling_class
+            in {
+                RulingClass.PIN_READING,
+                RulingClass.RESOLVE_CONTRADICTION,
+            }
+            and self.rejected_alternative is None
+        ):
+            raise ValueError("this ruling class must name its rejected alternative")
+        return self
+
+    @model_validator(mode="after")
+    def own_protected_tests(self) -> Self:
+        if self.protected_tests is None:
+            return self
+        addresses = set()
+        for reference in self.protected_tests:
+            if reference.source_ref != self.ruling_id:
+                raise ValueError("a protected test must name its owning ruling")
+            address = (reference.path, reference.qualified_name)
+            if address in addresses:
+                raise ValueError("duplicate protected test in one ruling")
+            addresses.add(address)
+        return self
+
+
+class RulingOutput(CamelCaseModel):
+    """The complete structured result of a fire-time ruling session."""
+
+    rulings: list[Ruling] = Field(
+        description="One answer per ruled question; an empty list means no rulings."
+    )
+
+
 class PRDescriptionOutput(CamelCaseModel):
     """Structured output for agent-generated PR descriptions."""
 
@@ -747,8 +889,8 @@ class WorkflowIterationEvent(AgentEvent):
     it on this existing channel rather than on a second event type.
 
     ``verdict`` is three-state.  It replaced a boolean ``accepted``:
-    a run whose only failures are soft signals ships AND has something to
-    say, and no boolean could carry both.
+    a run carrying a criterion nothing could grade ships AND has something
+    to say, and no boolean could carry both.
     """
 
     type: Literal["workflow_iteration"] = "workflow_iteration"
@@ -791,7 +933,7 @@ class WorkflowRemediationEvent(AgentEvent):
     type: Literal["workflow_remediation"] = "workflow_remediation"
     entry: RemediationEntry
     round_index: int
-    ticket: TicketDraftOutput
+    ticket: TicketDraftOutput | RemediationPlan
     base_ref: str
 
 
@@ -813,10 +955,9 @@ class WorkflowCompleteEvent(AgentEvent):
 
     ``outcome`` is the sole terminal discriminator — required and
     non-nullable, so ``exclude_none=True`` can never drop it and no
-    serializer hack is needed to force it onto the wire.  ``ci_status``
-    now holds on the same ground, and ``merge_error`` says what its
-    string actually carries: the merge failure, never a general error
-    channel.
+    serializer hack is needed to force it onto the wire. Delivery facts
+    belong to the caller. ``merge_error`` carries only a consolidation
+    failure, never a general error channel.
     """
 
     type: Literal["workflow_complete"] = "workflow_complete"
@@ -828,11 +969,16 @@ class WorkflowCompleteEvent(AgentEvent):
     merged: bool = False
     final_commit_sha: str | None = None
     merge_error: str | None = None
+    trajectory: LoopTrajectory | None = None
+    criteria_validation: CriteriaValidation | None = None
+
+
+class AuthoredWorkflowCompleteEvent(WorkflowCompleteEvent):
+    """Existing authored HTTP terminal after external delivery completes."""
+
     pr_url: str | None = None
     pr_number: int | None = None
     ci_status: CIStatus = CIStatus.not_monitored
-    trajectory: LoopTrajectory | None = None
-    criteria_validation: CriteriaValidation | None = None
 
 
 class WorkflowVisibilityEvent(AgentEvent):
@@ -930,44 +1076,59 @@ class WorkflowTicketEvent(AgentEvent):
     mode: TicketReviewMode
 
 
-# Pre-computed WIRE schemas for structured agent output via output_format.
-# Each is the model's OWN schema: the contract the model is shown is the
-# contract its response is judged against, constraints included.
+class NativeAmendmentEvent(AgentEvent):
+    """Independent precommit findings; upheld departures were not actioned."""
+
+    type: Literal["native_amendment"] = "native_amendment"
+    report: AmendmentReport
+    repeated: tuple[RepeatedUpheld, ...] = ()
+
+
 COMMIT_MESSAGE_SCHEMA: dict[str, object] = CommitMessageOutput.model_json_schema()
-# Schema for acceptance criteria evaluation results
+
 ACCEPTANCE_CRITERIA_SCHEMA: dict[str, object] = (
     AcceptanceCriteriaOutput.model_json_schema()
 )
-# Schema for agent-generated branch name slugs
+
 BRANCH_NAME_SCHEMA: dict[str, object] = BranchNameOutput.model_json_schema()
-# Schema for agent-generated acceptance criteria from ticket analysis
+
 GENERATED_CRITERIA_SCHEMA: dict[str, object] = (
     GeneratedCriteriaOutput.model_json_schema()
 )
-# Schema for the feasibility sweep's per-criterion findings
+
 CRITERIA_VALIDATION_SCHEMA: dict[str, object] = (
     CriteriaValidationOutput.model_json_schema()
 )
-# Schema for structured ticket draft output
+
 TICKET_DRAFT_SCHEMA: dict[str, object] = TicketDraftOutput.model_json_schema()
-# Schema for structured ticket review output
+
+REMEDIATION_SCHEMA: dict[str, object] = RemediationPlan.model_json_schema()
+
 TICKET_REVIEW_SCHEMA: dict[str, object] = TicketReviewOutput.model_json_schema()
+
 PR_DESCRIPTION_SCHEMA: dict[str, object] = PRDescriptionOutput.model_json_schema()
-# Schema for the judgment scanner's structured audit verdict
+
 CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
-# Schema for the draft-critic lens's verdict on a drafted artifact
+
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
-WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
-
-#: Every wire schema this system dispatches, by constant name. The
-#: wire-contract tests and the dispatch-site guard both read this rather
-#: than keeping their own list.
 ORGANIZE_ADMISSION_SCHEMA: dict[str, object] = AdmissionJudgment.model_json_schema()
+
+NATIVE_WRITER_SCHEMA: dict[str, object] = NativeWriterOutput.model_json_schema()
+
+AMENDMENT_JUDGMENT_SCHEMA: dict[str, object] = AmendmentJudgment.model_json_schema()
+
+AMENDMENT_TEXT_SCHEMA: dict[str, object] = AmendmentTextOutput.model_json_schema()
 
 ORGANIZE_PROPOSAL_SCHEMA: dict[str, object] = OrganizeProposal.model_json_schema()
 
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
+
 WIRE_SCHEMAS: dict[str, dict[str, object]] = {
+    "AMENDMENT_JUDGMENT_SCHEMA": AMENDMENT_JUDGMENT_SCHEMA,
+    "AMENDMENT_TEXT_SCHEMA": AMENDMENT_TEXT_SCHEMA,
+    "NATIVE_WRITER_SCHEMA": NATIVE_WRITER_SCHEMA,
+    "REMEDIATION_SCHEMA": REMEDIATION_SCHEMA,
     "ORGANIZE_ADMISSION_SCHEMA": ORGANIZE_ADMISSION_SCHEMA,
     "ORGANIZE_PROPOSAL_SCHEMA": ORGANIZE_PROPOSAL_SCHEMA,
     "COMMIT_MESSAGE_SCHEMA": COMMIT_MESSAGE_SCHEMA,
@@ -982,101 +1143,3 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
     "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
 }
-
-
-class RulingAuthor(StrEnum):
-    """Authorship explicitly recorded by the ruling artifact's producer."""
-
-    MACHINE = "machine"
-    PRINCIPAL = "principal"
-
-
-class RulingClass(StrEnum):
-    """The four defects a fire-time ruling may resolve."""
-
-    PIN_READING = "pin_reading"
-    PIN_ARTIFACT = "pin_artifact"
-    REGROUND_PREMISE = "reground_premise"
-    RESOLVE_CONTRADICTION = "resolve_contradiction"
-
-
-class RulingProtectedTestRef(ProtectedTestRef):
-    """A native ruling designation retains the canonical typed owner identity."""
-
-    source_ref: RulingId = Field(min_length=1, pattern=r"\S")
-
-
-class Ruling(CamelCaseModel):
-    """One pinned answer, with explicit authorship and its stable question key."""
-
-    model_config = ConfigDict(frozen=True)
-
-    ruling_id: RulingId = Field(
-        min_length=1, pattern=r"\S", description="The harness-minted ruling identity."
-    )
-    issue_ref: str = Field(
-        min_length=1, pattern=r"\S", description="The owning tracker's issue key."
-    )
-    question: str = Field(
-        min_length=1, pattern=r"\S", description="The exact question being ruled on."
-    )
-    ruling_class: RulingClass = Field(
-        description="Which of the four permitted defects this ruling resolves."
-    )
-    resolution: str = Field(
-        min_length=1, pattern=r"\S", description="The pinned answer the fire consumes."
-    )
-    rejected_alternative: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = (
-        Field(description="The losing reading or contradiction, or explicit absence.")
-    )
-    repo_evidence: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = (
-        Field(
-            description="Repository evidence references supporting the pinned answer."
-        )
-    )
-    authored_by: RulingAuthor = Field(
-        description="Explicit machine or principal authorship, independent of account."
-    )
-    protected_tests: tuple[RulingProtectedTestRef, ...] | None = Field(
-        default=None,
-        description=(
-            "Tests explicitly designated as encoding this ruling. Each source_ref "
-            "is this ruling's identity. Null means designation was not recorded; "
-            "an empty list explicitly declares no protected tests."
-        ),
-    )
-
-    @model_validator(mode="after")
-    def name_rejected_reading(self) -> Self:
-        if (
-            self.ruling_class
-            in {
-                RulingClass.PIN_READING,
-                RulingClass.RESOLVE_CONTRADICTION,
-            }
-            and self.rejected_alternative is None
-        ):
-            raise ValueError("this ruling class must name its rejected alternative")
-        return self
-
-    @model_validator(mode="after")
-    def own_protected_tests(self) -> Self:
-        if self.protected_tests is None:
-            return self
-        addresses = set()
-        for reference in self.protected_tests:
-            if reference.source_ref != self.ruling_id:
-                raise ValueError("a protected test must name its owning ruling")
-            address = (reference.path, reference.qualified_name)
-            if address in addresses:
-                raise ValueError("duplicate protected test in one ruling")
-            addresses.add(address)
-        return self
-
-
-class RulingOutput(CamelCaseModel):
-    """The complete structured result of a fire-time ruling session."""
-
-    rulings: list[Ruling] = Field(
-        description="One answer per ruled question; an empty list means no rulings."
-    )

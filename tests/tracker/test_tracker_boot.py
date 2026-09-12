@@ -578,6 +578,7 @@ class TestQueueVocabularyPerDeclaredTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            criteria_stage_label_key=None,
             scope_labels={},
             issue_labels={},
             marker_prefixes=MARKER_PREFIXES,
@@ -705,6 +706,7 @@ class TestWorkflowStatesResolvePerTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            criteria_stage_label_key=None,
             scope_labels={},
             issue_labels={},
             marker_prefixes=MARKER_PREFIXES,

@@ -457,3 +457,19 @@ The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
 absent. A configured owner with no verification budget refuses at startup.
+
+## Authored check observation bounds
+
+`KODEZART_DELIVERY_MAX_CONCURRENT_WATCHES` bounds concurrent check watches
+(default 4, inclusive range 1–32). `KODEZART_DELIVERY_RED_RERUN_MAX_ATTEMPTS`
+bounds same-commit reruns before a red is treated as reproduced (default 1,
+inclusive range 0–5). Both settings are consumed by the authored check phase.
+Repository declarations can supply ordered `checks`, typed
+`runner_environment` prerequisite facts, and `forge_exempt`; absent prerequisite
+facts remain unavailable rather than implying capability.
+
+The CI adapter resolves a rerun ref once, validates complete workflow-attempt
+identity, and issues each rerun POST once. Lost responses and partial batches
+remain errors. Follow-up observation stays on that same commit and asynchronous
+task; old completed checks cannot satisfy a requested new attempt. Attempt
+tracking is process-local and does not provide a durable rerun ledger.

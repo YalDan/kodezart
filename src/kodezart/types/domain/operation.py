@@ -38,6 +38,35 @@ from kodezart.types.domain.scope_address import ScopeRef
 #: one no session can reach is refused at boot, where both halves of that
 #: mismatch are visible at once.  Record keys are not free names beside it:
 #: they are the run-kind vocabulary below, one destination per kind (KOD-170).
+
+
+#: Which class every declared field belongs to, and therefore what boot does
+#: with it.  A fixed partition in the MODEL rather than a per-field flag,
+#: because a flag makes ownership operator-editable data: an operator could
+#: mark ``principals`` ensurable and the adapter would try to create a user.
+#:
+#: ``documents`` is OWNED, as KOD-57 R2 ruled and amendment 3 deferred:
+#: :class:`DocumentEntry` now carries the declared ``name`` an ensure keys
+#: on, with the id ADOPTED rather than declared, so "create it if absent"
+#: has an implementation that leaves the config true.  A document in the
+#: KNOWLEDGE system is not this operation's to create and produces no ref;
+#: it declares its id at load instead, so nothing about it is silent.
+#:
+#: ``records`` stays EXTERNAL, and the writer the earlier ground denied now
+#: exists: the pass-mechanisms fragment rides every scheduled pass and tells
+#: each one to append its row to the declared run log.  EXTERNAL is what
+#: that writer needs, not what it refutes — a destination whose id another
+#: system assigned is resolved at boot, and one tracker-side is resolved
+#: exactly like a document, so a typo aborts naming the entry instead of
+#: failing inside an unattended session.  A KNOWLEDGE-side id is the arm no
+#: boot can check headlessly: this process holds no client for that store,
+#: so its guard is session REACHABILITY — a declared knowledge surface with
+#: the scheduled-pass grant absent refuses at the composition root.
+#:
+#: Totality over ``OperationConfig.model_fields`` is asserted by a test
+#: derived from ``model_fields``, never from a hand-written list.
+
+
 CHECKPOINT_DOCUMENT_KEY = "checkpoint"
 
 
@@ -141,6 +170,18 @@ class QueueState(StrEnum):
     APPROVED = "approved"
     DONE = "done"
     DECISION = "decision"
+
+
+class ScopeLabel(StrEnum):
+    """Scope admission vocabulary, resolved separately from the issue queue.
+
+    The operation maps each semantic member to its tracker label. Queue
+    writes continue to address only ``QueueState`` and its own mapping.
+    """
+
+    TRIAGE = "triage"
+    PROPOSED = "proposed"
+    APPROVED = "approved"
 
 
 class LifecycleStage(StrEnum):
@@ -260,6 +301,14 @@ class TeamEntry(OperationModel):
     visibility: RepoVisibility | None = None
 
 
+class CheckPrerequisite(StrEnum):
+    """Environment facts that a repository may explicitly declare."""
+
+    REPOSITORY_HISTORY = "repository_history"
+    NETWORK = "network"
+    CREDENTIALS = "credentials"
+
+
 class CheckStep(OperationModel):
     """One command in a repository's check chain, and what gates it.
 
@@ -277,6 +326,8 @@ class CheckStep(OperationModel):
     name: str
     command: str
     depends_on: str | None = None
+    requires: tuple[CheckPrerequisite, ...] = ()
+    forge_check: str | None = None
 
 
 class RepoEntry(OperationModel):
@@ -302,6 +353,10 @@ class RepoEntry(OperationModel):
     url: str
     trunk: str = Field(min_length=1)
     checks: tuple[CheckStep, ...] = ()
+
+    runner_environment: dict[CheckPrerequisite, bool] = Field(default_factory=dict)
+
+    forge_exempt: bool = False
 
 
 class DocumentEntry(OperationModel):
@@ -373,6 +428,14 @@ class RecordDestination(OperationModel):
     append_only: bool
 
 
+class OrganizeScopeBinding(OperationModel):
+    """One explicit writable scope and the declared repository it is judged against."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    scope: ScopeRef
+    repo_url: str = Field(min_length=1)
+
+
 class Initiative(OperationModel):
     """An initiative the operation is steering toward.
 
@@ -385,60 +448,6 @@ class Initiative(OperationModel):
 
     id: str
     target_date: date | None = None
-
-
-def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
-    """Every structural failure in one repository's check chain.
-
-    A chain that names a step twice, depends on a step that is not in it,
-    or closes a cycle cannot be classified into roots and cascades at all,
-    so it is rejected at load rather than mis-reported at run time.
-    """
-    failures: list[str] = []
-    seen: set[str] = set()
-    for step in steps:
-        if step.name in seen:
-            failures.append(f"duplicate step name {step.name!r}")
-        seen.add(step.name)
-
-    by_name = {step.name: step for step in steps}
-    for step in steps:
-        if step.depends_on is None:
-            continue
-        if step.depends_on not in by_name:
-            failures.append(
-                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
-            )
-            continue
-        walked: set[str] = {step.name}
-        cursor: str | None = step.depends_on
-        while cursor is not None:
-            if cursor in walked:
-                failures.append(f"step {step.name!r} closes a dependency cycle")
-                break
-            walked.add(cursor)
-            cursor = by_name[cursor].depends_on
-    return failures
-
-
-class ScopeLabel(StrEnum):
-    """Scope admission vocabulary, resolved separately from the issue queue.
-
-    The operation maps each semantic member to its tracker label. Queue
-    writes continue to address only ``QueueState`` and its own mapping.
-    """
-
-    TRIAGE = "triage"
-    PROPOSED = "proposed"
-    APPROVED = "approved"
-
-
-class OrganizeScopeBinding(OperationModel):
-    """One explicit writable scope and the declared repository it is judged against."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
-    scope: ScopeRef
-    repo_url: str = Field(min_length=1)
 
 
 class OperationConfig(OperationModel):
@@ -867,31 +876,6 @@ class OperationConfig(OperationModel):
         return tuple(resolved)
 
 
-#: Which class every declared field belongs to, and therefore what boot does
-#: with it.  A fixed partition in the MODEL rather than a per-field flag,
-#: because a flag makes ownership operator-editable data: an operator could
-#: mark ``principals`` ensurable and the adapter would try to create a user.
-#:
-#: ``documents`` is OWNED, as KOD-57 R2 ruled and amendment 3 deferred:
-#: :class:`DocumentEntry` now carries the declared ``name`` an ensure keys
-#: on, with the id ADOPTED rather than declared, so "create it if absent"
-#: has an implementation that leaves the config true.  A document in the
-#: KNOWLEDGE system is not this operation's to create and produces no ref;
-#: it declares its id at load instead, so nothing about it is silent.
-#:
-#: ``records`` stays EXTERNAL, and the writer the earlier ground denied now
-#: exists: the pass-mechanisms fragment rides every scheduled pass and tells
-#: each one to append its row to the declared run log.  EXTERNAL is what
-#: that writer needs, not what it refutes — a destination whose id another
-#: system assigned is resolved at boot, and one tracker-side is resolved
-#: exactly like a document, so a typo aborts naming the entry instead of
-#: failing inside an unattended session.  A KNOWLEDGE-side id is the arm no
-#: boot can check headlessly: this process holds no client for that store,
-#: so its guard is session REACHABILITY — a declared knowledge surface with
-#: the scheduled-pass grant absent refuses at the composition root.
-#:
-#: Totality over ``OperationConfig.model_fields`` is asserted by a test
-#: derived from ``model_fields``, never from a hand-written list.
 FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "operation_name": ConfigOwnership.LOCAL,
     "workspace": ConfigOwnership.EXTERNAL,
@@ -913,3 +897,37 @@ FIELD_OWNERSHIP: dict[str, ConfigOwnership] = {
     "initiatives": ConfigOwnership.EXTERNAL,
     "private_surface": ConfigOwnership.LOCAL,
 }
+
+
+def _check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+    """Every structural failure in one repository's check chain.
+
+    A chain that names a step twice, depends on a step that is not in it,
+    or closes a cycle cannot be classified into roots and cascades at all,
+    so it is rejected at load rather than mis-reported at run time.
+    """
+    failures: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if step.name in seen:
+            failures.append(f"duplicate step name {step.name!r}")
+        seen.add(step.name)
+
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.depends_on is None:
+            continue
+        if step.depends_on not in by_name:
+            failures.append(
+                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
+            )
+            continue
+        walked: set[str] = {step.name}
+        cursor: str | None = step.depends_on
+        while cursor is not None:
+            if cursor in walked:
+                failures.append(f"step {step.name!r} closes a dependency cycle")
+                break
+            walked.add(cursor)
+            cursor = by_name[cursor].depends_on
+    return failures

@@ -1,8 +1,9 @@
 """Fake adapters — real protocol implementations with simplified behavior."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -30,6 +31,7 @@ from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.core.protocols import (
     AgentExecutor,
     McpToolResult,
+    NativeWriteGuard,
     PromptSetProvider,
     WorkflowEngine,
 )
@@ -50,6 +52,7 @@ from kodezart.domain.errors import (
     TransientAPIError,
     WorkspaceError,
 )
+from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.organize_graph import (
     changed_peers,
     graph_snapshot,
@@ -79,20 +82,26 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    CIWatchResult,
+    ObservedChecks,
+)
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
     ConsolidationStatus,
 )
 from kodezart.types.domain.criteria import (
-    CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
     DraftedCriterion,
+    ExecutionCriterion,
     GeneratedCriterion,
     ValidatedCriterion,
 )
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     JUDGMENT_ROUTING,
     ContentClass,
@@ -163,6 +172,7 @@ from kodezart.types.domain.tracker import (
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
 from tests.prompt_census import configured_investigation_cap
 
 SUPPRESS_ALL_SKILLS: SkillsSelection = SkillsSelection(mode=SkillsMode.NONE)
@@ -631,6 +641,25 @@ class FakeGitService:
         self.calls.append(("commit_tree", cwd, tree, parent, message))
         return self._commit_tree_result
 
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        self.calls.append(("worktree_identity", cwd, repository_path))
+        return GitWorktreeIdentity(
+            root=cwd,
+            root_device=1,
+            root_inode=1,
+            common_dir="/fixture/repo/.git",
+            common_device=1,
+            common_inode=2,
+            git_dir="/fixture/repo/.git/worktrees/fixture",
+            git_device=1,
+            git_inode=3,
+            branch="fixture-branch",
+            head_sha=await self.current_sha(cwd),
+            content_digest=sha256(str(self.has_changes_result).encode()).hexdigest(),
+        )
+
 
 class FakeAgentExecutor:
     def __init__(
@@ -730,9 +759,10 @@ class FakeAgentExecutor:
         prompt: str,
         cwd: str,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -748,6 +778,7 @@ class FakeAgentExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if self._is_branch_name_schema(output_format):
@@ -771,8 +802,8 @@ class FakeAgentExecutor:
                 session_id="fake",
                 structured_output={
                     "criteria": [
-                        {"text": "Tests pass", "criterionClass": "hard_gate"},
-                        {"text": "No lint errors", "criterionClass": "soft_signal"},
+                        {"text": "Tests pass"},
+                        {"text": "No lint errors"},
                     ],
                     "reasoning": "Fake criteria.",
                 },
@@ -935,6 +966,9 @@ class FakeWorkspaceProvider:
         self._acquire_count = 0
         self._workspace_path = workspace_path
         self.calls: list[tuple[str, ...]] = []
+        self._snapshots: dict[str, WorkspaceSnapshot] = {}
+        self._branches: dict[str, str | None] = {}
+        self._repositories: dict[str, str] = {}
 
     async def acquire(
         self,
@@ -950,10 +984,50 @@ class FakeWorkspaceProvider:
         self._acquire_count += 1
         if self._fail_acquire and self._acquire_count > self._fail_after:
             raise WorkspaceError(self._fail_acquire)
+        self._branches[self._workspace_path] = branch_name
+        self._repositories[self._workspace_path] = repo_path or repo_url or ""
         return self._workspace_path
 
     async def release(self, workspace_path: str) -> None:
         self.calls.append(("release", workspace_path))
+
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        self.calls.append(("capture", workspace_path, holder))
+        branch = self._branches.get(workspace_path)
+        if branch is None:
+            raise WorkspaceError("The fixture has no acquired native branch")
+        identity = await FakeGitService().worktree_identity(
+            workspace_path, repository_path=self._repositories[workspace_path]
+        )
+        snapshot = WorkspaceSnapshot(
+            workspace_path=workspace_path,
+            workspace_id="fixture-workspace",
+            repository_path=self._repositories[workspace_path],
+            repository_device=1,
+            repository_inode=4,
+            holder=holder,
+            identity=GitWorktreeIdentity.model_validate(
+                {**identity.model_dump(), "branch": branch}
+            ),
+        )
+        self._snapshots[workspace_path] = snapshot
+        return snapshot
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        self.calls.append(("resume", snapshot.workspace_path, holder))
+        if snapshot.holder != holder:
+            raise WorkspaceError("The fixture workspace belongs to another holder")
+        self._snapshots[snapshot.workspace_path] = snapshot
+        self._branches[snapshot.workspace_path] = snapshot.identity.branch
+        self._repositories[snapshot.workspace_path] = snapshot.repository_path
 
 
 class FakeChangePersister:
@@ -970,10 +1044,15 @@ class FakeChangePersister:
         backup_ref_id_prefix: str,
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
+        if before_commit is not None:
+            await before_commit()
         self.calls.append(
             {
                 "workspace_path": workspace_path,
@@ -981,6 +1060,8 @@ class FakeChangePersister:
                 "backup_ref_id_prefix": backup_ref_id_prefix,
             }
         )
+        if before_publish is not None and self._result is not None:
+            await before_publish(self._result.commit_sha)
         return self._result
 
 
@@ -1064,9 +1145,10 @@ class FakeAgentRunner:
         repo_url: str | None = None,
         branch: str | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1076,9 +1158,11 @@ class FakeAgentRunner:
         self.calls.append(
             {
                 "method": "stream",
+                "session_id": session_id,
                 "prompt": prompt,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1094,14 +1178,16 @@ class FakeAgentRunner:
         branch_name: str | None = None,
         ralph_branch: str | None = None,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         visibility: RepoVisibility = RepoVisibility.UNKNOWN,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: NativeWriteGuard | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
             {
@@ -1110,6 +1196,7 @@ class FakeAgentRunner:
                 "skills": skills,
                 "visibility": visibility,
                 "base_branch": base_branch,
+                "native_guard": native_guard,
             },
         )
         for event in self._events:
@@ -1121,9 +1208,10 @@ class FakeAgentRunner:
         prompt: str,
         workspace_path: str,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1136,6 +1224,7 @@ class FakeAgentRunner:
                 "workspace_path": workspace_path,
                 "session_id": session_id,
                 "session_type": session_type,
+                "run_identity": run_identity,
                 "skills": skills,
                 "session_policy": session_policy,
             }
@@ -1174,9 +1263,10 @@ class ScriptedFakeExecutor:
         prompt: str,
         cwd: str,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1192,6 +1282,7 @@ class ScriptedFakeExecutor:
                 "permission_mode": permission_mode,
                 "skills": skills,
                 "session_type": session_type,
+                "run_identity": run_identity,
             }
         )
         if output_format is None:
@@ -1306,18 +1397,9 @@ class ScriptedFakeExecutor:
                         session_id="scripted",
                         structured_output={
                             "criteria": [
-                                {
-                                    "text": "The fix compiles without errors",
-                                    "criterionClass": "hard_gate",
-                                },
-                                {
-                                    "text": "All existing tests pass",
-                                    "criterionClass": "hard_gate",
-                                },
-                                {
-                                    "text": ("Linting passes with no new warnings"),
-                                    "criterionClass": "soft_signal",
-                                },
+                                {"text": "The fix compiles without errors"},
+                                {"text": "All existing tests pass"},
+                                {"text": "Linting passes with no new warnings"},
                             ],
                             "reasoning": "Generated from codebase analysis.",
                         },
@@ -1381,7 +1463,6 @@ def as_validated(
         ValidatedCriterion(
             id=criterion.id,
             text=criterion.text,
-            criterion_class=criterion.criterion_class,
             feasibility=CriterionFeasibility(
                 criterion_id=criterion.id,
                 verdict=verdict,
@@ -1392,27 +1473,18 @@ def as_validated(
     ]
 
 
-def make_minted_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[GeneratedCriterion]:
+def make_minted_criteria(*texts: str) -> list[GeneratedCriterion]:
     """Mint AC-n identities for *texts* the way the generation node does."""
     return list(
         mint_criteria(
-            [
-                DraftedCriterion(text=text, criterion_class=criterion_class)
-                for text in (texts or ("Tests pass",))
-            ]
+            [DraftedCriterion(text=text) for text in (texts or ("Tests pass",))]
         )
     )
 
 
-def make_criteria(
-    *texts: str,
-    criterion_class: CriterionClass = CriterionClass.hard_gate,
-) -> list[ValidatedCriterion]:
+def make_criteria(*texts: str) -> list[ValidatedCriterion]:
     """The dispatch shape: minted, then carrying a sweep verdict."""
-    return as_validated(make_minted_criteria(*texts, criterion_class=criterion_class))
+    return as_validated(make_minted_criteria(*texts))
 
 
 def make_dispatched_criteria() -> list[ValidatedCriterion]:
@@ -1425,14 +1497,8 @@ def make_generated_criteria() -> list[GeneratedCriterion]:
     return list(
         mint_criteria(
             [
-                DraftedCriterion(
-                    text="Tests pass",
-                    criterion_class=CriterionClass.hard_gate,
-                ),
-                DraftedCriterion(
-                    text="No lint errors",
-                    criterion_class=CriterionClass.soft_signal,
-                ),
+                DraftedCriterion(text="Tests pass"),
+                DraftedCriterion(text="No lint errors"),
             ]
         )
     )
@@ -1524,9 +1590,12 @@ class FakeQualityGate:
         base_spec: BaseSpec,
         work_base_ref: str,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
-        acceptance_criteria: list[ValidatedCriterion],
+        allowed_tools: list[str],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1544,6 +1613,7 @@ class FakeQualityGate:
                 "allowed_tools": allowed_tools,
                 "acceptance_criteria": acceptance_criteria,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
             }
         )
         for event in self._events:
@@ -1639,6 +1709,7 @@ class FakeRemediator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(request)
         yield WorkflowRemediationEvent(
@@ -1710,6 +1781,9 @@ class FakePRCreator:
             raise self._fail_comment
 
 
+type _FakeCIObservation = tuple[bool | None, str, frozenset[str]]
+
+
 class FakeCIMonitor:
     """Fake CIMonitor for testing the outer workflow pipeline."""
 
@@ -1719,27 +1793,98 @@ class FakeCIMonitor:
         passed: bool | None = True,
         summary: str = "All CI checks passed.",
         fail: Exception | None = None,
+        declared: bool = True,
+        failed_names: frozenset[str] | None = None,
+        rerun_results: Sequence[tuple[bool | None, str, frozenset[str]]] = (),
+        observed_sha_by_ref: Mapping[str, str] | None = None,
+        check_names: frozenset[str] = frozenset({"test"}),
     ) -> None:
         self._passed = passed
         self._summary = summary
         self._fail = fail
+        self._declared = declared
+        self._failed_names = (
+            (frozenset({"test"}) if passed is False else frozenset())
+            if failed_names is None
+            else failed_names
+        )
+        self._rerun_results = list(rerun_results)
+        self._default_observed_sha = "a" * 40 if observed_sha_by_ref is None else None
+        self.observed_sha_by_ref = dict(observed_sha_by_ref or {})
+        self.check_names = check_names
+        self._attempts: ContextVar[
+            tuple[object, dict[tuple[str, str], _FakeCIObservation]] | None
+        ] = ContextVar("fake_ci_attempts", default=None)
+        self.rerun_calls: list[tuple[str, str]] = []
+        self.declaration_calls: list[str] = []
         self.calls: list[dict[str, object]] = []
+
+    def _attempt_context(self) -> dict[tuple[str, str], _FakeCIObservation]:
+        context = self._attempts.get()
+        if context is None or context[0] is not asyncio.current_task():
+            return {}
+        return dict(context[1])
+
+    def _observation(self, repo_url: str, ref: str) -> _FakeCIObservation:
+        return self._attempt_context().get(
+            (repo_url, ref), (self._passed, self._summary, self._failed_names)
+        )
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        self.rerun_calls.append((repo_url, ref))
+        if self._fail is not None:
+            raise self._fail
+        result = (
+            self._rerun_results.pop(0)
+            if self._rerun_results
+            else self._observation(repo_url, ref)
+        )
+        attempts = self._attempt_context()
+        attempts[(repo_url, ref)] = result
+        self._attempts.set((asyncio.current_task(), attempts))
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        self.declaration_calls.append(repo_url)
+        if self._fail is not None:
+            raise self._fail
+        return self._declared
 
     async def wait_for_checks(
         self,
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
-        self.calls.append(
-            {
-                "repo_url": repo_url,
-                "ref": ref,
-            }
-        )
+    ) -> CIWatchResult:
+        from kodezart.domain.errors import CheckObservationError
+
+        self.calls.append({"repo_url": repo_url, "ref": ref})
         if self._fail is not None:
             raise self._fail
-        return (self._passed, self._summary)
+        passed, summary, names = self._observation(repo_url, ref)
+        if passed is None:
+            return AbsentChecks(summary=summary)
+        default_sha = self._default_observed_sha
+        if default_sha is not None and len(ref) == 40:
+            default_sha = ref
+        sha = self.observed_sha_by_ref.get(ref, default_sha)
+        if sha is None:
+            raise CheckObservationError(
+                repo_url=repo_url,
+                ref=ref,
+                reason="the fake watch has no commit identity",
+            )
+        try:
+            return ObservedChecks(
+                commit_sha=sha,
+                checks_passed=passed,
+                check_names=self.check_names | names,
+                failed_check_names=names,
+                summary=summary,
+            )
+        except ValueError as exc:
+            raise CheckObservationError(
+                repo_url=repo_url, ref=ref, reason=str(exc)
+            ) from exc
 
 
 class SequentialCIMonitor:
@@ -1786,6 +1931,7 @@ class FakeTicketGenerator:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -1794,6 +1940,7 @@ class FakeTicketGenerator:
                 "repo_path": repo_path,
                 "repo_url": repo_url,
                 "cache_key": cache_key,
+                "run_identity": run_identity,
                 "base_branch": base_branch,
             }
         )
@@ -2994,6 +3141,7 @@ class FakeTrackerPort:
         issues: Sequence[TrackerIssue] = (),
         issue_identities: Mapping[str, IssueIdentity] | None = None,
         marker_prefixes: Mapping[str, str] | None = None,
+        criteria_stage_label_key: str | None = None,
         scope_label_members: Mapping[ScopeRef, frozenset[ScopeLabel]] | None = None,
         scope_containers: Sequence[ScopeContainer] = (),
         scope_memberships: Mapping[ScopeRef, Sequence[str]] | None = None,
@@ -3014,6 +3162,7 @@ class FakeTrackerPort:
         }
         self.issue_identities: dict[str, IssueIdentity] = dict(issue_identities or {})
         self.marker_prefixes: dict[str, str] = dict(marker_prefixes or {})
+        self.criteria_stage_label_key = criteria_stage_label_key
         self.scope_label_members = dict(scope_label_members or {})
         self.issue_creations: list[str] = []
         self.issue_writes: list[tuple[str, str | None, str | None]] = []
@@ -4213,6 +4362,64 @@ class FakeTrackerPort:
         await self.update_issue(issue_key=target, body=body)
         return DescriptionEditResult.EDITED
 
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if issue_key not in self.issues:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="parent issue is absent"
+            )
+        subject, approved = await self._read_execution_approval(issue_key=issue_key)
+        require_fire_entry(
+            subject=subject,
+            approved=approved,
+            criteria_stage_label_key=self.criteria_stage_label_key,
+        )
+        _, criteria = await self._read_criterion_family(
+            issue_key=issue_key, subject=subject
+        )
+        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        current = await self.read_issue(issue_key=expected.issue_key)
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=True
+        )
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_SUB_ISSUE,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
+        )
+        grant = self.leases.get(surface)
+        owner = (
+            grant.holder
+            if grant is not None and grant.expires_at > self._clock()
+            else None
+        )
+        if not holder.strip() or holder != owner:
+            raise SurfaceLeaseError(
+                "native criterion amendment requires its grant",
+                surface=surface,
+                current_holder=owner,
+            )
+        if current.state_kind is WorkflowStateKind.UNSTARTED:
+            return current
+        pending = [
+            name
+            for name, kind in self._state_kinds.items()
+            if kind is WorkflowStateKind.UNSTARTED
+        ]
+        if len(pending) != 1:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="reset requires exactly one unstarted team state",
+            )
+        updated = current.model_copy(
+            update={"state_name": pending[0], "state_kind": WorkflowStateKind.UNSTARTED}
+        )
+        self.issues[expected.issue_key] = updated
+        self._wrote(expected.issue_key)
+        return self.issues[expected.issue_key]
+
 
 class FakeDeliveryProbe:
     """``DeliveryProbe`` over a fixed set of issue keys with an open delivery."""
@@ -4250,6 +4457,7 @@ def make_tracker_issue(
     project: str | None = None,
     project_id: str | None = None,
     body: str = "fixture body",
+    issue_labels: frozenset[str] = frozenset(),
 ) -> TrackerIssue:
     """A domain issue for port-consumer fixtures."""
     return TrackerIssue(
@@ -4257,6 +4465,7 @@ def make_tracker_issue(
         parent_key=parent_key,
         title=issue_key,
         body=body,
+        issue_labels=issue_labels,
         priority=priority,
         state_name=state_name,
         state_kind=state_kind,
@@ -4674,3 +4883,11 @@ def write_stdio_fake_server(directory: Path) -> Path:
     script = directory / "fake_mcp_server.py"
     script.write_text(STDIO_FAKE_SERVER_SOURCE, encoding="utf-8")
     return script
+
+
+def make_passing_evaluation_of_fake_criteria() -> AcceptanceCriteriaOutput:
+    """A pass for every criterion the fake generator emits."""
+    return make_passing_evaluation_over(*FAKE_CRITERION_IDS)
+
+
+FAKE_CRITERION_IDS = ("AC-1", "AC-2")

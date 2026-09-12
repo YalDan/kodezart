@@ -45,7 +45,7 @@ does not exist.
 | ChangePersister   | GitChangePersister       | Detects changes, generates commit message, commits, pushes |
 | BranchMerger      | GitBranchMerger          | Fast-forward merge and push                          |
 | PRCreator         | GitHubAPIClient          | Opens pull requests and comments on them             |
-| CIMonitor         | GitHubAPIClient          | Polls check runs for a pushed head                   |
+| CIMonitor         | GitHubAPIClient          | Returns typed completed, absent or incomplete check observations; re-observes Actions attempts at one commit |
 | DeliveryProbe     | GitHubAPIClient          | Answers whether an issue already has an open delivery |
 | DeliveryProbe     | NoForgeDeliveryProbe     | The same answer for an origin with no forge behind it. A peer, selected per repository at the composition root — not a degraded mode |
 | McpToolCaller     | HttpMcpToolCaller, StdioMcpToolCaller | One MCP tool call over the vendor's HTTP or stdio transport |
@@ -60,7 +60,7 @@ does not exist.
 | GitAuth           | GitHubTokenAuth          | Injects GitHub PAT into HTTPS URLs                   |
 | QualityGate       | RalphLoop                | LangGraph iterative execute/evaluate loop            |
 | TicketGenerator   | TicketGenerationLoop     | LangGraph draft/review loop                          |
-| WorkflowEngine    | RalphWorkflowEngine      | LangGraph outer pipeline                             |
+| WorkflowEngine    | AuthoredDeliveryCoordinator | Authored orchestration around the shared fire graph |
 | JobQueue          | AsyncioJobQueue          | In-process lanes, bounded depth and concurrency      |
 | JobRegistry       | AsyncioJobQueue          | The same queue read as a record store                |
 | RunStateReader    | LangGraphRunStateReader  | Reads a run's checkpointed state                     |
@@ -76,11 +76,29 @@ does not exist.
 
 ## Workflow Pipeline
 
-The outer workflow runs as a LangGraph StateGraph defined in
-`chains/ralph_workflow.py`:
+The delivery-free `RalphWorkflowEngine` in `chains/ralph_workflow.py` owns
+one compiled fire graph. `AuthoredDeliveryCoordinator` in
+`chains/authored_delivery.py` embeds that graph and owns the existing authored
+HTTP delivery operations. A CI remediation draft re-enters the same fire graph
+at criteria generation; it does not rebuild the ticket or create another set
+of fire nodes.
 
-Two nodes — `persist_ticket` and `persist_artifacts` — are added only when an
-ArtifactPersister is wired; the rest are always present.
+Composition constructs five concrete fire phases: `FireSpecification` authors
+and validates the input, `FireImplementation` persists artifacts and drives the
+loop, `FireConsolidation` owns branch consolidation and backup cleanup,
+`FireReview` judges the consolidated diff, and `FireRemediation` owns the shared
+round budget and drafted state transition. Each constructor takes only its
+phase's collaborators and bounds. `WorkflowState` and `ExecutionContext` still
+carry the run state; there is no second context or phase protocol.
+
+The fire graph owns checkpoint and retry mechanics once. The authored coordinator
+composes that graph with `AuthoredPublication` and `AuthoredChecks`, reusing its
+remediation phase and graph mechanics. It no longer inherits the fire's agent,
+Git, loop and persistence dependencies. Public run signatures, node names,
+checkpoint identities and terminal event shapes remain unchanged.
+
+Two fire nodes — `persist_ticket` and `persist_artifacts` — are present only
+when an ArtifactPersister is wired.
 
 ```mermaid
 stateDiagram-v2
@@ -91,72 +109,62 @@ stateDiagram-v2
     generate_ticket --> generate_criteria : no artifact persister
     persist_ticket --> generate_criteria
     generate_criteria --> validate_criteria
-    validate_criteria --> generate_criteria : regeneration demanded, bound not spent
-    validate_criteria --> complete : bound spent, criteria still infeasible
-    validate_criteria --> persist_artifacts : criteria dispatchable, persister wired
-    validate_criteria --> run_ralph_loop : criteria dispatchable, no persister
+    validate_criteria --> generate_criteria : regeneration remains
+    validate_criteria --> complete : infeasible and bound spent
+    validate_criteria --> persist_artifacts : persister wired
+    validate_criteria --> run_ralph_loop : no persister
     persist_artifacts --> run_ralph_loop
     run_ralph_loop --> merge_to_feature
-    merge_to_feature --> review_against_ticket : merged
-    merge_to_feature --> remediate : a remediable failure, rounds left
-    merge_to_feature --> land_best_iteration : the loop never accepted
-    merge_to_feature --> complete : nothing to land
+    merge_to_feature --> review_against_ticket : consolidated
+    merge_to_feature --> remediate : loop failed and rounds remain
+    merge_to_feature --> land_best_iteration : loop exhausted
+    merge_to_feature --> complete : consolidation failed
     land_best_iteration --> complete
-    review_against_ticket --> open_pr : review passed
-    review_against_ticket --> monitor_ci : a pull request is already open
-    review_against_ticket --> remediate : review failed, rounds left
-    review_against_ticket --> comment_failure : review failed, rounds spent
-    review_against_ticket --> complete : no forge configured
+    review_against_ticket --> remediate : review failed and rounds remain
+    review_against_ticket --> complete : reviewed or budget exhausted
     remediate --> generate_criteria
-    open_pr --> monitor_ci
-    open_pr --> complete : CI monitoring disabled
-    monitor_ci --> complete : CI passed
-    monitor_ci --> remediate : CI failed, rounds left
-    monitor_ci --> comment_failure : CI failed, rounds spent
-    comment_failure --> complete
     complete --> [*]
 ```
 
-1. **resolve_visibility** - Resolves the target repository's PRIVATE / PUBLIC /
-   UNKNOWN posture once, which is what the outbound gate is engaged under for
-   the rest of the run
-2. **generate_branch** - Asks the agent to generate a descriptive branch name
-   slug, then creates a feature branch (`kodezart/{slug}-{hex}`) and a ralph
-   working branch (`{feature}-ralph-{hex}`)
-3. **generate_ticket** - Delegates to the TicketGenerator to draft an
-   implementation ticket from the raw user prompt
-4. **persist_ticket** - Writes the ticket under `.kodezart/` in the worktree
-   (only when an ArtifactPersister is wired)
-5. **generate_criteria** - Asks the agent to analyze the codebase and derive
-   testable acceptance criteria from the ticket
-6. **validate_criteria** - Dispatches the drafted criteria to an adversarial
-   refuter, which returns a three-state verdict per criterion plus any jointly
-   unsatisfiable subsets. `infeasible` criteria and the members of a
-   contradiction are routed back to **generate_criteria** for amendment, up to
-   `KODEZART_CRITERIA_MAX_REGENERATION_ROUNDS`; a set that still demands
-   regeneration once the bound is spent halts the run before the loop
-7. **persist_artifacts** - Writes the validated criteria beside the ticket
-   (only when an ArtifactPersister is wired)
-8. **run_ralph_loop** - Delegates to the QualityGate for iterative
-   execute/evaluate until criteria pass or max iterations
-9. **merge_to_feature** - Consolidates the ralph branch into the feature branch
-   and pushes; the consolidation status is what routes the rest of the run
-10. **land_best_iteration** - The stall exit: a run whose loop never accepted
-    still publishes its best iteration and opens a do-not-merge pull request
-    over it, so a human reads what was reached. Its `workflow_pr` event carries
-    `delivered: false`, and no work ref is recorded for it
-11. **review_against_ticket** - Reviews the merged work against the ticket's own
-    criteria, after the merge rather than inside the loop
-12. **remediate** - One remediation round: the failure evidence in, one targeted
-    ticket out, bounded by `KODEZART_REMEDIATION_MAX_ROUNDS`
-13. **open_pr** - Opens the delivery pull request. Its `workflow_pr` event
-    carries `delivered: true`, and the tracker write-back records that branch
-    and its pushed tip as the issue's deliverable work ref
-14. **monitor_ci** - Polls check runs for the pushed head
-15. **comment_failure** - Posts the failure the run ends on where a reader will
-    find it
-16. **complete** - The single terminal node: every path ends here, carrying the
-    run's outcome
+The initial authored run resolves visibility, generates its branch and ticket,
+then derives and validates criteria. The loop implements those criteria;
+consolidation records the selected branch and exact SHA before review. An
+unaccepted run publishes and selects its best iteration when a ref publisher
+is configured. It creates no PR. The shared remediation draft uses the same
+cumulative round budget and returns through criteria validation.
+
+`WorkflowState` and `WorkflowCompleteEvent` contain only fire facts. A clean
+fire ends `handed_off_for_delivery`; a review-budget failure retains its own
+outcome. Neither terminal contains PR or check fields, and artifact cleaning
+is not a fire operation.
+
+The authored outer coordinator performs its existing PR-description session,
+gates and creates the PR, watches checks when configured, and drafts CI
+remediation when budget remains. Its failure comment is an outer operation.
+It filters the internal fire terminal and emits one
+`AuthoredWorkflowCompleteEvent`, preserving the existing `workflow_complete`
+HTTP discriminator, PR/check fields and outcomes. An authored request without
+a tracker issue remains valid and gets no invented issue footer. Artifact
+cleaning runs here before PR creation. Backup cleanup runs after the final
+outer terminal; an intermediate fire handoff does not remove backups during
+CI remediation. With no forge, the same outer coordinator retains the
+existing no-adapter outcome.
+
+The native graph of `RalphWorkflowEngine` uses the same execution,
+consolidation, review and remediation phases. Its input comes from
+current tracker Checks through `TrackerCriteria`; its graph has no ticket or
+criteria generation nodes. Current reads guard execution, retry, review,
+remediation and checkpoint replay. Native amendment claims pass through the
+independent judgment and canonical write-back services before persistence.
+Workspace receipts retain native branch, worktree and Git identity; they support
+same-host checkpoint continuation without repeating a completed writer or push.
+They do not establish durable cross-job or public restart support.
+
+Scope planning and readiness are available through `services/scope_planning.py`
+and `chains/scope_walker.py`. Final container-scope orchestration consumes the
+native delivery graph and belongs to the delivery composition. Until that
+composition is supplied, the public router's addressed scope arm explicitly
+refuses; an addressed request cannot fall through to authored execution.
 
 ## Ticket Generation Loop
 

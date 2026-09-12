@@ -16,12 +16,13 @@ it is chosen by the same predicate.
 
 import ast
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 
 from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
@@ -43,8 +44,10 @@ from kodezart.types.domain.agent import (
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeRef
 from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
 from tests.fakes import (
@@ -60,10 +63,11 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 #: The origin the hundred-minute fire ran over: a local bare repository,
 #: the sanctioned smoke shape, with no forge behind it to be asked.
@@ -137,18 +141,27 @@ class RecordingForge:
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
+    ) -> ObservedChecks:
         self.calls.append("wait_for_checks")
-        return (True, "All CI checks passed.")
+        return ObservedChecks(
+            commit_sha="a" * 40,
+            checks_passed=True,
+            check_names=frozenset({"unit"}),
+            failed_check_names=frozenset(),
+            summary="All CI checks passed.",
+        )
 
     async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
         self.calls.append("resolve_visibility")
         return RepoVisibility.PUBLIC
 
 
-def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
+def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=AgentService(
             git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
@@ -157,7 +170,7 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
         ),
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -184,9 +197,10 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
 
 
 async def _drive(
-    engine: OriginRoutedWorkflowEngine,
+    engine: WorkflowEngine,
     *,
     repo_url: str,
+    scope: ScopeRef | None = None,
 ) -> list[AgentEvent]:
     return [
         event
@@ -194,6 +208,7 @@ async def _drive(
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=repo_url,
+            scope=scope,
             base_spec=trunk_base("main"),
             permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
@@ -422,3 +437,10 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
     assert isinstance(delivery.value, ast.Call)
     assert isinstance(delivery.value.func, ast.Name)
     assert delivery.value.func.id == "delivery_probe_for"
+
+
+class ForbiddenWorkflowEngine:
+    """A scoped entry must never select a legacy execution arm."""
+
+    def run(self, *, scope: ScopeRef | None, **_: object) -> AsyncIterator[AgentEvent]:
+        raise AssertionError("a scoped submission entered the legacy workflow arm")

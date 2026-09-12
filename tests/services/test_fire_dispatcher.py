@@ -32,7 +32,6 @@ from kodezart.types.domain.operation import (
     CheckStep,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     OperationMemberAbsentError,
@@ -179,7 +178,6 @@ def operation_config(
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 

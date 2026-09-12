@@ -42,6 +42,7 @@ def adapter():
         comment_clock=lambda: FIXTURE_NOW,
     )
     tracker = LinearMcpTracker(
+        criteria_stage_label_key=None,
         scope_labels={},
         caller=server,
         issue_labels={},

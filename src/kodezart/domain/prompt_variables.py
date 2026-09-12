@@ -3,6 +3,11 @@
 from collections.abc import Sequence
 
 from kodezart.types.domain.consolidation import ChangesetDigest
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    TrackerCriterionSet,
+    ValidatedCriterion,
+)
 from kodezart.types.domain.organize import AdmissionResult
 
 
@@ -57,3 +62,25 @@ def organize_variables(
         ),
         "defect_classes": tuple(defect_classes),
     }
+
+
+def execution_criteria_variables(
+    criteria: Sequence[ExecutionCriterion],
+) -> dict[str, object]:
+    """Render each entry source without claiming a sweep on tracker Checks."""
+    return {
+        "criteria": list(criteria),
+        "swept_criteria": True
+        if any(isinstance(c, ValidatedCriterion) for c in criteria)
+        else None,
+        "tracker_criteria": True
+        if any(not isinstance(c, ValidatedCriterion) for c in criteria)
+        else None,
+    }
+
+
+def tracker_checks_section(snapshot: TrackerCriterionSet) -> str:
+    """Render current native obligations separately from historical evidence."""
+    return "## Current tracker Checks\n" + "\n\n".join(
+        f"### {criterion.id}\n{criterion.text}" for criterion in snapshot.criteria
+    )

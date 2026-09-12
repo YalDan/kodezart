@@ -63,8 +63,6 @@ def build_git_stack(
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name=settings.committer_name,
-        committer_email=settings.committer_email,
     )
     persister = GitChangePersister(
         git=git,

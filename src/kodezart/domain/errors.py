@@ -550,3 +550,112 @@ class InvalidFireCriterionError(Exception):
             f"criterion {criterion_key!r} of fire subject {issue_key!r} "
             f"cannot be consumed: {reason}"
         )
+
+
+class CheckObservationError(Exception):
+    """A completed watch cannot establish one immutable check-set identity."""
+
+    def __init__(self, *, repo_url: str, ref: str, reason: str) -> None:
+        self.repo_url = repo_url
+        self.ref = ref
+        self.reason = reason
+        super().__init__(f"Cannot read watched checks for {repo_url}@{ref}: {reason}")
+
+
+class CriterionResolutionError(ValueError):
+    """A native criterion key has no unique current child in the addressed family."""
+
+    def __init__(self, *, issue_key: str, criterion_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.criterion_key = criterion_key
+        self.reason = reason
+        super().__init__(
+            f"criterion {criterion_key!r} of {issue_key!r} could not be resolved: "
+            f"{reason}"
+        )
+
+
+class EmptyFireCriteriaError(Exception):
+    """A successful tracker spec read found no criterion sub-issues."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(f"fire subject {issue_key!r} has no criterion sub-issues")
+
+
+class FireSpecEntryError(Exception):
+    """The current subject lacks its machine completion or human approval."""
+
+    def __init__(self, *, issue_key: str, reason: str) -> None:
+        self.issue_key = issue_key
+        self.reason = reason
+        super().__init__(f"fire subject {issue_key!r} cannot enter: {reason}")
+
+
+class ScopePlanRefusalError(ScopeReadError):
+    """Live scope facts violate the stage barrier before dispatch can begin."""
+
+    def __init__(
+        self,
+        *,
+        ref: ScopeRef,
+        open_decisions: Sequence[str],
+        backlog_criteria: Sequence[str],
+        cross_subtree_edges: Sequence[tuple[str, str]],
+    ) -> None:
+        self.open_decisions = tuple(open_decisions)
+        self.backlog_criteria = tuple(backlog_criteria)
+        self.cross_subtree_edges = tuple(cross_subtree_edges)
+        details = []
+        if self.open_decisions:
+            details.append("open decisions: " + ", ".join(self.open_decisions))
+        if self.backlog_criteria:
+            details.append("backlog-kind criteria: " + ", ".join(self.backlog_criteria))
+        if self.cross_subtree_edges:
+            details.append(
+                "cross-subtree criterion edges: "
+                + ", ".join(
+                    f"{source} -> {target}"
+                    for source, target in self.cross_subtree_edges
+                )
+            )
+        super().__init__("scope plan refused; " + "; ".join(details), ref=ref)
+
+
+class ScopeSupersessionReadError(ScopeReadError):
+    """Readiness needs a cancellation reference without an established reader."""
+
+    def __init__(self, *, ref: ScopeRef, criterion_keys: Sequence[str]) -> None:
+        self.criterion_keys = tuple(criterion_keys)
+        super().__init__(
+            "criterion supersession resolution is unavailable: "
+            + ", ".join(self.criterion_keys),
+            ref=ref,
+        )
+
+
+class ScopedExecutionUnavailableError(Exception):
+    """An addressed scope cannot execute through the legacy workflow pipeline."""
+
+    def __init__(self, message: str, *, ref: ScopeRef) -> None:
+        super().__init__(f"{message} (scope: {ref.kind.value}:{ref.key})")
+        self.ref: ScopeRef = ref
+
+
+class PRTrackerIdentityError(Exception):
+    """The publishable PR body lost its required tracker identity."""
+
+    def __init__(self, *, issue_key: str) -> None:
+        self.issue_key = issue_key
+        super().__init__(
+            "gated PR body does not retain the fixed tracker issue identity "
+            f"{issue_key!r}"
+        )
+
+
+class GitOperationError(RuntimeError):
+    """A Git command failed or returned an invalid provider response."""
+
+
+class GitRepositoryError(ValueError):
+    """A requested local path does not identify an available Git repository."""

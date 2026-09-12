@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from kodezart.types.base import CamelCaseModel
 
 _BACKUP_INFIX: str = "-backup-"
+
 _INTEGRATION_INFIX: str = "-integration-"
 
 
@@ -54,6 +55,14 @@ class WorkRefRole(StrEnum):
     INTEGRATION = "integration"
 
 
+class WorkRefLanding(StrEnum):
+    """An observer's recorded landing fact; never inferred from a branch."""
+
+    LANDED = "landed"
+    NOT_LANDED = "not_landed"
+    UNKNOWN = "unknown"
+
+
 class WorkRef(CamelCaseModel):
     """One ref an issue carries, at the role it plays.
 
@@ -79,6 +88,8 @@ class WorkRef(CamelCaseModel):
         that is already recorded is idempotent and is decided here.
         """
         return (self.issue_id, self.role, self.branch, self.pushed_head_sha)
+
+    landing: WorkRefLanding = WorkRefLanding.UNKNOWN
 
 
 class BaseInput(CamelCaseModel):

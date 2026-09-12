@@ -25,7 +25,9 @@ from kodezart.core.protocols import WorkflowEngine
 from kodezart.domain.errors import QueueFullError
 from kodezart.types.domain.agent import AgentEvent, WorkflowCompleteEvent
 from kodezart.types.domain.job import JobRecord, JobState
+from kodezart.types.domain.operation import RunKind
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.workflow import WorkflowSubmission
 
 
@@ -289,9 +291,20 @@ class AsyncioJobQueue:
         try:
             async for event in self._engine.run(
                 prompt=request.prompt,
+                issue_key=request.issue_key,
+                run_identity=(
+                    RunIdentity(
+                        kind=RunKind.FIRE,
+                        name=request.issue_key,
+                        started_at=record.submitted_at,
+                    )
+                    if request.issue_key is not None
+                    else None
+                ),
                 repo_path=request.repo_path,
                 repo_url=request.repo_url,
                 base_spec=request.base_spec,
+                scope=request.scope,
                 implied_base=request.implied_base,
                 permission_mode=request.permission_mode,
                 allowed_tools=request.allowed_tools,

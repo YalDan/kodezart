@@ -81,6 +81,7 @@ from kodezart.domain.errors import (
     SurfaceWriteAttributionError,
     TransientAPIError,
 )
+from kodezart.domain.fire_spec import require_fire_entry, tracker_spec_from_issues
 from kodezart.domain.git_url import extract_owner_repo
 from kodezart.domain.organize_graph import (
     changed_peers,
@@ -104,6 +105,7 @@ from kodezart.domain.tracker_writes import (
 )
 from kodezart.types.domain.branch import BaseSpec, WorkRef, WorkRefRole
 from kodezart.types.domain.dispatch import PassSignal, SelfWriteLedger
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.operation import (
     LifecycleStage,
@@ -799,6 +801,7 @@ class LinearMcpTracker:
         queue_state_labels: Mapping[str, str],
         issue_labels: Mapping[str, str],
         scope_labels: Mapping[str, str],
+        criteria_stage_label_key: str | None,
         workflow_state_names: Mapping[LifecycleStage, str],
         team_identifiers: Mapping[str, str],
         marker_prefixes: Mapping[str, str],
@@ -809,6 +812,7 @@ class LinearMcpTracker:
         self._caller: McpToolCaller = caller
         self._issue_labels = dict(issue_labels)
         self._scope_labels = dict(scope_labels)
+        self._criteria_stage_label_key = criteria_stage_label_key
         self._issue_identity = LinearIssueIdentityCarrier(marker_prefixes)
         self._markers = LinearMarkers(marker_prefixes)
         self._retry = retry
@@ -3969,3 +3973,77 @@ class LinearMcpTracker:
                 ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
             )
         return issue, self._scope_label_members(wire.labels)
+
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        if self._criteria_stage_label_key is not None and not self._issue_labels.get(
+            self._criteria_stage_label_key
+        ):
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels.{self._criteria_stage_label_key}",
+                stops="cannot establish criteria-stage completion at fire entry",
+            )
+        try:
+            subject, approved = await self._read_execution_approval(issue_key=issue_key)
+            require_fire_entry(
+                subject=subject,
+                approved=approved,
+                criteria_stage_label_key=self._criteria_stage_label_key,
+            )
+            _, criteria = await self._read_criterion_family(
+                issue_key=subject.issue_key, subject=subject
+            )
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
+            raise CriterionReadError(
+                issue_key=issue_key, reason="the tracker read failed or was incomplete"
+            ) from exc
+        return tracker_spec_from_issues(subject=subject, criteria=criteria)
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        surface = WritableSurface(
+            kind=SurfaceKind.CRITERION_SUB_ISSUE,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=expected.issue_key),
+        )
+
+        async def attempt() -> TrackerIssue:
+            current = await self.read_issue(issue_key=expected.issue_key)
+            require_criterion_source(
+                expected=expected, current=current, pending_replay=True
+            )
+            if current.team_key is None:
+                raise CriterionReadError(
+                    issue_key=expected.issue_key,
+                    reason="the criterion has no declared team",
+                )
+            state = await self._unstarted_state_id(
+                team_id=self._team_identifier(current.team_key),
+                issue_key=expected.issue_key,
+            )
+            markers = await self._markers_on(
+                _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
+            )
+            current = await self.read_issue(issue_key=expected.issue_key)
+            require_criterion_source(
+                expected=expected, current=current, pending_replay=True
+            )
+            self._assert_surface_holder(surface=surface, holder=holder, markers=markers)
+            if current.state_kind is WorkflowStateKind.UNSTARTED:
+                return current
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE, {"id": expected.issue_key, "state": state}
+            )
+            return self._saved_issue(payload, written={"state": state})
+
+        await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        # Outside the write retry: a failed read must never resend a completed move.
+        current = await self.read_issue(issue_key=expected.issue_key)
+        require_criterion_source(
+            expected=expected, current=current, pending_replay=True
+        )
+        if current.state_kind is not WorkflowStateKind.UNSTARTED:
+            raise CriterionReadError(
+                issue_key=expected.issue_key,
+                reason="the reset did not land in the native unstarted state",
+            )
+        return current

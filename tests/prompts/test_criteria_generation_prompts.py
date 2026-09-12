@@ -20,7 +20,6 @@ from kodezart.domain.criteria_prompt import render_validation_findings
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
     CriteriaValidation,
-    CriterionClass,
     CriterionFeasibility,
     CriterionVerdict,
     DraftedCriterion,
@@ -102,15 +101,6 @@ def test_exhaustive_switch_criteria_are_cross_checked_against_the_type(
     assert "the criterion is that the TYPE gains the case" in rendered
 
 
-def test_every_criterion_is_classified_hard_gate_or_soft_signal() -> None:
-    """KOD-69 deliverable 2: the class is produced, not inferred."""
-    rendered = _render(PATTERN_3_TICKET)
-    assert "HARD GATE OR SOFT SIGNAL" in rendered
-    assert "`hard_gate`" in rendered
-    assert "`soft_signal`" in rendered
-    assert "`criterionClass`" in rendered
-
-
 def test_the_self_check_no_longer_claims_to_be_the_only_defence() -> None:
     """The disclaimer KOD-66 quotes is gone — there IS a hard guard now."""
     rendered = _render(PATTERN_3_TICKET)
@@ -132,11 +122,9 @@ def test_a_regeneration_round_inlines_only_the_amended_criteria() -> None:
             [
                 DraftedCriterion(
                     text="`Foo` is importable from `app.api`.",
-                    criterion_class=CriterionClass.hard_gate,
                 ),
                 DraftedCriterion(
                     text="A record round-trips through the store.",
-                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -174,7 +162,6 @@ def test_a_clean_sweep_renders_no_findings_block() -> None:
             [
                 DraftedCriterion(
                     text="`Foo` is importable from `app.api`.",
-                    criterion_class=CriterionClass.hard_gate,
                 ),
             ]
         )
@@ -200,13 +187,9 @@ def _render_validator(base_ref: str = "main") -> str:
     criteria = list(
         mint_criteria(
             [
-                DraftedCriterion(
-                    text="`Foo` is importable from `app.api`.",
-                    criterion_class=CriterionClass.hard_gate,
-                ),
+                DraftedCriterion(text="`Foo` is importable from `app.api`."),
                 DraftedCriterion(
                     text="No new `# noqa` appears on changed lines.",
-                    criterion_class=CriterionClass.soft_signal,
                 ),
             ]
         )
@@ -228,8 +211,8 @@ def _render_validator(base_ref: str = "main") -> str:
 def test_the_refuter_dispatches_id_tagged_criteria_against_a_named_base() -> None:
     rendered = _render_validator(base_ref="kodezart/pr3-lane")
     assert "kodezart/pr3-lane" in rendered
-    assert "AC-1 [hard_gate] `Foo` is importable from `app.api`." in rendered
-    assert "AC-2 [soft_signal] No new `# noqa` appears on changed lines." in rendered
+    assert "AC-1 `Foo` is importable from `app.api`." in rendered
+    assert "AC-2 No new `# noqa` appears on changed lines." in rendered
     assert "Exactly one finding per criterion id" in rendered
 
 

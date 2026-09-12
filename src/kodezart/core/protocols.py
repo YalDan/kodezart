@@ -1,18 +1,28 @@
 """Protocol definitions — composition without inheritance."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.amendment import (
+    AmendmentReport,
+    NativeWriterOutput,
+    NativeWriterStart,
+)
 from kodezart.types.domain.assertion_drift import GitSourceBlob
 from kodezart.types.domain.branch import BaseSpec, WorkRef
+from kodezart.types.domain.check_observation import CIWatchResult
 from kodezart.types.domain.consolidation import (
     ChangesetDigest,
     ConsolidationOutcome,
 )
-from kodezart.types.domain.criteria import ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    ExecutionCriterion,
+    TrackerCriterionSet,
+)
 from kodezart.types.domain.dispatch import PassSignal
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import (
     ContentClass,
     GateDecision,
@@ -24,6 +34,7 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.issue_identity import IssueIdentity
 from kodezart.types.domain.job import JobRecord
+from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
 from kodezart.types.domain.operation import (
     LifecycleStage,
     QueueState,
@@ -34,7 +45,7 @@ from kodezart.types.domain.organize_graph import GraphChange, IssueGraphSnapshot
 from kodezart.types.domain.persist import ArtifactPersistStatus, PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.run_records import RunRecord
+from kodezart.types.domain.run_records import RunIdentity, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -65,6 +76,15 @@ from kodezart.types.domain.tracker import (
 )
 from kodezart.types.domain.tracker_writes import DescriptionEditResult
 from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
+from kodezart.types.domain.workspace import GitWorktreeIdentity, WorkspaceSnapshot
+
+#: What a tool call answers with.  A JSON object OR a JSON array: the MCP
+#: spec constrains a tool result to neither shape, and a measured server
+#: answered some of its tools with a bare array carrying no envelope at
+#: all (KOD-143).  Narrowing this to an object would put those payloads
+#: out of reach of every adapter above the transport.  WHICH server and
+#: which tool is an adapter's knowledge; this seam holds only the fact
+#: that both shapes are legal.
 
 
 @runtime_checkable
@@ -90,6 +110,27 @@ class LogEmitter(Protocol):
     async def aerror(self, event: str, **kwargs: object) -> None: ...
 
     async def aexception(self, event: str, **kwargs: object) -> None: ...
+
+
+@runtime_checkable
+class GitSourceReader(Protocol):
+    """Read pinned Git objects without checking out or running repository code."""
+
+    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
+        """Resolve a commit-ish once to its complete immutable object identity."""
+        ...
+
+    async def read_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob:
+        """Read exact regular-file bytes; missing/unsupported objects refuse."""
+        ...
+
+    async def find_source(
+        self, *, cwd: str, commit_sha: str, path: str
+    ) -> GitSourceBlob | None:
+        """Return None only for a successfully read, absent path at that commit."""
+        ...
 
 
 @runtime_checkable
@@ -245,6 +286,12 @@ class GitService(Protocol):
         """
         ...
 
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        """Read actual Git/index/working content identity without mutating it."""
+        ...
+
 
 @runtime_checkable
 class RepoCache(Protocol):
@@ -272,6 +319,7 @@ class AgentExecutor(Protocol):
         allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -314,6 +362,22 @@ class WorkspaceProvider(Protocol):
         """Release and clean up a previously acquired workspace."""
         ...
 
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        """Capture an owned acquisition and its actual current Git identity."""
+        ...
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        """Validate original ownership/current facts before adopting a worktree."""
+        ...
+
 
 @runtime_checkable
 class ChangePersister(Protocol):
@@ -328,6 +392,8 @@ class ChangePersister(Protocol):
         backup_ref_id_prefix: str,
         skills: SkillsSelection,
         visibility: RepoVisibility,
+        before_commit: Callable[[], Awaitable[None]] | None = None,
+        before_publish: Callable[[str], Awaitable[None]] | None = None,
     ) -> PersistResult | None:
         """Commit and push changes. ``None`` if clean.
 
@@ -450,7 +516,28 @@ class CIMonitor(Protocol):
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]: ...
+    ) -> CIWatchResult:
+        """Return one immutable observation, with no subsequent evidence reads.
+
+        Completed checks carry their commit, whole roster and failure subset.
+        Absent and incomplete watches are distinct from completed red checks.
+        """
+        ...
+
+    async def rerun_checks(self, *, repo_url: str, ref: str) -> None:
+        """Request re-observation at the same SHA.
+
+        Subsequent waits on this monitor must observe
+        the requested attempt, never the completed checks preceding it.
+        An unsupported or incomplete rerun raises a domain error.
+        Each asynchronous task owns its rerun/read sequence; another task's
+        rerun must not replace its observation.
+        """
+        ...
+
+    async def checks_declared(self, *, repo_url: str) -> bool:
+        """Read whether checks are declared; failed reads never mean absent."""
+        ...
 
 
 @runtime_checkable
@@ -473,13 +560,6 @@ class DeliveryProbe(Protocol):
         ...
 
 
-#: What a tool call answers with.  A JSON object OR a JSON array: the MCP
-#: spec constrains a tool result to neither shape, and a measured server
-#: answered some of its tools with a bare array carrying no envelope at
-#: all (KOD-143).  Narrowing this to an object would put those payloads
-#: out of reach of every adapter above the transport.  WHICH server and
-#: which tool is an adapter's knowledge; this seam holds only the fact
-#: that both shapes are legal.
 type McpToolResult = Mapping[str, object] | Sequence[object]
 
 
@@ -578,6 +658,15 @@ class ManagedMcpToolCaller(McpToolCaller, Protocol):
 
 
 @runtime_checkable
+class TrackerCommentReader(Protocol):
+    """Read complete native comments without granting a writer."""
+
+    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
+        """Every comment on the issue, oldest first."""
+        ...
+
+
+@runtime_checkable
 class TrackerCriteriaReader(Protocol):
     """Read current native criterion families with their full source."""
 
@@ -589,6 +678,19 @@ class TrackerCriteriaReader(Protocol):
         an empty sequence. A failed or incomplete lookup raises; it never
         becomes an empty answer. No parent-body syntax supplies membership.
         """
+        ...
+
+
+@runtime_checkable
+class TrackerContextReader(Protocol):
+    """Read the documents referenced by a fire's issue."""
+
+    async def list_issue_assets(self, *, issue_key: str) -> Sequence[TrackerAsset]:
+        """Attachment and document metadata referenced by the issue."""
+        ...
+
+    async def read_document(self, *, document_key: str) -> str:
+        """The document's text content."""
         ...
 
 
@@ -1140,6 +1242,28 @@ class TrackerPort(TrackerCriteriaReader, Protocol):
         """
         ...
 
+    async def read_fire_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture the subject once and read its full criterion membership.
+
+        Require the subject's configured criteria phase marker and current
+        inherited execution approval. Empty membership or missing Check also
+        raises here. This read never reruns an admission session; legal
+        criterion-state policy remains a separate entry requirement.
+        """
+        ...
+
+    async def reset_criterion_pending(
+        self, *, expected: TrackerIssue, holder: str
+    ) -> TrackerIssue:
+        """Reset only this expected native criterion under CRITERION_SUB_ISSUE.
+
+        Resolve the team's unique actual unstarted state. Re-read expected
+        identity/body/state and the current holder on each unsent retry;
+        a matching already-unstarted replay writes nothing. Read back the
+        state separately from the write attempt. No body or evidence is edited.
+        """
+        ...
+
 
 @runtime_checkable
 class ArtifactPersister(Protocol):
@@ -1196,6 +1320,7 @@ class AgentRunner(Protocol):
         allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1218,11 +1343,13 @@ class AgentRunner(Protocol):
         allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         visibility: RepoVisibility,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         create_branch: bool = True,
         cache_key: str | None = None,
+        native_guard: "NativeWriteGuard | None" = None,
     ) -> AsyncIterator[AgentEvent]:
         """Workflow mode with branch creation and persistence."""
         ...
@@ -1236,12 +1363,80 @@ class AgentRunner(Protocol):
         allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
         output_format: dict[str, object] | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Execute in a pre-acquired workspace (no lifecycle)."""
+        ...
+
+
+@runtime_checkable
+class NativeWriteGuard(Protocol):
+    """A native session's live semantic and source authority before commit."""
+
+    @property
+    def holder(self) -> str:
+        """The actual parent job supplied when this native guard was composed."""
+        ...
+
+    async def begin(self, *, workspace_path: str) -> NativeWriterStart:
+        """Read the actual starting HEAD and render the current ruling registry."""
+        ...
+
+    def snapshot(self) -> NativeAuthoritySnapshot:
+        """Capture original facts and only the writer's verified source changes."""
+        ...
+
+    async def restore(
+        self,
+        *,
+        snapshot: NativeAuthoritySnapshot,
+        workspace_path: str,
+        start: NativeWriterStart,
+        receipt: PersistResult | None = None,
+    ) -> None:
+        """Restore the same original authority and recheck its actual sources."""
+        ...
+
+    async def judge(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        output: NativeWriterOutput,
+    ) -> AmendmentReport:
+        """Independently reconcile actual writer claims before persistence."""
+        ...
+
+    async def require_current(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Refuse changed HEAD, Checks or rulings after an awaited boundary."""
+        ...
+
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        """Recheck current authority against the harness's actual commit receipt."""
+        ...
+
+    async def require_unchanged_head(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+    ) -> None:
+        """Check local evidence before failed writer cleanup, without tracker I/O."""
         ...
 
 
@@ -1255,6 +1450,28 @@ class GitAuth(Protocol):
 
     def subprocess_env(self) -> dict[str, str]:
         """Return env vars for git subprocess (e.g. GIT_ASKPASS). Empty if none."""
+        ...
+
+
+@runtime_checkable
+class FireCriteriaReader(Protocol):
+    """Read current native obligations against the run's frozen subject spec.
+
+    This is a runtime dependency. Checkpoints carry the spec and criterion
+    data only; transport failures refuse instead of returning cached Checks.
+    """
+
+    async def read_current(self, *, spec: TrackerSpec) -> TrackerCriterionSet:
+        """Return one complete current Check snapshot or a typed refusal."""
+        ...
+
+
+@runtime_checkable
+class FireCriteriaSource(FireCriteriaReader, Protocol):
+    """Capture an admitted native subject once and refresh its obligations."""
+
+    async def read_spec(self, *, issue_key: str) -> TrackerSpec:
+        """Capture tracker-authored subject data or raise a typed refusal."""
         ...
 
 
@@ -1280,8 +1497,11 @@ class QualityGate(Protocol):
         work_base_ref: str,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
-        acceptance_criteria: list[ValidatedCriterion],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
     ) -> AsyncIterator[AgentEvent]:
         """Iterate execute/evaluate until pass or max."""
@@ -1299,6 +1519,7 @@ class TicketGenerator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         base_branch: str,
     ) -> AsyncIterator[AgentEvent]:
         """Draft/review loop until approved or max reviews."""
@@ -1321,6 +1542,7 @@ class Remediator(Protocol):
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Draft the remediation ticket for one round."""
         ...
@@ -1334,9 +1556,12 @@ class WorkflowEngine(Protocol):
         self,
         *,
         prompt: str,
+        issue_key: str | None = None,
+        run_identity: RunIdentity | None = None,
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
         implied_base: BaseSpec | None = None,
         permission_mode: PermissionMode,
         allowed_tools: AllowedTools,
@@ -1344,6 +1569,10 @@ class WorkflowEngine(Protocol):
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.
 
+        ``scope`` explicitly selects addressed input or the legacy prompt
+        workflow. An engine must consume an addressed scope or refuse it.
+        ``issue_key`` is the producer's optional tracker identity, carried
+        independently of the prompt and scope address.
         ``cache_key`` IS the LangGraph thread id, so the caller's job id
         addresses the run's checkpoints.
         """
@@ -1471,6 +1700,29 @@ class RepoVisibilityResolver(Protocol):
 
 
 @runtime_checkable
+class OutboundContentGate(Protocol):
+    """Assigns an explicit, observable verdict to every outbound payload."""
+
+    async def gate(
+        self,
+        *,
+        content: str,
+        visibility: RepoVisibility,
+        shape: WriterShape,
+        destination: OutboundDestination,
+        content_class: ContentClass,
+    ) -> GateDecision:
+        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
+
+        ``content_class`` is declared by the caller and has no default: the
+        writer is the only party that knows where its bytes came from, and a
+        default would let a payload take the cheap path without anyone
+        saying so.
+        """
+        ...
+
+
+@runtime_checkable
 class ContentScanner(Protocol):
     """Finds outbound-content findings in one payload.
 
@@ -1498,57 +1750,4 @@ class ContentScanner(Protocol):
         destination: OutboundDestination,
     ) -> ScanResult:
         """Every finding, or the typed reason there is no answer."""
-        ...
-
-
-@runtime_checkable
-class OutboundContentGate(Protocol):
-    """Assigns an explicit, observable verdict to every outbound payload."""
-
-    async def gate(
-        self,
-        *,
-        content: str,
-        visibility: RepoVisibility,
-        shape: WriterShape,
-        destination: OutboundDestination,
-        content_class: ContentClass,
-    ) -> GateDecision:
-        """CLEAN / REDACTED / BLOCKED — never silently dropped or posted.
-
-        ``content_class`` is declared by the caller and has no default: the
-        writer is the only party that knows where its bytes came from, and a
-        default would let a payload take the cheap path without anyone
-        saying so.
-        """
-        ...
-
-
-@runtime_checkable
-class GitSourceReader(Protocol):
-    """Read pinned Git objects without checking out or running repository code."""
-
-    async def resolve_commit(self, *, cwd: str, ref: str) -> str:
-        """Resolve a commit-ish once to its complete immutable object identity."""
-        ...
-
-    async def read_source(
-        self, *, cwd: str, commit_sha: str, path: str
-    ) -> GitSourceBlob:
-        """Read exact regular-file bytes; missing/unsupported objects refuse."""
-        ...
-
-    async def find_source(
-        self, *, cwd: str, commit_sha: str, path: str
-    ) -> GitSourceBlob | None:
-        """Return None only for a successfully read, absent path at that commit."""
-        ...
-
-
-@runtime_checkable
-class TrackerCommentReader(Protocol):
-    """Read complete native comments without granting a writer."""
-
-    async def list_comments(self, *, issue_key: str) -> Sequence[TrackerComment]:
-        """Every comment on the issue, oldest first."""
         ...

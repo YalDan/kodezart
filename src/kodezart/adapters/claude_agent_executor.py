@@ -28,8 +28,10 @@ from kodezart.adapters._sdk_mapping import map_message
 from kodezart.adapters._skills_mapping import map_setting_sources, map_skills
 from kodezart.core.error_egress import redact_credentials
 from kodezart.core.logging import BoundLogger, get_logger
+from kodezart.core.prompt_rendering import PromptTemplate
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent
+from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import (
     AllowedTools,
     KnowledgeGrant,
@@ -58,9 +60,11 @@ class ClaudeAgentExecutor:
         *,
         setting_sources: list[SettingSource],
         knowledge_grant: KnowledgeGrant,
+        fire_record: PromptTemplate | None = None,
     ) -> None:
         self._setting_sources = setting_sources
         self._knowledge_grant = knowledge_grant
+        self._fire_record = fire_record
         self._log: BoundLogger = get_logger(__name__)
 
     async def stream(
@@ -72,6 +76,7 @@ class ClaudeAgentExecutor:
         allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -110,6 +115,10 @@ class ClaudeAgentExecutor:
             prompt,
             grant=self._knowledge_grant,
             attached=knowledge,
+            fire_record=(
+                self._fire_record if session_type is SessionType.TICKET_FIRE else None
+            ),
+            run_identity=run_identity,
         )
         # TODO: symmetric ProcessError/CLIConnectionError/ClaudeSDKError
         # detail preservation (exit_code, stderr_tail) matching

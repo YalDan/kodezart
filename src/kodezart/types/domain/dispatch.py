@@ -217,6 +217,8 @@ class DispatchReport(DispatchModel):
     recorded spec, which the tracker holds and this report does not
     duplicate."""
 
+    criterion_keys: tuple[str, ...] = ()
+
 
 class PassSignal(StrEnum):
     """The deterministic questions a pass may gate on — one port call each.

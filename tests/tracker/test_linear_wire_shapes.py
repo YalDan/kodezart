@@ -358,6 +358,7 @@ class CaptureCaller:
 
 def tracker_over(caller: CaptureCaller) -> LinearMcpTracker:
     return LinearMcpTracker(
+        criteria_stage_label_key=None,
         scope_labels={},
         issue_labels={},
         marker_prefixes=MARKER_PREFIXES,
