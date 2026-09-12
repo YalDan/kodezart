@@ -91,14 +91,21 @@ async def test_fire_and_status_use_overrides_preserving_wire_contract(boundary):
     assert boundary.queue.attached == boundary.runner.calls == []
 
 
-async def test_prefix_override_controls_handle_urls(boundary):
-    boundary.app.dependency_overrides[deps.get_api_prefix] = lambda: "/alternate"
+async def test_configured_route_prefix_controls_resolving_handle_urls(
+    boundary, monkeypatch
+):
+    monkeypatch.setenv("KODEZART_HTTP__API_V1_PREFIX", "/alternate")
+    app = create_app()
+    app.dependency_overrides.update(boundary.app.dependency_overrides)
     async with AsyncClient(
-        transport=ASGITransport(app=boundary.app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.post("/api/v1/agent/fire", json=BODY)
-    assert response.json()["statusUrl"] == "/alternate/jobs/job-0001"
-    assert response.json()["streamUrl"] == "/alternate/jobs/job-0001/stream"
+        response = await client.post("/alternate/agent/fire", json=BODY)
+        assert response.status_code == 202
+        assert response.json()["statusUrl"] == "/alternate/jobs/job-0001"
+        assert response.json()["streamUrl"] == "/alternate/jobs/job-0001/stream"
+        assert (await client.get(response.json()["statusUrl"])).status_code == 200
+        assert (await client.get(response.json()["streamUrl"])).status_code == 200
 
 
 async def test_workflow_and_attach_preserve_sse_frames(boundary):
