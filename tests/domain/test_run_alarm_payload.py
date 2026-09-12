@@ -25,8 +25,16 @@ def test_alarm_payload_contains_exactly_the_declared_six_fields(bounded):
         "raisedBy",
     }
     assert payload["readings"] == [
-        {"sourceRef": "escalation/one", "value": "UNRESOLVED\n", "atSha": "0000000"},
-        {"sourceRef": "count/one", "value": " 004 ", "atSha": None},
+        {
+            "sourceRef": "escalation/one",
+            "value": {"kind": "text", "value": "UNRESOLVED\n"},
+            "atSha": "0000000",
+        },
+        {
+            "sourceRef": "count/one",
+            "value": {"kind": "text", "value": " 004 "},
+            "atSha": None,
+        },
     ]
     assert payload["bound"] == (
         {
