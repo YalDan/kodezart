@@ -12,8 +12,8 @@ from kodezart.composition.passes import build_dispatch_runtime
 from kodezart.composition.tracker import DialledTracker
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import get_logger
-from kodezart.domain.errors import AuditRunIncompleteError
 from kodezart.services.agent_service import AgentService
+from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.services.run_recorder import RunRecorder
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.dispatch import PassRun, SelfWriteLedger

@@ -13,8 +13,8 @@ from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.composition.audit import build_audit_pass
 from kodezart.core.config import AppConfig
 from kodezart.domain.criterion_evidence import render_evidence_field
-from kodezart.domain.errors import AuditRunIncompleteError
 from kodezart.services.agent_service import AgentService
+from kodezart.services.audit_runtime import AuditRunIncompleteError
 from kodezart.types.domain.agent import (
     AUDIT_CLAIM_SCHEMA,
     AUDIT_MANDATE_SCHEMA,

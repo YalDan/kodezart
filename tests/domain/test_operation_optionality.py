@@ -143,7 +143,7 @@ def test_a_records_key_outside_the_kind_vocabulary_is_refused() -> None:
             operation_name="fixture",
             workspace="fixture-workspace",
             records={
-                "audit": RecordDestination(
+                "not-a-run-kind": RecordDestination(
                     system=DocumentSystem.KNOWLEDGE,
                     name="Run log",
                     id="destination-1",

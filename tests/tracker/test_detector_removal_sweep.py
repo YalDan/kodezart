@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.agent import (
     AUDIT_CLAIM_SCHEMA,
@@ -179,7 +179,9 @@ async def test_independent_failure_retains_every_other_available_arm(
                 "mandate": AUDIT_MANDATE_SCHEMA,
             }[failed]
         ):
-            raise RuntimeError(f"unavailable {failed} session")
+            raise AgentSDKError(
+                f"unavailable {failed} session", error_kind="CLIConnectionError"
+            )
 
     executor.during = during
     child = (
@@ -202,6 +204,36 @@ async def test_independent_failure_retains_every_other_available_arm(
             and child.removal_unavailable_reason is None
         )
     assert DETECTOR_REMOVAL_SCHEMA in reached
+
+
+@pytest.mark.parametrize("failed", ["claim", "overclaim", "removal", "mandate"])
+async def test_programmer_failure_is_not_a_detector_unavailability(
+    setup, tracker, server, failed
+):
+    build, executor, *_ = setup
+    await ready(tracker, server)
+    executor.removal_output = payload()
+    executor.overclaim_output = overclaim_payload()
+    error = RuntimeError(f"programmer failure in {failed}")
+    schema = {
+        "claim": AUDIT_CLAIM_SCHEMA,
+        "overclaim": AUDIT_OVERCLAIM_SCHEMA,
+        "removal": DETECTOR_REMOVAL_SCHEMA,
+        "mandate": AUDIT_MANDATE_SCHEMA,
+    }[failed]
+
+    async def during(kwargs):
+        if kwargs["output_format"]["schema"] == schema:
+            raise error
+
+    executor.during = during
+    with pytest.raises(RuntimeError) as caught:
+        await build(
+            include_removals=True,
+            include_overclaims=True,
+            selected_source=RevisionSource(),
+        ).run()
+    assert caught.value is error
 
 
 @pytest.mark.parametrize("mode", ["unconfigured", "unstarted", "lapsed"])
@@ -280,7 +312,9 @@ async def test_only_successful_removal_report_still_pins_its_observed_head(
 
     async def during(kwargs):
         if kwargs["output_format"]["schema"] == AUDIT_CLAIM_SCHEMA:
-            raise RuntimeError("Claim session unavailable.")
+            raise AgentSDKError(
+                "Claim session unavailable.", error_kind="CLIConnectionError"
+            )
         if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
             git._remote_branch_shas["ordinary-name"] = "c" * 40
 
