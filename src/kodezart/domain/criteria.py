@@ -1,6 +1,7 @@
-"""Criterion identity — the ``AC-n`` scheme minted once, harness-side.
+"""Authored criterion identity — the ``AC-n`` scheme minted harness-side.
 
-Identity is assigned at generation time, never by a model.  The sweep, the
+Authored identity is assigned at generation time, never by a model.
+Native execution instead carries each tracker key without minting.  The sweep, the
 persisted artifact, evaluator dispatch and grading, and the re-injected
 feedback text all key off these ids and never off criterion text: a
 model-echoed string can drift.
@@ -23,8 +24,8 @@ from kodezart.types.domain.criteria import (
 def mint_criterion_id(index: int) -> CriterionId:
     """The identity of the criterion at 1-based *index*.
 
-    The single construction site for a ``CriterionId``, so no other surface
-    knows the ``AC-n`` shape and none may invent one.  The prefix is the
+    The single authored minting site, so no other surface knows the
+    ``AC-n`` shape and none may invent one.  The prefix is the
     one the format pattern is built from, so a minted id always matches it.
     """
     if index < 1:

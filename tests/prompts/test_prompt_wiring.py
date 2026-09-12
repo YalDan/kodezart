@@ -27,7 +27,10 @@ from kodezart.core.prompt_rendering import (
 from kodezart.core.protocols import PromptProvider
 from kodezart.domain.criteria import mint_criteria
 from kodezart.domain.criteria_prompt import render_validation_findings
-from kodezart.domain.prompt_variables import changeset_variables
+from kodezart.domain.prompt_variables import (
+    changeset_variables,
+    execution_criteria_variables,
+)
 from kodezart.domain.ticket import format_ticket_as_task
 from kodezart.types.domain.agent import FileChange, TicketDraftOutput
 from kodezart.types.domain.consolidation import ChangesetDigest
@@ -176,19 +179,22 @@ RENDER_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
     "implementation": (PromptKey.IMPLEMENTATION, {"task_md": TASK_MD}),
     "evaluation": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
     ),
     "post_merge_review": (
         PromptKey.POST_MERGE_REVIEW,
-        {"criteria": CRITERIA, **changeset_variables(DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(DIGEST)},
     ),
     "evaluation__empty_changeset": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(EMPTY_DIGEST)},
+        {**execution_criteria_variables(CRITERIA), **changeset_variables(EMPTY_DIGEST)},
     ),
     "evaluation__no_file_paths": (
         PromptKey.EVALUATION,
-        {"criteria": CRITERIA, **changeset_variables(NO_FILES_DIGEST)},
+        {
+            **execution_criteria_variables(CRITERIA),
+            **changeset_variables(NO_FILES_DIGEST),
+        },
     ),
     "iteration_feedback": (
         PromptKey.ITERATION_FEEDBACK,

@@ -11,22 +11,32 @@ from collections.abc import Sequence
 from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem, SherlockFlag
 from kodezart.types.domain.agent import CriterionResult
-from kodezart.types.domain.criteria import CriterionVerdict, ValidatedCriterion
+from kodezart.types.domain.criteria import (
+    CriterionVerdict,
+    ExecutionCriterion,
+    ValidatedCriterion,
+)
 
 
-def is_graded(criterion: ValidatedCriterion) -> bool:
+def is_graded(criterion: ExecutionCriterion) -> bool:
     """Whether this criterion's demonstration was possible at all.
 
     An ``unverifiable`` criterion is never a pass and never a fail, and
     there is no third seat, so it takes none: not in the numerator, not in
     the denominator.
     """
-    return criterion.feasibility.verdict is not CriterionVerdict.unverifiable
+    return not isinstance(criterion, ValidatedCriterion) or (
+        criterion.feasibility.verdict is not CriterionVerdict.unverifiable
+    )
 
 
-def ungraded(criteria: Sequence[ValidatedCriterion]) -> list[ValidatedCriterion]:
+def ungraded(criteria: Sequence[ExecutionCriterion]) -> list[ValidatedCriterion]:
     """The criteria the sweep left with no possible demonstration."""
-    return [criterion for criterion in criteria if not is_graded(criterion)]
+    return [
+        criterion
+        for criterion in criteria
+        if isinstance(criterion, ValidatedCriterion) and not is_graded(criterion)
+    ]
 
 
 def named_resource(criterion: ValidatedCriterion) -> str:
@@ -44,9 +54,9 @@ def named_resource(criterion: ValidatedCriterion) -> str:
 
 
 def _failures(
-    criteria: Sequence[ValidatedCriterion],
+    criteria: Sequence[ExecutionCriterion],
     results: Sequence[CriterionResult],
-) -> list[ValidatedCriterion]:
+) -> list[ExecutionCriterion]:
     """Every GRADED criterion that did not pass.
 
     An id with no result did not pass — the same fail-closed denominator
@@ -62,7 +72,7 @@ def _failures(
 
 
 def accept_verdict(
-    criteria: Sequence[ValidatedCriterion],
+    criteria: Sequence[ExecutionCriterion],
     results: Sequence[CriterionResult],
 ) -> AcceptVerdict:
     """The three-state verdict for one evaluation pass.
@@ -103,7 +113,7 @@ def sherlock_items(sherlock_flags: Sequence[SherlockFlag]) -> list[FlaggedItem]:
 
 
 def flagged_items(
-    criteria: Sequence[ValidatedCriterion],
+    criteria: Sequence[ExecutionCriterion],
     sherlock_flags: Sequence[SherlockFlag],
 ) -> list[FlaggedItem]:
     """Everything a flagged run owes its reader, in one ordered list.
