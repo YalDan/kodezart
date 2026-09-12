@@ -41,7 +41,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 
-from kodezart.core.errors import McpCredentialRefusedError
+from kodezart.core.errors import TrackerAccessDeniedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 
@@ -121,7 +121,7 @@ class ClaimHeartbeat:
                 )
             except asyncio.CancelledError:
                 raise
-            except McpCredentialRefusedError as exc:
+            except TrackerAccessDeniedError as exc:
                 # A third arm, and it is neither of the two above.  A write
                 # that FAILED is survivable by design — the interval is a
                 # fraction of the lease so several may fail — and a renewal
@@ -134,7 +134,6 @@ class ClaimHeartbeat:
                     "claim_renewal_credential_refused",
                     issue_key=issue_key,
                     holder=self._holder,
-                    server_name=exc.server_name,
                     error=str(exc),
                 )
                 return

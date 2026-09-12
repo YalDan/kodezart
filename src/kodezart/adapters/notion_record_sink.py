@@ -22,6 +22,7 @@ from kodezart.adapters.notion_record_properties import (
     write_properties,
 )
 from kodezart.adapters.pagination import cursor_pages
+from kodezart.adapters.record_failures import record_failure_boundary
 from kodezart.core.errors import McpTransportError, RunRecordWriteError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller
@@ -69,46 +70,48 @@ class NotionRecordSink:
         every longer name it prefixed.  Page one of size one is
         all the answer needs.
         """
-        if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
-            title, expected = await self._structured_target(destination, record)
-            page = await self._find_record(destination, record, title)
-            return page is not None and self._matches_properties(page, expected)
-        title_property = await self._title_property(destination)
-        payload = await self._caller.call_tool(
-            name=_TOOL_QUERY_DATA_SOURCE,
-            arguments={
-                "data_source_id": destination.id,
-                "filter": {
-                    "and": [
-                        {
-                            "timestamp": "created_time",
-                            "created_time": {
-                                "on_or_after": record.started_at.isoformat(),
+        with record_failure_boundary(destination=destination, record=record):
+            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+                title, expected = await self._structured_target(destination, record)
+                page = await self._find_record(destination, record, title)
+                return page is not None and self._matches_properties(page, expected)
+            title_property = await self._title_property(destination)
+            payload = await self._caller.call_tool(
+                name=_TOOL_QUERY_DATA_SOURCE,
+                arguments={
+                    "data_source_id": destination.id,
+                    "filter": {
+                        "and": [
+                            {
+                                "timestamp": "created_time",
+                                "created_time": {
+                                    "on_or_after": record.started_at.isoformat(),
+                                },
                             },
-                        },
-                        {
-                            "property": title_property,
-                            "title": {"starts_with": record.title()},
-                        },
-                    ],
+                            {
+                                "property": title_property,
+                                "title": {"starts_with": record.title()},
+                            },
+                        ],
+                    },
+                    "page_size": 1,
                 },
-                "page_size": 1,
-            },
-        )
-        if not isinstance(payload, Mapping):
-            raise McpTransportError(
-                "the data-source query answered with no object to read results from",
-                server_name=self._server_name,
-                tool_name=_TOOL_QUERY_DATA_SOURCE,
             )
-        results = payload.get("results")
-        if not isinstance(results, list):
-            raise McpTransportError(
-                "the data-source query's answer carries no results list",
-                server_name=self._server_name,
-                tool_name=_TOOL_QUERY_DATA_SOURCE,
-            )
-        return len(results) > 0
+            if not isinstance(payload, Mapping):
+                raise McpTransportError(
+                    "the data-source query answered with no object "
+                    "to read results from",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_QUERY_DATA_SOURCE,
+                )
+            results = payload.get("results")
+            if not isinstance(results, list):
+                raise McpTransportError(
+                    "the data-source query's answer carries no results list",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_QUERY_DATA_SOURCE,
+                )
+            return len(results) > 0
 
     async def write_record(
         self,
@@ -117,44 +120,45 @@ class NotionRecordSink:
         record: RunRecord,
     ) -> None:
         """Create or complete this run's page using its declared contract."""
-        if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
-            title, expected = await self._structured_target(destination, record)
-            page = await self._find_record(destination, record, title)
-            if page is not None and self._matches_properties(page, expected):
-                return
-            properties = write_properties(expected)
-            if page is not None:
-                await self._caller.call_tool(
-                    name=_TOOL_PATCH_PAGE,
-                    arguments={"page_id": page.id, "properties": properties},
-                )
-            else:
-                await self._caller.call_tool(
-                    name=_TOOL_POST_PAGE,
-                    arguments={
-                        "parent": {
-                            "type": "data_source_id",
-                            "data_source_id": destination.id,
+        with record_failure_boundary(destination=destination, record=record):
+            if record.kind is RunKind.FIRE or destination.outcome_mapping is not None:
+                title, expected = await self._structured_target(destination, record)
+                page = await self._find_record(destination, record, title)
+                if page is not None and self._matches_properties(page, expected):
+                    return
+                properties = write_properties(expected)
+                if page is not None:
+                    await self._caller.call_tool(
+                        name=_TOOL_PATCH_PAGE,
+                        arguments={"page_id": page.id, "properties": properties},
+                    )
+                else:
+                    await self._caller.call_tool(
+                        name=_TOOL_POST_PAGE,
+                        arguments={
+                            "parent": {
+                                "type": "data_source_id",
+                                "data_source_id": destination.id,
+                            },
+                            "properties": properties,
                         },
-                        "properties": properties,
+                    )
+                return
+            title_property = await self._title_property(destination)
+            await self._caller.call_tool(
+                name=_TOOL_POST_PAGE,
+                arguments={
+                    "parent": {
+                        "type": "data_source_id",
+                        "data_source_id": destination.id,
                     },
-                )
-            return
-        title_property = await self._title_property(destination)
-        await self._caller.call_tool(
-            name=_TOOL_POST_PAGE,
-            arguments={
-                "parent": {
-                    "type": "data_source_id",
-                    "data_source_id": destination.id,
-                },
-                "properties": {
-                    title_property: {
-                        "title": [{"text": {"content": record.line()}}],
+                    "properties": {
+                        title_property: {
+                            "title": [{"text": {"content": record.line()}}],
+                        },
                     },
                 },
-            },
-        )
+            )
 
     async def _structured_target(
         self, destination: RecordDestination, record: RunRecord

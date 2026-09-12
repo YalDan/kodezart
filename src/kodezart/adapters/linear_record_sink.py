@@ -17,6 +17,7 @@ substring of the log was the second wrong answer: a row for a longer
 issue key incorrectly verified a record owed to its shorter prefix.
 """
 
+from kodezart.adapters.record_failures import record_failure_boundary
 from kodezart.core.errors import McpTransportError
 from kodezart.core.protocols import McpToolCaller
 from kodezart.types.domain.operation import RecordDestination
@@ -49,25 +50,26 @@ class LinearRecordSink:
         for a longer name this one prefixes, and the same name from
         another window out of this run's answer.
         """
-        payload = await self._caller.call_tool(
-            name=_TOOL_GET_DOCUMENT,
-            arguments={"id": destination.id},
-        )
-        if not isinstance(payload, dict):
-            raise McpTransportError(
-                "the document read answered with no object to read content from",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
+        with record_failure_boundary(destination=destination, record=record):
+            payload = await self._caller.call_tool(
+                name=_TOOL_GET_DOCUMENT,
+                arguments={"id": destination.id},
             )
-        content = payload.get("content")
-        if not isinstance(content, str):
-            raise McpTransportError(
-                "the document read carries no content to search for the run's row",
-                server_name=self._server_name,
-                tool_name=_TOOL_GET_DOCUMENT,
-            )
-        title = record.title()
-        return any(line.startswith(title) for line in content.splitlines())
+            if not isinstance(payload, dict):
+                raise McpTransportError(
+                    "the document read answered with no object to read content from",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_GET_DOCUMENT,
+                )
+            content = payload.get("content")
+            if not isinstance(content, str):
+                raise McpTransportError(
+                    "the document read carries no content to search for the run's row",
+                    server_name=self._server_name,
+                    tool_name=_TOOL_GET_DOCUMENT,
+                )
+            title = record.title()
+            return any(line.startswith(title) for line in content.splitlines())
 
     async def write_record(
         self,
@@ -76,10 +78,11 @@ class LinearRecordSink:
         record: RunRecord,
     ) -> None:
         """Append the record's line to the destination document."""
-        await self._caller.call_tool(
-            name=_TOOL_SAVE_DOCUMENT,
-            arguments={
-                "id": destination.id,
-                "patch": [{"op": "append", "text": f"\n{record.line()}"}],
-            },
-        )
+        with record_failure_boundary(destination=destination, record=record):
+            await self._caller.call_tool(
+                name=_TOOL_SAVE_DOCUMENT,
+                arguments={
+                    "id": destination.id,
+                    "patch": [{"op": "append", "text": f"\n{record.line()}"}],
+                },
+            )

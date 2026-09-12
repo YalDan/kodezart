@@ -62,9 +62,11 @@ from kodezart.core.errors import (
     McpCallUnansweredError,
     McpCredentialRefusedError,
     McpTransportError,
+    TrackerAccessDeniedError,
     TrackerBootValidationError,
     TrackerEnsureConflictError,
     TrackerProtocolError,
+    TrackerUnavailableError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import McpToolCaller, McpToolResult
@@ -914,7 +916,7 @@ class LinearMcpTracker:
         """
         try:
             await self._call(tool, {"limit": _SCOPE_PROBE_LIMIT})
-        except McpTransportError as exc:
+        except TrackerUnavailableError as exc:
             diagnosis = str(exc)
             if _SCOPE_REFUSAL_MARKER in diagnosis:
                 return diagnosis
@@ -1002,7 +1004,7 @@ class LinearMcpTracker:
                         )
                     members[entry.id] = issue
             return tuple(members[key] for key in sorted(members))
-        except (McpTransportError, TrackerProtocolError) as exc:
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise IssueLabelReadError(
                 classification=classification,
                 reason="the tracker membership read failed or was incomplete",
@@ -1361,7 +1363,7 @@ class LinearMcpTracker:
             _, criteria = await self._read_criterion_family(
                 issue_key=issue_key, subject=subject
             )
-        except (McpTransportError, TrackerProtocolError) as exc:
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(
                 issue_key=issue_key, reason="the tracker read failed or was incomplete"
             ) from exc
@@ -1382,7 +1384,7 @@ class LinearMcpTracker:
                 else await self.read_issue(issue_key=issue_key)
             )
             return parent, await self._read_criteria(parent=parent)
-        except (McpTransportError, TrackerProtocolError) as exc:
+        except (TrackerUnavailableError, TrackerProtocolError) as exc:
             raise CriterionReadError(
                 issue_key=issue_key, reason="the tracker read failed or was incomplete"
             ) from exc
@@ -1592,8 +1594,8 @@ class LinearMcpTracker:
                     {"id": issue.issue_key, "includeRelations": True},
                 )
             except (
-                McpCredentialRefusedError,
-                McpTransportError,
+                TrackerAccessDeniedError,
+                TrackerUnavailableError,
                 TrackerProtocolError,
                 TransientAPIError,
             ):
@@ -1729,8 +1731,8 @@ class LinearMcpTracker:
                 )
             )
         except (
-            McpTransportError,
-            McpCredentialRefusedError,
+            TrackerUnavailableError,
+            TrackerAccessDeniedError,
             TrackerProtocolError,
             TransientAPIError,
             ValidationError,
@@ -2596,8 +2598,8 @@ class LinearMcpTracker:
                     issue_key=marker.target.key, comment_key=marker.comment_key
                 )
             except (
-                McpCredentialRefusedError,
-                McpTransportError,
+                TrackerAccessDeniedError,
+                TrackerUnavailableError,
                 TransientAPIError,
             ) as exc:
                 refused.append((marker, exc))
@@ -2628,8 +2630,8 @@ class LinearMcpTracker:
                     body=marker.void_body,
                 )
             except (
-                McpCredentialRefusedError,
-                McpTransportError,
+                TrackerAccessDeniedError,
+                TrackerUnavailableError,
                 TransientAPIError,
             ) as exc:
                 await self._log.aerror(
@@ -3452,10 +3454,10 @@ class LinearMcpTracker:
                     tool=tool,
                     server_name=exc.server_name,
                 )
-                raise
+                raise TrackerAccessDeniedError(str(exc)) from exc
             except (McpTransportError, TransientAPIError) as exc:
                 if attempt + 1 >= self._retry.attempts or not _may_resend(tool, exc):
-                    raise
+                    raise TrackerUnavailableError(str(exc)) from exc
                 delay = self._retry.delay(attempt)
                 await self._log.awarning(
                     "tracker_mcp_retry",

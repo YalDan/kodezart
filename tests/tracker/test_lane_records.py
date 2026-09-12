@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import LaneRecordReadError
 from kodezart.domain.lane_record import render_lane_record
@@ -177,9 +177,7 @@ async def test_transport_refusal_cannot_become_absence(tracker, server, monkeypa
         monkeypatch.setattr(
             tracker,
             "list_comments",
-            AsyncMock(
-                side_effect=McpTransportError("unreachable", server_name="fixture")
-            ),
+            AsyncMock(side_effect=TrackerUnavailableError("unreachable")),
         )
     else:
         server._tool_errors["list_comments"] = "unreachable"

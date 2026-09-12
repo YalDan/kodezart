@@ -116,9 +116,7 @@ class SurfaceLeaseLostError(Exception):
     fact and must not reacquire as part of handling this failure.
     """
 
-    def __init__(
-        self, *, job_id: str, surfaces: frozenset[WritableSurface]
-    ) -> None:
+    def __init__(self, *, job_id: str, surfaces: frozenset[WritableSurface]) -> None:
         self.job_id = job_id
         self.surfaces = surfaces
         super().__init__(f"run {job_id!r} lost its declared surface lease")

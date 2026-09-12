@@ -47,10 +47,6 @@ an operator reading "verified" owes a row to go and look at.
 from collections.abc import Mapping
 
 from kodezart.core.errors import (
-    McpCallUnansweredError,
-    McpCredentialRefusedError,
-    McpSessionClosedError,
-    McpTransportError,
     RunRecordWriteError,
 )
 from kodezart.core.logging import BoundLogger, get_logger
@@ -62,23 +58,6 @@ from kodezart.types.domain.run_records import (
     RunRecordFailure,
     RunRecordResult,
 )
-
-
-def _failure_class(
-    exc: McpTransportError | McpCredentialRefusedError,
-) -> RunRecordFailure:
-    """Which failure the destination hop met, for the producer's event.
-
-    The transport is the only component that can tell the two apart, and
-    it says so by class: a session that is GONE is one to reopen or a
-    process to diagnose, and a vendor's own refusal — of the call or of
-    the credential — is the destination's answer to fix.
-    """
-    if isinstance(exc, McpSessionClosedError):
-        return RunRecordFailure.SESSION_CLOSED
-    if isinstance(exc, McpCallUnansweredError):
-        return RunRecordFailure.UNANSWERED
-    return RunRecordFailure.VENDOR_REFUSED
 
 
 async def report_record_failure(
@@ -179,21 +158,12 @@ class RunRecorder:
                 system=destination.system.value,
                 failure=RunRecordFailure.SINK_UNWIRED.value,
             )
-        try:
-            present = await sink.holds_record(
-                destination=destination,
-                record=record,
-            )
-            if not present:
-                await sink.write_record(destination=destination, record=record)
-        except (McpTransportError, McpCredentialRefusedError) as exc:
-            raise RunRecordWriteError(
-                "the run's declared destination did not take its record",
-                kind=record.kind.value,
-                destination=destination.id,
-                system=destination.system.value,
-                failure=_failure_class(exc).value,
-            ) from exc
+        present = await sink.holds_record(
+            destination=destination,
+            record=record,
+        )
+        if not present:
+            await sink.write_record(destination=destination, record=record)
         if present:
             await self._log.ainfo(
                 "run_record_verified",
