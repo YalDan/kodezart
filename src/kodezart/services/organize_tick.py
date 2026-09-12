@@ -7,7 +7,7 @@ from datetime import datetime
 
 from kodezart.core.logging import get_logger
 from kodezart.core.protocols import GitService, WorkspaceProvider
-from kodezart.domain.errors import OrganizeWriteRefusalError
+from kodezart.domain.errors import OrganizeHaltError, OrganizeWriteRefusalError
 from kodezart.services.git_observations import read_remote_head
 from kodezart.services.organize_owner import OrganizeOwner
 from kodezart.services.owned_workspace import owned_workspace
@@ -44,6 +44,7 @@ class OrganizeTick:
             name=PromptKey.GROOMING_PASS.value,
             started_at=started_at,
         )
+        first_halt: OrganizeHaltError | None = None
         for target in self._targets:
             async with owned_workspace(
                 self._workspace,
@@ -78,9 +79,11 @@ class OrganizeTick:
                 scope=target.binding.scope.model_dump(),
                 report=report.model_dump(),
             )
-            if report.halt is not None:
-                raise OrganizeWriteRefusalError(
-                    issue_key=target.binding.scope.key,
-                    reason=f"Organize halted: {report.halt.cause.value}",
+            if report.halt is not None and first_halt is None:
+                first_halt = OrganizeHaltError(
+                    scope=target.binding.scope,
+                    report=report,
                 )
+        if first_halt is not None:
+            raise first_halt
         return PassRun.RAN if self._targets else PassRun.SKIPPED

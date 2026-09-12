@@ -201,6 +201,7 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
         FakeJobQueue,
         FakeRepoCache,
         FakeTrackerPort,
+        FakeWorkspaceProvider,
         ManagedFakeLinearMcpServer,
         make_tracker_issue,
     )
@@ -251,6 +252,7 @@ async def test_composed_dispatch_uses_remote_and_integration_directory(
     queue = FakeJobQueue()
     operation = operation_config()
     runtime = await build_dispatch_runtime(
+        workspace=FakeWorkspaceProvider(),
         config=config,
         operation=operation,
         dialled=DialledTracker(
