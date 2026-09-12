@@ -77,14 +77,26 @@ async def test_unreadable_record_refuses_instead_of_defaulting(malformation):
     assert raised.value.__cause__ is not None
 
 
-async def test_legacy_generic_read_does_not_require_unreported_linkage():
+@pytest.mark.parametrize("reported", [True, False])
+async def test_generic_read_requires_explicit_native_linkage(reported):
     escalation, _ = records()
-    escalation.pop("parentId")
+    assert escalation["parentId"] is None
+    if not reported:
+        escalation.pop("parentId")
     server = CommentPageServer({None: {"comments": [escalation], "hasNextPage": False}})
     tracker = linear_over_fake_mcp(server)
-    assert len(await tracker.list_comments(issue_key=APPROVED_ISSUE)) == 1
-    with pytest.raises(EscalationReadError):
-        await tracker.read_escalation_resolution(**ADDRESS)
+    if reported:
+        comments = await tracker.list_comments(issue_key=APPROVED_ISSUE)
+        assert len(comments) == 1
+        assert comments[0].reply_to is None
+        resolution = await tracker.read_escalation_resolution(**ADDRESS)
+        assert resolution.state is EscalationResolutionState.UNRESOLVED
+        assert resolution.decision_ref is None
+    else:
+        with pytest.raises(TrackerProtocolError):
+            await tracker.list_comments(issue_key=APPROVED_ISSUE)
+        with pytest.raises(EscalationReadError):
+            await tracker.read_escalation_resolution(**ADDRESS)
 
 
 @pytest.mark.parametrize("cursor", [None, "later"])
