@@ -12,9 +12,9 @@ concerns.
 ### Removed
 
 - The criterion class. `criterionClass` is gone from every criterion on the
-  wire — `workflow_criteria.criteria[]` and the `criteria[]` entries of
-  `.kodezart/criteria.json` now carry `id` and `text` only — and the
-  acceptance-criteria prompt no longer asks a generator to classify what it
+  wire — `workflow_criteria.criteria[]` now carries `id` and `text`, while
+  `.kodezart/criteria.json` entries also retain their `feasibility` evidence.
+  The acceptance-criteria prompt no longer asks a generator to classify what it
   emits. Nothing reads the old key: a payload carrying it is refused, and a
   persisted artifact carrying it is not this version's input.
 

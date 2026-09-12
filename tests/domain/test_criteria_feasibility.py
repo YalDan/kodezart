@@ -1186,9 +1186,13 @@ def test_the_evidence_fields_reach_both_surfaces_a_human_reads() -> None:
     ],
     ids=["drafted", "generated", "validated"],
 )
+@pytest.mark.parametrize("removed_key", ["criterionClass", "criterion_class"])
+@pytest.mark.parametrize("removed_value", ["hard_gate", "soft_signal"])
 def test_a_payload_carrying_the_removed_criterion_class_is_refused(
     record: type[BaseModel],
     payload: dict[str, object],
+    removed_key: str,
+    removed_value: str,
 ) -> None:
     """No record tolerates the retired key — reading past it is a shim.
 
@@ -1201,8 +1205,8 @@ def test_a_payload_carrying_the_removed_criterion_class_is_refused(
     assert record.model_validate(payload)
 
     with pytest.raises(ValidationError) as excinfo:
-        record.model_validate({**payload, "criterionClass": "hard_gate"})
+        record.model_validate({**payload, removed_key: removed_value})
     extra = [
         error for error in excinfo.value.errors() if error["type"] == "extra_forbidden"
     ]
-    assert [error["loc"] for error in extra] == [("criterionClass",)]
+    assert [error["loc"] for error in extra] == [(removed_key,)]

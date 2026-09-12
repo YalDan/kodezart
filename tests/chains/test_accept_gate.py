@@ -36,6 +36,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.criteria import (
     CriterionFeasibility,
+    CriterionFlag,
     CriterionVerdict,
     ValidatedCriterion,
 )
@@ -114,8 +115,22 @@ def test_all_pass_is_accepted() -> None:
     assert accept_verdict(_pair(), _results(True, True)) is AcceptVerdict.accepted
 
 
-def test_any_failure_rejects() -> None:
-    assert accept_verdict(_pair(), _results(False, True)) is AcceptVerdict.rejected
+@pytest.mark.parametrize("passes", [(False, True), (True, False), (False, False)])
+def test_any_failure_rejects(passes: tuple[bool, bool]) -> None:
+    assert accept_verdict(_pair(), _results(*passes)) is AcceptVerdict.rejected
+
+
+@pytest.mark.parametrize("flag", list(CriterionFlag))
+def test_a_feasibility_flag_cannot_downgrade_a_failed_criterion(
+    flag: CriterionFlag,
+) -> None:
+    criteria = _pair()
+    second = criteria[1]
+    criteria[1] = second.model_copy(
+        update={"feasibility": second.feasibility.model_copy(update={"flags": [flag]})}
+    )
+
+    assert accept_verdict(criteria, _results(True, False)) is AcceptVerdict.rejected
 
 
 def test_the_arithmetic_cannot_read_a_flag_because_it_is_not_given_one() -> None:
@@ -131,10 +146,11 @@ def test_the_arithmetic_cannot_read_a_flag_because_it_is_not_given_one() -> None
     assert list(signature(gate_cleared).parameters) == ["verdict"]
 
 
-def test_a_dispatched_criterion_with_no_result_rejects() -> None:
+@pytest.mark.parametrize("answered_index", [0, 1])
+def test_a_dispatched_criterion_with_no_result_rejects(answered_index: int) -> None:
     """The denominator is the dispatched set — an unanswered id did not pass."""
-    second_only = [_results(True, True)[1]]
-    assert accept_verdict(_pair(), second_only) is AcceptVerdict.rejected
+    one_answer = [_results(True, True)[answered_index]]
+    assert accept_verdict(_pair(), one_answer) is AcceptVerdict.rejected
 
 
 def test_an_ungraded_criterion_clamps_a_clean_run_to_ship_with_flags() -> None:
