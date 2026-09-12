@@ -67,9 +67,7 @@ async def compose(
     RecordedAssertionDriftDetector(
         tracker=criteria, sources=sources, rulings=rulings, detector=detector
     )
-    AuditForgeVerifier(
-        tracker=criteria, ci=None, observations=None, operation=operation, config=config
-    )
+    AuditForgeVerifier(tracker=criteria, ci=None, operation=operation, config=config)
     FireContextAssembler(
         tracker=DocumentInput(),
         gate=gate,

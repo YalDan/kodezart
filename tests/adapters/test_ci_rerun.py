@@ -7,6 +7,7 @@ import pytest
 
 from kodezart.core.protocols import CIMonitor
 from kodezart.domain.errors import ForgeAPIError, TransientAPIError
+from kodezart.types.domain.check_observation import ObservedChecks
 from tests.adapters.test_github_api import _make_client
 from tests.fakes import FakeCIMonitor
 
@@ -121,11 +122,10 @@ async def test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha():
     client = _make_client(server)
     assert isinstance(client, CIMonitor)
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert await client.wait_for_checks(repo_url=REPO, ref=SHA) == (
-        True,
-        "All CI checks passed.",
-    )
-    assert await client.failed_check_names(repo_url=REPO, ref=SHA) == frozenset()
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert isinstance(observed, ObservedChecks) and observed.checks_passed is True
+    assert observed.summary == "All CI checks passed."
+    assert observed.failed_check_names == frozenset()
     assert len(server.writes) == 1
     assert (
         len(
@@ -145,7 +145,7 @@ async def test_rerun_wait_and_names_ignore_stale_completed_checks_at_same_sha():
                 if request.url.path.endswith("/attempts/2")
             ]
         )
-        == 4
+        == 3
     )
 
 
@@ -153,11 +153,11 @@ async def test_branch_resolves_once_and_attempt_reads_stay_on_that_sha():
     server = ActionsAPI(fresh_failed=("lint",))
     client = _make_client(server)
     await client.rerun_checks(repo_url=REPO, ref="feature/one")
-    passed, _ = await client.wait_for_checks(repo_url=REPO, ref="feature/one")
+    observed = await client.wait_for_checks(repo_url=REPO, ref="feature/one")
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _ = observed.summary
     assert passed is False
-    assert await client.failed_check_names(
-        repo_url=REPO, ref="feature/one"
-    ) == frozenset({"lint"})
+    assert observed.failed_check_names == frozenset({"lint"})
     commit_reads = [
         request
         for request in server.requests
@@ -175,10 +175,9 @@ async def test_multiple_runs_are_preflighted_before_writes_and_all_reobserved():
     server.page_size = 1
     client = _make_client(server)
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert (await client.wait_for_checks(repo_url=REPO, ref=SHA))[0] is False
-    assert await client.failed_check_names(repo_url=REPO, ref=SHA) == frozenset(
-        {"test"}
-    )
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is False
+    assert observed.failed_check_names == frozenset({"test"})
     assert [request.url.path for request in server.writes] == [
         f"/repos/example/project/actions/runs/{run_id}/rerun" for run_id in (101, 102)
     ]
@@ -200,10 +199,12 @@ async def test_next_rerun_advances_from_the_preceding_completed_attempt():
     server.latest_checks = True
     client = _make_client(server)
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert (await client.wait_for_checks(repo_url=REPO, ref=SHA))[0] is False
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is False
     server.fresh_failed.clear()
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert (await client.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is True
     assert len(server.writes) == 2
     assert server.attempts == {101: 3}
     assert any(
@@ -225,7 +226,8 @@ async def test_repeated_rerun_refuses_a_listing_older_than_its_observed_attempt(
 
     client = _make_client(handler)
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert (await client.wait_for_checks(repo_url=REPO, ref=SHA))[0] is False
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is False
     with pytest.raises(ForgeAPIError, match="already observed"):
         await client.rerun_checks(repo_url=REPO, ref=SHA)
     assert len(server.writes) == 1
@@ -266,8 +268,6 @@ async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
     await client.rerun_checks(repo_url=REPO, ref=SHA)
     with pytest.raises(TransientAPIError, match="poll bound"):
         await client.wait_for_checks(repo_url=REPO, ref=SHA)
-    with pytest.raises(ForgeAPIError):
-        await client.failed_check_names(repo_url=REPO, ref=SHA)
     assert len(server.writes) == 1
     assert (
         len(
@@ -277,7 +277,7 @@ async def test_missing_fresh_attempt_exhausts_poll_bound_as_error(kind):
                 if request.url.path.endswith("/attempts/2")
             ]
         )
-        == 3
+        == 2
     )
 
 
@@ -465,8 +465,6 @@ async def test_failed_or_uncertain_post_never_retries_or_falls_back_to_old_check
     assert len(server.writes) == 2
     with pytest.raises(ForgeAPIError, match="incomplete"):
         await client.wait_for_checks(repo_url=REPO, ref=SHA)
-    with pytest.raises(ForgeAPIError, match="incomplete"):
-        await client.failed_check_names(repo_url=REPO, ref=SHA)
     assert len(server.writes) == 2
 
 
@@ -477,10 +475,13 @@ async def test_fake_advances_observation_only_when_rerun_is_requested():
         rerun_results=[(True, "fresh", frozenset())],
     )
     assert isinstance(fake, CIMonitor)
-    assert (await fake.wait_for_checks(repo_url=REPO, ref=SHA))[0] is False
+    observed = await fake.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is False
     await fake.rerun_checks(repo_url=REPO, ref=SHA)
-    assert await fake.wait_for_checks(repo_url=REPO, ref=SHA) == (True, "fresh")
-    assert await fake.failed_check_names(repo_url=REPO, ref=SHA) == frozenset()
+    observed = await fake.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert isinstance(observed, ObservedChecks) and observed.checks_passed is True
+    assert observed.summary == "fresh"
+    assert observed.failed_check_names == frozenset()
     assert fake.rerun_calls == [(REPO, SHA)]
 
 
@@ -506,11 +507,10 @@ async def test_enterprise_api_prefix_and_authority_survive_check_job_mapping():
     client = _make_client(handler)
     client._client.base_url = "https://forge.example/api/v3"
     await client.rerun_checks(repo_url="https://forge.example/example/project", ref=SHA)
-    assert (
-        await client.wait_for_checks(
-            repo_url="https://forge.example/example/project", ref=SHA
-        )
-    )[0] is True
+    observed = await client.wait_for_checks(
+        repo_url="https://forge.example/example/project", ref=SHA
+    )
+    assert (observed).checks_passed is True
     assert any(request.method == "POST" for request in requests)
 
 
@@ -540,7 +540,8 @@ async def test_parallel_alias_dispatches_refuse_stale_shared_baselines(refs):
         except ForgeAPIError as exc:
             assert "already observed" in str(exc)
             return "refused"
-        assert (await client.wait_for_checks(repo_url=REPO, ref=ref))[0] is False
+        observed = await client.wait_for_checks(repo_url=REPO, ref=ref)
+        assert (observed).checks_passed is False
         return "observed"
 
     results = await asyncio.gather(*(sequence(ref) for ref in refs))
@@ -573,16 +574,24 @@ async def test_parallel_tasks_keep_their_own_attempt_when_later_rerun_completes(
         await client.rerun_checks(repo_url=REPO, ref=SHA)
         first_requested.set()
         await second_requested.wait()
-        passed, _ = await client.wait_for_checks(repo_url=REPO, ref=SHA)
-        names = await client.failed_check_names(repo_url=REPO, ref=SHA)
+        observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        passed = (
+            observed.checks_passed if isinstance(observed, ObservedChecks) else None
+        )
+        _ = observed.summary
+        names = observed.failed_check_names
         return passed, names
 
     async def second_sequence():
         await first_requested.wait()
         await client.rerun_checks(repo_url=REPO, ref=SHA)
         second_requested.set()
-        passed, _ = await client.wait_for_checks(repo_url=REPO, ref=SHA)
-        names = await client.failed_check_names(repo_url=REPO, ref=SHA)
+        observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+        passed = (
+            observed.checks_passed if isinstance(observed, ObservedChecks) else None
+        )
+        _ = observed.summary
+        names = observed.failed_check_names
         return passed, names
 
     results = await asyncio.gather(first_sequence(), second_sequence())
@@ -595,9 +604,10 @@ async def test_child_task_does_not_inherit_its_parents_attempt_observation():
     server = ActionsAPI()
     client = _make_client(server)
     await client.rerun_checks(repo_url=REPO, ref=SHA)
-    assert (await client.wait_for_checks(repo_url=REPO, ref=SHA))[0] is True
+    observed = await client.wait_for_checks(repo_url=REPO, ref=SHA)
+    assert (observed).checks_passed is True
     result = await asyncio.create_task(client.wait_for_checks(repo_url=REPO, ref=SHA))
-    assert result[0] is False
+    assert result.checks_passed is False
 
 
 async def test_distinct_shas_can_dispatch_before_either_completes():
@@ -623,7 +633,7 @@ async def test_distinct_shas_can_dispatch_before_either_completes():
 
     async def sequence(sha):
         await client.rerun_checks(repo_url=REPO, ref=sha)
-        return (await client.wait_for_checks(repo_url=REPO, ref=sha))[0]
+        return (await client.wait_for_checks(repo_url=REPO, ref=sha)).checks_passed
 
     first = asyncio.create_task(sequence(SHA))
     try:
@@ -652,19 +662,17 @@ async def test_fake_preserves_each_tasks_requested_attempt():
         await fake.rerun_checks(repo_url=REPO, ref=SHA)
         first_requested.set()
         await second_requested.wait()
-        return await fake.wait_for_checks(
-            repo_url=REPO, ref=SHA
-        ), await fake.failed_check_names(repo_url=REPO, ref=SHA)
+        return await fake.wait_for_checks(repo_url=REPO, ref=SHA)
 
     async def second_sequence():
         await first_requested.wait()
         await fake.rerun_checks(repo_url=REPO, ref=SHA)
         second_requested.set()
-        return await fake.wait_for_checks(
-            repo_url=REPO, ref=SHA
-        ), await fake.failed_check_names(repo_url=REPO, ref=SHA)
+        return await fake.wait_for_checks(repo_url=REPO, ref=SHA)
 
-    assert await asyncio.gather(first_sequence(), second_sequence()) == [
-        ((False, "second"), frozenset({"second"})),
-        ((True, "third"), frozenset()),
-    ]
+    first, second = await asyncio.gather(first_sequence(), second_sequence())
+    assert first.commit_sha == second.commit_sha == SHA
+    assert first.checks_passed is False and first.summary == "second"
+    assert first.failed_check_names == {"second"}
+    assert second.checks_passed is True and second.summary == "third"
+    assert second.failed_check_names == frozenset()

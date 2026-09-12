@@ -318,8 +318,10 @@ async def test_loop_then_ci_share_one_budget_and_cumulative_iteration_total(boun
 
     class FirstWatchFails(FakeCIMonitor):
         async def wait_for_checks(self, *, repo_url, ref):
-            await super().wait_for_checks(repo_url=repo_url, ref=ref)
-            return len(self.calls) > 1, "observed checks"
+            self._passed = bool(self.calls)
+            if self._passed:
+                self._failed_names = frozenset()
+            return await super().wait_for_checks(repo_url=repo_url, ref=ref)
 
     quality = FirstLoopFails()
     checks = FirstWatchFails(passed=False, failed_names=frozenset({"lint"}))

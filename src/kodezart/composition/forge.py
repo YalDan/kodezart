@@ -8,7 +8,6 @@ from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.protocols import (
-    CIObservationReader,
     ForgeQuery,
     PRStateReader,
 )
@@ -43,13 +42,6 @@ def build_forge_client(*, config: AppConfig) -> GitHubAPIClient | None:
         if config.github_token is not None
         else None
     )
-
-
-def ci_observation_reader_for_origin(
-    *, client: CIObservationReader | None, repo_url: str
-) -> CIObservationReader | None:
-    """Select access to a forge watch's recorded commit evidence per origin."""
-    return None if is_forge_less_origin(repo_url) else client
 
 
 def pr_state_reader_for_origin(
