@@ -132,6 +132,7 @@ from kodezart.types.domain.surface import (
     SurfaceKind,
     SurfaceLease,
     WritableSurface,
+    WriteRevalidation,
 )
 from kodezart.types.domain.tracker import (
     INSTATABLE_MAPPING_KINDS,
@@ -3141,17 +3142,25 @@ class LinearMcpTracker:
         return await self._caller.call_tool(name=tool, arguments=arguments)
 
     async def _retry_call[ResultT](
-        self, tool: str, invoke: Callable[[], Awaitable[ResultT]]
+        self,
+        tool: str,
+        invoke: Callable[[], Awaitable[ResultT]],
+        *,
+        revalidate: WriteRevalidation | None = None,
     ) -> ResultT:
         """Use the existing policy around one complete, safe-to-repeat attempt.
 
         Protected mutations include their fresh preconditions in ``invoke``.
+        A caller's source authorization is revalidated before each attempt;
+        it does not replace the adapter's identity, snapshot or grant checks.
         They end at the write receipt; subsequent awaited readback belongs
         outside this scope so a read failure cannot resend a completed write.
         """
         attempt = 0
         while True:
             try:
+                if revalidate is not None:
+                    await revalidate()
                 return await invoke()
             except McpCredentialRefusedError as exc:
                 # Named once and raised, never retried: the refusal is the
@@ -3539,13 +3548,16 @@ class LinearMcpTracker:
         expected: tuple[IssueGraphSnapshot, ...],
         changes: tuple[GraphChange, ...],
         holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         async def attempt() -> tuple[TrackerIssue, ...]:
             return await self._update_issue_graph_once(
                 issue_key=issue_key, expected=expected, changes=changes, holder=holder
             )
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         # A completed save must never be retried because a later read cannot answer.
         for expected_issue in written:
             observed = await self.read_issue(issue_key=expected_issue.issue_key)
@@ -3694,6 +3706,7 @@ class LinearMcpTracker:
         body: str,
         holder: str,
         expected: tuple[IssueGraphSnapshot, ...],
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         if not all(
             value.strip() for value in (source_key, deliverable_key, title, body)
@@ -3716,7 +3729,9 @@ class LinearMcpTracker:
                 expected=expected,
             )
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         if isinstance(written, TrackerIssue):
             return written
         created, source, content = written.saved, written.source, written.content
@@ -3836,7 +3851,14 @@ class LinearMcpTracker:
         return unstarted[0]
 
     async def create_criterion_if_absent(
-        self, *, parent_key: str, title: str, check: str, do: str, holder: str
+        self,
+        *,
+        parent_key: str,
+        title: str,
+        check: str,
+        do: str,
+        holder: str,
+        revalidate: WriteRevalidation | None = None,
     ) -> TrackerIssue:
         body = criterion_body(parent_key=parent_key, check=check, do=do)
         if not title.strip():
@@ -3888,7 +3910,9 @@ class LinearMcpTracker:
             )
             return _CriterionCreation(saved=created)
 
-        written = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        written = await self._retry_call(
+            _TOOL_SAVE_ISSUE, attempt, revalidate=revalidate
+        )
         if isinstance(written, TrackerIssue):
             return written
         created = written.saved
@@ -4056,7 +4080,9 @@ class LinearMcpTracker:
                 self._saved_issue(payload, written={"description": body})
                 return DescriptionEditResult.EDITED
 
-            return await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+            return await self._retry_call(
+                _TOOL_SAVE_ISSUE, attempt, revalidate=authorization.revalidate
+            )
         current = await self.read_issue(issue_key=target)
         body = description_replacement(
             target=target, body=current.body, expected=expected, replacement=replacement

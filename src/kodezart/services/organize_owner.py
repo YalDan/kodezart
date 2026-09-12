@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from hashlib import sha256
 
 from kodezart.chains.organize import OrganizeAdmission
@@ -82,7 +83,11 @@ from kodezart.types.domain.organize_owner import (
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_state import LaneEscalation
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
-from kodezart.types.domain.surface import SurfaceKind, WritableSurface
+from kodezart.types.domain.surface import (
+    DescriptionWriteAuthority,
+    SurfaceKind,
+    WritableSurface,
+)
 from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerIssueRevision,
@@ -495,6 +500,7 @@ class OrganizeOwner:
                             ),
                             changes=value.changes,
                             holder=job_id,
+                            revalidate=partial(authorize, proposal, peers),
                         )
                     )
                 return
@@ -544,6 +550,15 @@ class OrganizeOwner:
                                 title=child.title,
                                 body=child.body,
                                 holder=job_id,
+                                revalidate=partial(
+                                    authorize,
+                                    ProposedWrite(
+                                        context=expected_context,
+                                        revision=proposal.revision,
+                                        proposal=proposal.proposal,
+                                    ),
+                                    frozenset({request.issue_key}),
+                                ),
                                 expected=tuple(
                                     graph_snapshot(issue)
                                     for issue in expected_context.issues
@@ -577,6 +592,13 @@ class OrganizeOwner:
                             target=request.issue_key,
                             expected=proposal.revision.issue.body,
                             replacement=content,
+                            authorization=DescriptionWriteAuthority(
+                                holder=job_id,
+                                surface=surface,
+                                revalidate=partial(
+                                    authorize, proposal, frozenset({request.issue_key})
+                                ),
+                            ),
                         )
                     )
             elif isinstance(value, CriteriaProposal):
@@ -651,6 +673,15 @@ class OrganizeOwner:
                                 check=item.check,
                                 do=item.do,
                                 holder=job_id,
+                                revalidate=partial(
+                                    authorize,
+                                    ProposedWrite(
+                                        context=expected_context,
+                                        revision=proposal.revision,
+                                        proposal=proposal.proposal,
+                                    ),
+                                    frozenset({request.issue_key}),
+                                ),
                             )
                         )
                         expected_context = _created_context(expected_context, created)
