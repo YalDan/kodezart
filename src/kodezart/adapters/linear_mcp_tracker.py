@@ -2140,26 +2140,49 @@ class LinearMcpTracker:
         )
 
     async def set_issue_classification(
-        self, *, issue_key: str, classification: str
+        self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
         if classification not in self._issue_labels:
             raise OperationMemberAbsentError(
                 missing=f"issue_labels[{classification!r}]",
                 stops="this issue classification cannot be written",
             )
+        surface = WritableSurface(
+            kind=SurfaceKind.ISSUE_LABEL_SET,
+            ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+        )
+
+        async def attempt() -> TrackerIssue:
+            current = await self.read_issue(issue_key=issue_key)
+            if current.issue_key != issue_key:
+                raise IssueLabelReadError(
+                    classification=classification,
+                    reason="classification read returned another issue",
+                )
+            if holder is not None:
+                await self._require_surface_holder(surface=surface, holder=holder)
+            if classification in current.issue_labels:
+                return current
+            payload = await self._send(
+                _TOOL_SAVE_ISSUE,
+                {"id": issue_key, "addLabels": [self._issue_labels[classification]]},
+            )
+            return self._saved_issue(
+                payload, written={"addLabels": [self._issue_labels[classification]]}
+            )
+
+        receipt = await self._retry_call(_TOOL_SAVE_ISSUE, attempt)
+        if holder is None:
+            return receipt
+        # This read is outside the mutation retry. Failure cannot resend a
+        # classification that the server already accepted.
         current = await self.read_issue(issue_key=issue_key)
-        if classification in current.issue_labels:
-            return current
-        payload = await self._call(
-            _TOOL_SAVE_ISSUE,
-            {
-                "id": current.issue_key,
-                "addLabels": [self._issue_labels[classification]],
-            },
-        )
-        return self._saved_issue(
-            payload, written={"addLabels": [self._issue_labels[classification]]}
-        )
+        if current.issue_key != issue_key or classification not in current.issue_labels:
+            raise IssueLabelReadError(
+                classification=classification,
+                reason="the granted classification did not read back",
+            )
+        return current
 
     async def post_comment(self, *, issue_key: str, body: str) -> TrackerComment:
         """Post a comment and return it as stored."""

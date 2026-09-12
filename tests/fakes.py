@@ -4043,9 +4043,26 @@ class FakeTrackerPort:
         return updated
 
     async def set_issue_classification(
-        self, *, issue_key: str, classification: str
+        self, *, issue_key: str, classification: str, holder: str | None = None
     ) -> TrackerIssue:
         issue = await self.read_issue(issue_key=issue_key)
+        if holder is not None:
+            surface = WritableSurface(
+                kind=SurfaceKind.ISSUE_LABEL_SET,
+                ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+            )
+            grant = self.leases.get(surface)
+            owner = (
+                grant.holder
+                if grant is not None and grant.expires_at > self._clock()
+                else None
+            )
+            if not holder.strip() or holder != owner:
+                raise SurfaceLeaseError(
+                    "classification requires the actual label-set holder",
+                    surface=surface,
+                    current_holder=owner,
+                )
         if classification in issue.issue_labels:
             return issue
         self.classification_writes.append((issue_key, classification))
