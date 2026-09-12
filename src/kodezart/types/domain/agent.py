@@ -30,6 +30,7 @@ from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.remediation import RemediationEntry
 from kodezart.types.domain.ticket_review import TicketApproval, TicketReviewMode
 from kodezart.types.domain.trajectory import LoopTrajectory
+from kodezart.types.domain.write_back import WriteBackFinding
 
 # ---------------------------------------------------------------------------
 # Soft-failure raise-site identifier (typed alias)
@@ -54,6 +55,7 @@ RaiseSite = Literal[
     "commit_message",
     "remediation_ticket",
     "content_audit",
+    "write_back_verify",
 ]
 
 # ---------------------------------------------------------------------------
@@ -947,6 +949,8 @@ CONTENT_AUDIT_SCHEMA: dict[str, object] = ContentAuditOutput.model_json_schema()
 # Schema for the draft-critic lens's verdict on a drafted artifact
 DRAFT_CRITIQUE_SCHEMA: dict[str, object] = DraftCritiqueOutput.model_json_schema()
 
+WRITE_BACK_SCHEMA: dict[str, object] = WriteBackFinding.model_json_schema()
+
 #: Every wire schema this system dispatches, by constant name. The
 #: wire-contract tests and the dispatch-site guard both read this rather
 #: than keeping their own list.
@@ -961,4 +965,5 @@ WIRE_SCHEMAS: dict[str, dict[str, object]] = {
     "PR_DESCRIPTION_SCHEMA": PR_DESCRIPTION_SCHEMA,
     "CONTENT_AUDIT_SCHEMA": CONTENT_AUDIT_SCHEMA,
     "DRAFT_CRITIQUE_SCHEMA": DRAFT_CRITIQUE_SCHEMA,
+    "WRITE_BACK_SCHEMA": WRITE_BACK_SCHEMA,
 }

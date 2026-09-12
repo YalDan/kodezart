@@ -408,3 +408,7 @@ class StaleCommentWriteError(Exception):
             f"comment {expected_comment_key!r} on {target!r} "
             f"cannot be amended: {reason}"
         )
+
+
+class WriteBackReadError(ValueError):
+    """An addressed artifact cannot be re-read completely for verification."""

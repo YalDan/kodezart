@@ -212,6 +212,7 @@ skills = ["code-review", "security-review"]
 keys = [
     "evaluation",
     "criteria_validation",
+    "write_back_verify",
     "ticket_review",
     "post_merge_review",
     "content_audit",

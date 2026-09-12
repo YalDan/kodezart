@@ -139,6 +139,11 @@ class SubprocessGitService:
         output = await self._run_output(["git", "status", "--porcelain"], cwd=cwd)
         return len(output) > 0
 
+    async def has_replace_refs(self, cwd: str) -> bool:
+        """Read replacement refs from Git's active replacement namespace."""
+        output = await self._run_output(["git", "replace", "--list"], cwd=cwd)
+        return bool(output)
+
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         """Return True iff *path* is excluded by the repository's ignore rules.
 
