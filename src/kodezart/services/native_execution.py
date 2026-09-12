@@ -132,16 +132,22 @@ class NativeExecution:
             cache_key=request.cache_key,
         )
         self._active_workspace = path
-        start = await self._guard.begin(workspace_path=path)
-        return PreparedNativeExecution(
-            workspace=await self._workspace.capture(
-                workspace_path=path, holder=self._guard.holder
-            ),
-            start=start,
-            authority=self._guard.snapshot(),
-            cache_key=request.cache_key,
-            run_identity=request.run_identity,
-        )
+        try:
+            start = await self._guard.begin(workspace_path=path)
+            return PreparedNativeExecution(
+                workspace=await self._workspace.capture(
+                    workspace_path=path, holder=self._guard.holder
+                ),
+                start=start,
+                authority=self._guard.snapshot(),
+                cache_key=request.cache_key,
+                run_identity=request.run_identity,
+            )
+        except BaseException:
+            # No writer has run and no prepared workspace was checkpointed.
+            # Settle this acquisition through the existing provider/finally path.
+            self._release_incomplete_workspace = True
+            raise
 
     async def write(self, phase: PreparedNativeExecution) -> WrittenNativeExecution:
         """Only an uncompleted writer opens a new SDK session."""

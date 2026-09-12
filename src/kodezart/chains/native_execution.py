@@ -1,7 +1,7 @@
 """Checkpoint the real native writer, reconciliation and persistence phases."""
 
 from collections.abc import Awaitable
-from typing import Literal, Protocol
+from typing import Literal, Protocol, assert_never
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import ConfigDict
@@ -83,7 +83,16 @@ class NativeExecutionGraph:
             return "reconcile"
         if isinstance(phase, ReconciledNativeExecution):
             return "persist"
-        return "__end__"
+        if isinstance(
+            phase,
+            (
+                PersistedNativeExecution,
+                UnchangedNativeExecution,
+                RefusedNativeExecution,
+            ),
+        ):
+            return "__end__"
+        assert_never(phase)
 
     async def _prepare(self, state: NativeExecutionState) -> dict[str, object]:
         if not isinstance(state.execution, NewNativeExecution):
