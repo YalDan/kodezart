@@ -1,9 +1,7 @@
 """Linear MCP wire shapes — Pydantic validation at the adapter boundary.
 
-Vendor vocabulary lives here and nowhere else, exactly as
-``types/domain/github.py`` holds the forge's.  Nothing in this module may
-be imported by a consumer: the tracker port speaks
-``types/domain/tracker.py`` only.
+Vendor vocabulary stays beside its adapter. Application consumers use
+the neutral tracker port and its domain values, never these wire models.
 
 ``extra="ignore"``: the vendor adds fields to its own payloads and that is
 not this process's business.  Every field the adapter reads is declared
@@ -113,6 +111,12 @@ class LinearAssetWire(LinearWireModel):
     size: int | None = None
 
 
+class LinearProjectMilestoneWire(LinearWireModel):
+    """The milestone identity on a full issue or unfiltered listing entry."""
+
+    id: str
+
+
 class LinearIssueWire(LinearWireModel):
     """A Linear issue, in the fields EVERY issue-bearing payload carries.
 
@@ -140,6 +144,9 @@ class LinearIssueWire(LinearWireModel):
     #: membership is answered from these, never by a per-issue read.
     project: str | None = None
     project_id: str | None = None
+    #: Present for a milestone member, omitted or null for no milestone
+    #: in the connected tool's full get_issue/list_issues payloads.
+    project_milestone: LinearProjectMilestoneWire | None = None
     labels: list[str] = Field(default_factory=list)
     #: ``None`` means the payload did not REPORT relations — which is what
     #: every ``list_issues`` entry does, and what a ``get_issue`` read that

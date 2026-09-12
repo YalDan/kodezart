@@ -533,3 +533,15 @@ class RunRecordWriteError(Exception):
         """
         cause = self.__cause__
         return type(self if cause is None else cause).__name__
+
+
+class TrackerUnavailableError(Exception):
+    """The tracker call could not establish a result.
+
+    The adapter has already applied its safe retry policy. A write may have
+    succeeded without an answer, so this failure does not authorize replay.
+    """
+
+
+class TrackerAccessDeniedError(Exception):
+    """The tracker refused the configured authority; retrying cannot fix it."""

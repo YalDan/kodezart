@@ -62,7 +62,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import assert_never
 
-from kodezart.core.errors import McpTransportError, PassGateScopeError
+from kodezart.core.errors import (
+    PassGateScopeError,
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.git_url import is_forge_less_origin
@@ -134,7 +138,7 @@ class PassGate:
             for container in self._containers(signal):
                 try:
                     changed.extend(await self._observe(signal, container))
-                except McpTransportError as exc:
+                except (TrackerUnavailableError, TrackerProtocolError) as exc:
                     unanswerable.append(f"{signal.value}@{container}")
                     await self._log.awarning(
                         "pass_gate_signal_unanswerable",

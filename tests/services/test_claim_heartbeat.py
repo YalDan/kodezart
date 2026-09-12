@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import pytest
 import structlog
 
-from kodezart.core.errors import McpCredentialRefusedError
+from kodezart.core.errors import TrackerAccessDeniedError
 from kodezart.domain.errors import TransientAPIError
 from kodezart.services.claim_heartbeat import ClaimHeartbeat
 from kodezart.services.lifecycle_watcher import LifecycleWatcher
@@ -136,10 +136,8 @@ class RefusedCredentialTracker(FakeTrackerPort):
     ) -> ClaimResult | None:
         self.renewals.append((issue_key, holder))
         await asyncio.sleep(0)
-        raise McpCredentialRefusedError(
-            "the MCP server refused the configured credential",
-            server_name=REFUSING_SERVER,
-            tool_name="save_comment",
+        raise TrackerAccessDeniedError(
+            "the tracker refused the configured authority",
         )
 
 
@@ -430,7 +428,6 @@ class TestARenewalThatMeetsARefusedCredential:
         assert len(refused) == 1
         assert refused[0]["issue_key"] == ISSUE
         assert refused[0]["holder"] == HOLDER
-        assert refused[0]["server_name"] == REFUSING_SERVER
         assert not [entry for entry in logs if entry["event"] == "claim_renewal_failed"]
 
     async def test_the_loop_stops_on_it_rather_than_repeating_it_every_interval(
