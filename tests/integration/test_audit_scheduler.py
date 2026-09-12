@@ -33,9 +33,9 @@ from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.conftest import (
     FIXTURE_NOW,
     WORKFLOW_STATE_NAMES,
-    linear_over_fake_mcp,
 )
 from tests.tracker.test_audit_requests import operation as base_operation
+from tests.tracker.test_linear_mcp_tracker import tracker_over
 from tests.tracker.test_scope_reads import EMPTY_PROJECT, ROOT, ScopeMcpServer
 
 
@@ -69,7 +69,9 @@ def dependencies():
     fields = base_operation().model_dump()
     fields["marker_prefixes"]["audit"] = "configured-audit-record"
     fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
-    fields["issue_labels"]["decision"] = "needs decision"
+    fields["issue_labels"].update(
+        criterion="acceptance-condition", decision="needs decision"
+    )
     fields["workflow_states"] = WORKFLOW_STATE_NAMES
     fields["audit_scopes"] = [
         {
@@ -90,7 +92,11 @@ def dependencies():
     )
     server = ScopeMcpServer()
     server._comment_clock = lambda: FIXTURE_NOW
-    tracker = linear_over_fake_mcp(server)
+    tracker = tracker_over(
+        server,
+        issue_labels=operation.issue_labels,
+        marker_prefixes=operation.marker_prefixes,
+    )
     forge = FakePRStateReader(records={})
     return config, operation, server, tracker, forge
 
@@ -222,7 +228,8 @@ def test_partial_configuration_refuses_before_scheduling(missing):
 
 
 @pytest.mark.parametrize(
-    "configuration", ["complete", "missing_policy", "missing_roster"]
+    "configuration",
+    ["complete", "missing_policy", "missing_roster", "missing_criterion"],
 )
 async def test_actual_main_lifespan_registers_and_executes_audit(
     tmp_path, monkeypatch, configuration
@@ -241,11 +248,13 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
     from tests.prompts.test_organize_mandate_bindings import declared_operation
     from tests.services.test_prompt_passes import _config
 
-    _, _, server, tracker, _ = dependencies()
+    _, _, server, _, _ = dependencies()
     fields = declared_operation().model_dump()
     fields["marker_prefixes"]["audit"] = "configured-audit-record"
     fields["marker_prefixes"]["escalation"] = "configured-audit-escalation"
-    fields["issue_labels"]["decision"] = "needs decision"
+    fields["issue_labels"].update(
+        criterion="acceptance-condition", decision="needs decision"
+    )
     fields["audit_scopes"] = [
         {
             "scope": EMPTY_PROJECT.model_dump(),
@@ -253,7 +262,14 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
             "report_issue_key": ROOT.key,
         }
     ]
+    if configuration == "missing_criterion":
+        fields["issue_labels"].pop("criterion")
     operation = OperationConfig.model_validate(fields)
+    tracker = tracker_over(
+        server,
+        issue_labels=operation.issue_labels,
+        marker_prefixes=operation.marker_prefixes,
+    )
     config = _config(
         tmp_path,
         audit={"timeout_seconds": 17},
@@ -324,8 +340,13 @@ async def test_actual_main_lifespan_registers_and_executes_audit(
         with pytest.raises(OperationMemberAbsentError) as raised:
             async with app.router.lifespan_context(app):
                 pytest.fail("partial audit configuration reached queue startup")
-        assert raised.value.missing == (
-            "write_back" if configuration == "missing_policy" else "audit_scopes"
+        assert (
+            raised.value.missing
+            == {
+                "missing_policy": "write_back",
+                "missing_roster": "audit_scopes",
+                "missing_criterion": "issue_labels['criterion']",
+            }[configuration]
         )
         assert not hasattr(app.state, "job_queue")
         return

@@ -63,7 +63,6 @@ def verify_audit_configuration(
         (bool(operation.audit_scopes), "audit_scopes"),
         (config.audit is not None, "audit"),
         (config.write_back is not None, "write_back"),
-        (tracker is not None, "tracker"),
         (forge is not None, "audit.forge"),
         (
             LifecycleStage.IN_REVIEW in operation.workflow_states,
@@ -76,11 +75,17 @@ def verify_audit_configuration(
             )
     configured_marker_prefix(operation.marker_prefixes, purpose="audit")
     configured_marker_prefix(operation.marker_prefixes, purpose="escalation")
-    if "decision" not in operation.issue_labels:
+    if tracker is None:
         raise OperationMemberAbsentError(
-            missing="issue_labels['decision']",
-            stops="configured audit mandate escalation",
+            missing="tracker", stops="configured audit scheduling"
         )
+    for classification in ("criterion", "decision"):
+        if classification not in operation.issue_labels:
+            raise OperationMemberAbsentError(
+                missing=f"issue_labels['{classification}']",
+                stops="configured audit collection and mandate escalation",
+            )
+    tracker.require_scope_plan_reads()
     return True
 
 
