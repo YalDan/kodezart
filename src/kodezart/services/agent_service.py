@@ -272,10 +272,10 @@ class AgentService:
                         )
                     except BaseException:
                         retain_workspace = True
-                        raise
                 raise
 
             before_commit = None
+            before_publish = None
             if native_guard is not None and native_start is not None:
                 await native_guard.require_current(
                     workspace_path=workspace_path,
@@ -312,6 +312,17 @@ class AgentService:
                         start=native_start,
                     )
 
+                async def before_publish(authorized_commit_sha: str) -> None:
+                    nonlocal retain_workspace
+                    # A local commit now exists. Keep its workspace if authority
+                    # or publication fails; only a successful persist clears this.
+                    retain_workspace = True
+                    await native_guard.require_publishable(
+                        workspace_path=workspace_path,
+                        start=native_start,
+                        authorized_commit_sha=authorized_commit_sha,
+                    )
+
             if persist_branch and self._persister and buffered_result:
                 backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
                 persist_result = await self._persister.persist(
@@ -322,7 +333,9 @@ class AgentService:
                     skills=skills,
                     visibility=visibility,
                     before_commit=before_commit,
+                    before_publish=before_publish,
                 )
+                retain_workspace = False
                 if persist_result:
                     buffered_result = buffered_result.model_copy(
                         update={

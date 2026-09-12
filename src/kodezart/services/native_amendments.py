@@ -180,8 +180,39 @@ class _NativeWriterGuard:
         workspace_path: str,
         start: NativeWriterStart,
     ) -> None:
+        await self._require_current_at_head(
+            workspace_path=workspace_path, expected_head_sha=start.head_sha
+        )
+
+    async def require_publishable(
+        self,
+        *,
+        workspace_path: str,
+        start: NativeWriterStart,
+        authorized_commit_sha: str,
+    ) -> None:
+        # The SHA is supplied only after the persister's actual commit returns.
+        # It is not a writer-reported replacement for the original HEAD.
+        if not await settle(
+            self._owner._git.is_ancestor(
+                workspace_path, start.head_sha, authorized_commit_sha
+            )
+        ):
+            raise NativeWriteRefusalError(
+                "The harness commit does not descend from the writer's starting HEAD"
+            )
+        await self._require_current_at_head(
+            workspace_path=workspace_path, expected_head_sha=authorized_commit_sha
+        )
+
+    async def _require_current_at_head(
+        self,
+        *,
+        workspace_path: str,
+        expected_head_sha: str,
+    ) -> None:
         owner = self._owner
-        await self.require_unchanged_head(workspace_path=workspace_path, start=start)
+        await self._require_head(workspace_path, expected_head_sha)
         if self._rulings is None or self._base_sha is None:
             raise NativeWriteRefusalError("The native writer was not initialized")
         if await owner._read_rulings(self._spec) != self._rulings:
@@ -203,7 +234,7 @@ class _NativeWriterGuard:
             != self._base_sha
         ):
             raise NativeWriteRefusalError("The resolved native base changed")
-        await self.require_unchanged_head(workspace_path=workspace_path, start=start)
+        await self._require_head(workspace_path, expected_head_sha)
 
     async def require_unchanged_head(
         self,
@@ -211,10 +242,16 @@ class _NativeWriterGuard:
         workspace_path: str,
         start: NativeWriterStart,
     ) -> None:
-        if await settle(self._owner._git.current_sha(workspace_path)) != start.head_sha:
+        await self._require_head(workspace_path, start.head_sha)
+
+    async def _require_head(self, workspace_path: str, expected_head_sha: str) -> None:
+        if (
+            await settle(self._owner._git.current_sha(workspace_path))
+            != expected_head_sha
+        ):
             raise NativeWriteRefusalError(
-                "Writer HEAD changed before authorization; retained workspace, "
-                "no harness commit, push, backup or replay"
+                "Writer HEAD changed from the expected boundary; retained workspace, "
+                "no further harness commit, push, backup or replay"
             )
 
     async def _judge_claim(

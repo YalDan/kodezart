@@ -2,6 +2,7 @@
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from kodezart.types.domain.amendment import (
     AmendmentClaim,
@@ -14,9 +15,29 @@ from kodezart.types.domain.amendment import (
 from kodezart.types.domain.criteria import CriterionVerdict
 from kodezart.types.domain.operation import CheckPrerequisite
 
+if TYPE_CHECKING:
+    from kodezart.types.domain.agent import WorkflowIterationEvent
+
 
 class NativeWriteRefusalError(Exception):
     """A native writer cannot authorize a harness commit or publication."""
+
+
+class NativeAmendmentRefusalError(NativeWriteRefusalError):
+    """An ending UPHELD attempt, with its real report and prior observation."""
+
+    def __init__(
+        self,
+        *,
+        report: AmendmentReport,
+        last_iteration: "WorkflowIterationEvent | None",
+    ) -> None:
+        self.report = report
+        self.last_iteration = last_iteration
+        super().__init__(
+            "The final native departure remains UPHELD; no new evaluation "
+            "or acceptance was produced for that unactioned attempt"
+        )
 
 
 class AmendmentRequiresWriteError(NativeWriteRefusalError):

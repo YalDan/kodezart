@@ -106,6 +106,8 @@ class Executor:
                 "citations": [{"path": "policy.py", "quote": QUOTE}],
                 "measured_by": None,
             }
+        elif title == "AcceptanceCriteriaOutput":
+            payload = {}
         elif title == "CommitMessageOutput":
             payload = {"title": "fix: implementation", "body": "Reviewed change."}
         else:
@@ -251,7 +253,9 @@ async def test_writer_exception_after_direct_commit_retains_workspace(repository
     executor = Executor(claim=False, direct_commit=True, mutate=crash)
     service, guard, workspace, _ = await build(repository, executor)
     try:
-        with pytest.raises(NativeWriteRefusalError, match="Writer HEAD changed"):
+        with pytest.raises(
+            RuntimeError, match="writer transport failed after its local commit"
+        ):
             await drive(service, guard, repository)
         path = workspace.acquired[0][0]
         assert Path(path).exists() and path not in workspace.released
@@ -462,5 +466,86 @@ async def test_ruling_change_during_commit_content_gate_refuses_before_commit(
             await git(repository[0], "log", "native-test", "--format=%s", "-1")
             == "newer writer starting point"
         )
+    finally:
+        await cleanup(workspace)
+
+
+@pytest.mark.parametrize("fault", ["outage", "ruling", "head", "unchanged"])
+async def test_actual_commit_receipt_requires_current_authority_before_publication(
+    repository, monkeypatch, fault
+):
+    port = tracker()
+    ruling = Ruling.model_validate(ruling_data(issue_ref=SUBJECT))
+    await port.post_comment(
+        issue_key=SUBJECT,
+        body=render_ruling(
+            ruling=ruling,
+            lane_key="historical-lane",
+            marker_prefixes={"ruling": "fixture-pinned"},
+        ),
+    )
+    executor = Executor(claim=False)
+    service, guard, workspace, _ = await build(repository, executor, port=port)
+    original_commit = workspace._git.commit
+    receipts = []
+
+    async def commit(**kwargs):
+        sha = await original_commit(**kwargs)
+        receipts.append(sha)
+        if fault == "outage":
+
+            async def unavailable(**kwargs):
+                raise ConnectionError("tracker outage after local commit")
+
+            port.scope_issues = unavailable
+        elif fault == "ruling":
+            changed = ruling.model_copy(
+                update={"resolution": "Changed before publication"}
+            )
+            port.comments[0] = port.comments[0].model_copy(
+                update={
+                    "body": render_ruling(
+                        ruling=changed,
+                        lane_key="historical-lane",
+                        marker_prefixes={"ruling": "fixture-pinned"},
+                    ),
+                }
+            )
+        elif fault == "head":
+            await git(
+                kwargs["cwd"],
+                "commit",
+                "--allow-empty",
+                "-m",
+                "unowned post-commit change",
+            )
+        return sha
+
+    monkeypatch.setattr(workspace._git, "commit", commit)
+    try:
+        if fault == "unchanged":
+            events = await drive(service, guard, repository)
+            assert any(
+                isinstance(e, ResultEvent) and e.commit_sha == receipts[0]
+                for e in events
+            )
+        else:
+            with pytest.raises(NativeWriteRefusalError):
+                await drive(service, guard, repository)
+            path = workspace.acquired[0][0]
+            assert Path(path).exists() and path not in workspace.released
+        assert len(receipts) == 1
+        remote = await git(
+            repository[0], "ls-remote", "origin", "refs/heads/native-test"
+        )
+        assert (remote.split()[0] if remote else None) == (
+            receipts[0] if fault == "unchanged" else None
+        )
+        assert [
+            call["output_format"]["schema"]["title"] for call in executor.calls
+        ] == [
+            "NativeWriterOutput",
+            "CommitMessageOutput",
+        ]
     finally:
         await cleanup(workspace)
