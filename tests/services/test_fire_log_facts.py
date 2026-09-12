@@ -61,7 +61,12 @@ def watch_over(server, events, *, writer=None, registry=None):
         queue=FakeJobQueue(events=events),
         registry=registry if registry is not None else registry_holding(),
         writer=writer
-        or TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        or TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=claim_heartbeat(tracker),
         recorder=recorder(
             server,
@@ -145,7 +150,12 @@ async def test_terminal_facts_survive_a_later_lifecycle_write_failure():
     watcher = watch_over(
         server,
         [*observed_events(), terminal()],
-        writer=BrokenTerminalWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=BrokenTerminalWriter(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+        ),
     )
     watcher.follow(issue_key=ISSUE, job_id=JOB_ID, pre_claim_state=PRE_CLAIM_STATE)
     await watcher.drain()
@@ -168,7 +178,12 @@ async def test_observation_precedes_a_first_frame_lifecycle_failure():
     watcher = watch_over(
         server,
         observed_events(),
-        writer=BrokenDequeueWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=BrokenDequeueWriter(
+            tracker=tracker,
+            gate=PassThroughGate(),
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+        ),
     )
     watcher.follow(issue_key=ISSUE, job_id=JOB_ID, pre_claim_state=PRE_CLAIM_STATE)
     await watcher.drain()

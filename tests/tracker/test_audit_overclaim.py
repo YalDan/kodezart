@@ -15,6 +15,7 @@ from tests.fakes import SUPPRESS_ALL_SKILLS
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.services.test_audit_sources import reader
 from tests.tracker import test_audit_evidence as fixtures
+from tests.tracker.lease_fixtures import leased_comment
 
 setup = fixtures.setup
 claim_setup = fixtures.claim_setup
@@ -132,7 +133,8 @@ async def test_changed_source_never_produces_a_completed_observation(
         elif damage == "head":
             setup[2]._remote_branch_shas["ordinary-name"] = fixtures.PRIOR
         else:
-            await tracker.upsert_comment(
+            await leased_comment(
+                tracker,
                 target=fixtures.ROOT,
                 marker=setup[6].body.splitlines()[0],
                 body="No longer the source record.",

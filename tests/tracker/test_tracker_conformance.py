@@ -62,6 +62,7 @@ from tests.tracker.conftest import (
     TEAM_IDENTIFIERS,
     FixtureClock,
 )
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.marker_config import MARKER_PREFIXES
 
 LEASE_SECONDS = 600.0
@@ -2167,11 +2168,17 @@ class TestRunEventStream:
     ) -> None:
         """A rewritten surface stays a record however recently it moved."""
         await tracker.post_run_event(issue_key=CLAIMED_ISSUE, event=DISPATCHED)
-        first = await tracker.upsert_comment(
-            target=CLAIMED_ISSUE, marker=RECORD_MARKER, body="the first reading"
+        first = await leased_comment(
+            tracker,
+            target=CLAIMED_ISSUE,
+            marker=RECORD_MARKER,
+            body="the first reading",
         )
-        edited = await tracker.upsert_comment(
-            target=CLAIMED_ISSUE, marker=RECORD_MARKER, body="the reading after"
+        edited = await leased_comment(
+            tracker,
+            target=CLAIMED_ISSUE,
+            marker=RECORD_MARKER,
+            body="the reading after",
         )
         assert edited.comment_key == first.comment_key
         assert edited.body != first.body

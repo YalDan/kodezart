@@ -24,6 +24,7 @@ from tests.fakes import (
     PassThroughGate,
 )
 from tests.services.test_tracker_lifecycle import BlockingGate
+from tests.tracker.conftest import FIXTURE_NOW
 from tests.tracker.test_linear_mcp_tracker import tracker_over
 
 ISSUE = "work/42"
@@ -54,6 +55,7 @@ def question(**overrides):
 @pytest.fixture(params=["fake", "linear"])
 async def port(request):
     server = FakeLinearMcpServer(
+        comment_clock=lambda: FIXTURE_NOW,
         issues=[FakeMcpIssue(id=ISSUE, labels=["unrelated", "queue:approved"])],
     )
     linear = tracker_over(server, issue_labels=LABELS)
@@ -70,12 +72,17 @@ async def port(request):
 async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(port):
     tracker, writes, server = port
     gate = PassThroughGate()
-    writer = LaneEscalationWriter(tracker=tracker, gate=gate, operation=OPERATION)
+    writer = LaneEscalationWriter(
+        surface_lease_seconds=900.0, tracker=tracker, gate=gate, operation=OPERATION
+    )
     before = await tracker.read_issue(issue_key=ISSUE)
 
     async def node_then_report():
         await writer.raise_escalation(
-            lane_key="lane:1", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane:1",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
         assert "decision" in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
         assert len(await tracker.list_comments(issue_key=ISSUE)) == 1
@@ -99,19 +106,34 @@ async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(p
             LABELS["decision"],
         ]
         mutation_count = len(server.tool_calls("save_issue")) + len(
-            server.tool_calls("save_comment")
+            [
+                call
+                for call in server.tool_calls("save_comment")
+                if not str(call.get("body", "")).startswith("```")
+            ]
         )
     else:
         mutation_count = writes()
     replay = await writer.raise_escalation(
-        lane_key="lane:1", escalation=question(), visibility=RepoVisibility.PUBLIC
+        job_id="fixture-job",
+        lane_key="lane:1",
+        escalation=question(),
+        visibility=RepoVisibility.PUBLIC,
     )
     assert replay == stored
-    assert await tracker.read_issue(issue_key=ISSUE) == current
+    assert (await tracker.read_issue(issue_key=ISSUE)).model_dump(
+        exclude={"updated_at"}
+    ) == current.model_dump(exclude={"updated_at"})
     if server:
         assert (
             len(server.tool_calls("save_issue"))
-            + len(server.tool_calls("save_comment"))
+            + len(
+                [
+                    call
+                    for call in server.tool_calls("save_comment")
+                    if not str(call.get("body", "")).startswith("```")
+                ]
+            )
             == mutation_count
         )
     else:
@@ -122,21 +144,32 @@ async def test_raise_is_durable_before_later_report_failure_and_replay_is_noop(p
 
 
 async def test_failed_decision_write_propagates_and_retry_completes_same_comment():
-    server = FakeLinearMcpServer(issues=[FakeMcpIssue(id=ISSUE)])
+    server = FakeLinearMcpServer(
+        comment_clock=lambda: FIXTURE_NOW, issues=[FakeMcpIssue(id=ISSUE)]
+    )
     tracker = tracker_over(server, issue_labels=LABELS)
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=PassThroughGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=PassThroughGate(),
+        operation=OPERATION,
     )
     server._tool_errors["save_issue"] = "temporarily refused"
     with pytest.raises(TrackerUnavailableError):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert len(server.comments) == 1
     original = server.comments[0].id
     del server._tool_errors["save_issue"]
     result = await writer.raise_escalation(
-        lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+        job_id="fixture-job",
+        lane_key="lane",
+        escalation=question(),
+        visibility=RepoVisibility.PUBLIC,
     )
     assert result.comment_key == original
     assert len(server.comments) == 1
@@ -167,11 +200,17 @@ async def test_missing_configuration_refuses_before_any_write(port, missing):
     tracker, _, _ = port
     config = OPERATION.model_copy(update={missing: {}})
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=PassThroughGate(), operation=config
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=PassThroughGate(),
+        operation=config,
     )
     with pytest.raises(OperationMemberAbsentError):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert await tracker.list_comments(issue_key=ISSUE) == ()
     assert "decision" not in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
@@ -180,11 +219,17 @@ async def test_missing_configuration_refuses_before_any_write(port, missing):
 async def test_gate_refusal_precedes_comment_and_classification(port):
     tracker, _, _ = port
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=BlockingGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=BlockingGate(),
+        operation=OPERATION,
     )
     with pytest.raises(OutboundContentBlockedError):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert await tracker.list_comments(issue_key=ISSUE) == ()
     assert "decision" not in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
@@ -223,11 +268,17 @@ async def test_gate_cannot_rewrite_occurrence_identity(port):
 
     tracker, _, _ = port
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=RewritingGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=RewritingGate(),
+        operation=OPERATION,
     )
     with pytest.raises(OutboundContentBlockedError, match="identity"):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert await tracker.list_comments(issue_key=ISSUE) == ()
     assert "decision" not in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
@@ -255,11 +306,17 @@ async def test_gate_cannot_redact_event_identity_or_remove_required_fields(port,
 
     tracker, _, _ = port
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=FieldGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=FieldGate(),
+        operation=OPERATION,
     )
     with pytest.raises(OutboundContentBlockedError, match="provenance"):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert await tracker.list_comments(issue_key=ISSUE) == ()
     assert "decision" not in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
@@ -275,11 +332,17 @@ async def test_gate_field_name_redaction_is_refused_before_write(port):
 
     tracker, _, _ = port
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=FieldNameGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=FieldNameGate(),
+        operation=OPERATION,
     )
     with pytest.raises(OutboundContentBlockedError, match="required escalation fields"):
         await writer.raise_escalation(
-            lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+            job_id="fixture-job",
+            lane_key="lane",
+            escalation=question(),
+            visibility=RepoVisibility.PUBLIC,
         )
     assert await tracker.list_comments(issue_key=ISSUE) == ()
     assert "decision" not in (await tracker.read_issue(issue_key=ISSUE)).issue_labels
@@ -297,10 +360,16 @@ async def test_valid_question_redaction_is_persisted_as_gated(port):
 
     tracker, _, _ = port
     writer = LaneEscalationWriter(
-        tracker=tracker, gate=ProseGate(), operation=OPERATION
+        surface_lease_seconds=900.0,
+        tracker=tracker,
+        gate=ProseGate(),
+        operation=OPERATION,
     )
     result = await writer.raise_escalation(
-        lane_key="lane", escalation=question(), visibility=RepoVisibility.PUBLIC
+        job_id="fixture-job",
+        lane_key="lane",
+        escalation=question(),
+        visibility=RepoVisibility.PUBLIC,
     )
     parsed = LaneEscalation.model_validate_json(result.body.split("\n", 1)[1])
     assert parsed.question == "Which [redacted] decides this behavior?"

@@ -20,6 +20,7 @@ from tests.domain.test_lane_record import record_data
 from tests.fakes import FakeMcpIssue
 from tests.tracker import test_audit_claim as claim_fixtures
 from tests.tracker.conftest import STATE_TYPES, WORKFLOW_STATE_NAMES, fixture_server
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_claim import (
     CHECK,
     CHILD,
@@ -201,7 +202,8 @@ async def test_lapse_read_refuses_a_changed_source_instead_of_returning_a_stale_
 
             monkeypatch.setattr(tracker, "read_criteria", moved)
         elif damage == "record":
-            changed = await tracker.upsert_comment(
+            changed = await leased_comment(
+                tracker,
                 target=ROOT,
                 marker=stored.body.splitlines()[0],
                 body="record disappeared",
@@ -242,7 +244,9 @@ async def test_a_valid_replacement_record_cannot_validate_the_earlier_snapshot(
 
     async def change():
         source.during = None
-        changed = await tracker.upsert_comment(target=ROOT, marker=marker, body=payload)
+        changed = await leased_comment(
+            tracker, target=ROOT, marker=marker, body=payload
+        )
         assert changed.comment_key == stored.comment_key
         _, parsed = await LaneRecordReader(tracker=tracker, operation=OPERATION).read(
             issue_key=ROOT, lane_key=REQUEST.lane_key, record_ref=stored.comment_key

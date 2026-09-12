@@ -18,6 +18,7 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_detection_removal import DetectorRemovalReport
 from kodezart.types.domain.tracker import WorkflowStateKind
 from tests.domain.test_detector_removal_report import finding
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_evidence import Source
 from tests.tracker.test_audit_overclaim_sweep import payload as overclaim_payload
 from tests.tracker.test_audit_sweep import BODY, CHECK, CHILD, HEAD, PRIOR, ROOT, state
@@ -360,8 +361,11 @@ async def test_final_source_and_head_checks_follow_the_actual_removal_arm(
                     '"head-full-identity"', '"other-head"'
                 )
                 assert replacement != stored.body
-                await tracker.upsert_comment(
-                    target=ROOT, marker=stored.body.splitlines()[0], body=replacement
+                await leased_comment(
+                    tracker,
+                    target=ROOT,
+                    marker=stored.body.splitlines()[0],
+                    body=replacement,
                 )
                 comment, parsed = await records.read(
                     issue_key=ROOT,

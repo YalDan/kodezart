@@ -13,6 +13,7 @@ from tests.tracker import test_audit_evidence as fixtures
 from tests.tracker.conftest import clock as clock
 from tests.tracker.conftest import tracker as tracker
 from tests.tracker.conftest import tracker_writes as tracker_writes
+from tests.tracker.lease_fixtures import leased_comment
 
 claim_setup = fixtures.claim_setup
 setup = fixtures.setup
@@ -79,7 +80,8 @@ async def test_reread_refuses_changed_source_identity(
 
         monkeypatch.setattr(tracker, "read_criteria", moved)
     elif damage == "record":
-        await tracker.upsert_comment(
+        await leased_comment(
+            tracker,
             target=fixtures.ROOT,
             marker=value.comment.body.splitlines()[0],
             body="The original source record disappeared.",
@@ -137,8 +139,8 @@ async def test_valid_same_comment_replacement_invalidates_the_original_snapshot(
     marker, payload = render_lane_record(
         record=changed, marker_prefixes=fixtures.PREFIXES
     ).split("\n", 1)
-    replacement = await tracker.upsert_comment(
-        target=fixtures.ROOT, marker=marker, body=payload
+    replacement = await leased_comment(
+        tracker, target=fixtures.ROOT, marker=marker, body=payload
     )
     assert replacement.comment_key == snapshot.comment.comment_key
     current, decoded = await source._records.read(

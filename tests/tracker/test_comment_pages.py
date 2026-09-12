@@ -13,6 +13,7 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.lease_fixtures import lease_for_comment
 
 MARKER = "[fixture:record]"
 
@@ -20,13 +21,23 @@ MARKER = "[fixture:record]"
 class CommentPageServer(FakeLinearMcpServer):
     def __init__(self, pages: Mapping[str | None, Mapping[str, object]]):
         source = fixture_server()
-        super().__init__(issues=list(source.issues.values()))
+        super().__init__(
+            issues=list(source.issues.values()),
+            actor="fixture-author",
+            comment_clock=lambda: FIXTURE_NOW,
+        )
         self.pages = pages
 
     def _tool_list_comments(self, arguments: Mapping[str, object]):
         cursor = arguments.get("cursor")
         assert cursor is None or isinstance(cursor, str)
-        return self.pages[cursor]
+        page = dict(self.pages[cursor])
+        if cursor is None:
+            page["comments"] = [
+                *page["comments"],
+                *(c.wire() for c in self.comments if c.body.startswith("```")),
+            ]
+        return page
 
 
 def comment(key: str, body: str) -> FakeMcpComment:
@@ -54,18 +65,27 @@ async def test_second_page_match_is_edited_without_creating():
     )
     server.comments.extend([neighbour, existing])
     tracker = linear_over_fake_mcp(server)
-    updated = await tracker.upsert_comment(
-        target=APPROVED_ISSUE, marker=MARKER, body="changed"
-    )
-    assert updated.comment_key == existing.id
+    async with lease_for_comment(
+        tracker, target=APPROVED_ISSUE, marker=MARKER
+    ) as holder:
+        reads = len(server.tool_calls("list_comments"))
+        writes = len(server.tool_calls("save_comment"))
+        updated = await tracker.upsert_comment(
+            target=APPROVED_ISSUE, marker=MARKER, body="changed", holder=holder
+        )
+        assert updated.comment_key == existing.id
+        assert (
+            server.tool_calls("list_comments")[reads:]
+            == [
+                {"issueId": APPROVED_ISSUE},
+                {"issueId": APPROVED_ISSUE, "cursor": "next"},
+            ]
+            * 2
+        )
+        assert server.tool_calls("save_comment")[writes:] == [
+            {"id": existing.id, "body": f"{MARKER}\nchanged"}
+        ]
     assert len(server.comments) == 2
-    assert server.tool_calls("list_comments") == [
-        {"issueId": APPROVED_ISSUE},
-        {"issueId": APPROVED_ISSUE, "cursor": "next"},
-    ]
-    assert server.tool_calls("save_comment") == [
-        {"id": existing.id, "body": f"{MARKER}\nchanged"}
-    ]
 
 
 async def test_duplicate_on_later_page_prevents_any_write():
@@ -79,7 +99,9 @@ async def test_duplicate_on_later_page_prevents_any_write():
     )
     with pytest.raises(DuplicateCommentMarkerError):
         await linear_over_fake_mcp(server).upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="same"
+            target=APPROVED_ISSUE,
+            marker=MARKER,
+            body="same",
         )
     assert server.tool_calls("save_comment") == []
 
@@ -94,7 +116,9 @@ async def test_missing_or_repeated_cursor_refuses_before_creation(cursor):
     )
     with pytest.raises(TrackerProtocolError, match="cannot advance"):
         await linear_over_fake_mcp(server).upsert_comment(
-            target=APPROVED_ISSUE, marker=MARKER, body="new"
+            target=APPROVED_ISSUE,
+            marker=MARKER,
+            body="new",
         )
     assert server.tool_calls("save_comment") == []
 
@@ -111,8 +135,13 @@ async def test_page_overlap_does_not_invent_a_duplicate():
             "next": {"comments": [existing.wire()], "hasNextPage": False},
         }
     )
-    updated = await linear_over_fake_mcp(server).upsert_comment(
-        target=APPROVED_ISSUE, marker=MARKER, body="same"
-    )
-    assert updated.comment_key == existing.id
-    assert server.tool_calls("save_comment") == []
+    tracker = linear_over_fake_mcp(server)
+    async with lease_for_comment(
+        tracker, target=APPROVED_ISSUE, marker=MARKER
+    ) as holder:
+        writes = len(server.tool_calls("save_comment"))
+        updated = await tracker.upsert_comment(
+            target=APPROVED_ISSUE, marker=MARKER, body="same", holder=holder
+        )
+        assert updated.comment_key == existing.id
+        assert len(server.tool_calls("save_comment")) == writes

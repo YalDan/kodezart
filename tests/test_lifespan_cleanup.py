@@ -389,7 +389,12 @@ async def test_actual_queue_watchers_finish_fire_records_before_transports_close
         watch = LifecycleWatcher(
             queue=kwargs["queue"],
             registry=kwargs["registry"],
-            writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+            writer=TrackerLifecycleWriter(
+                marker_prefixes={"run_outcome": "fixture-outcome"},
+                surface_lease_seconds=900,
+                tracker=tracker,
+                gate=PassThroughGate(),
+            ),
             heartbeat=ClaimHeartbeat(
                 tracker=tracker, holder=HOLDER, lease_seconds=600, renewal_fraction=0.25
             ),

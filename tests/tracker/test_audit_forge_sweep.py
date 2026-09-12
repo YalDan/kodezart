@@ -14,6 +14,7 @@ from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.operation import CheckPrerequisite
 from kodezart.types.domain.tracker import WorkflowStateKind
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_forge import NAMES, REPO, REPOSITORY, SHA, forge
 from tests.tracker.test_audit_overclaim_sweep import completed
 from tests.tracker.test_audit_sweep import BODY, CHECK, CHILD, ROOT, state
@@ -355,8 +356,8 @@ async def test_final_native_snapshot_rejects_changes_after_completed_forge_hunt(
             _, body = render_lane_record(
                 record=record, marker_prefixes=op.marker_prefixes
             ).split("\n", 1)
-            changed = await tracker.upsert_comment(
-                target=ROOT, marker=marker, body=body
+            changed = await leased_comment(
+                tracker, target=ROOT, marker=marker, body=body
             )
             assert changed.comment_key == stored.comment_key
             _, parsed = await records.read(

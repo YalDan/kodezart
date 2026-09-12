@@ -22,7 +22,12 @@ async def test_existing_lifecycle_writers_keep_native_comments_without_a_text_se
     tracker = FakeTrackerPort(issues=[issue])
     judge = RecordedTextJudge("job-record-1", None)
     gate = await gate_with_judge(tmp_path, judge, privacy=privacy)
-    writer = TrackerLifecycleWriter(tracker=tracker, gate=gate)
+    writer = TrackerLifecycleWriter(
+        marker_prefixes={"run_outcome": "fixture-outcome"},
+        surface_lease_seconds=900,
+        tracker=tracker,
+        gate=gate,
+    )
     if failed:
         await writer.on_run_failed(
             issue_key=issue.issue_key,

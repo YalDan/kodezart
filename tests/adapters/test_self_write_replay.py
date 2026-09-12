@@ -21,6 +21,7 @@ from tests.adapters.test_tracker_self_writes import (
     _tracker,
 )
 from tests.fakes import FakeLinearMcpServer
+from tests.tracker.lease_fixtures import leased_comment
 
 
 class NativeBoundary:
@@ -164,10 +165,12 @@ async def test_mixed_declared_issue_fields_and_comment_churn_stay_quiet() -> Non
     await _legacy_claim(tracker)
     await _legacy_claim(tracker)
     await tracker.release_claim(issue_key=ISSUE, holder=HOLDER)
-    await tracker.upsert_comment(target=ISSUE, marker="<!-- own note -->", body="first")
+    await leased_comment(
+        tracker, target=ISSUE, marker="<!-- own note -->", body="first"
+    )
     initial = server.comments[-1].created_at
-    await tracker.upsert_comment(
-        target=ISSUE, marker="<!-- own note -->", body="second"
+    await leased_comment(
+        tracker, target=ISSUE, marker="<!-- own note -->", body="second"
     )
     assert server.comments[-1].created_at == initial
     assert (await gate.delta()).changed == ()
@@ -398,12 +401,12 @@ async def test_comment_edit_receipt_does_not_absorb_other_response_fields() -> N
 
     ledger = SelfWriteLedger()
     tracker = _tracker(CommentMetadata(server), ledger)
-    await tracker.upsert_comment(target=ISSUE, marker="<!-- note -->", body="first")
+    await leased_comment(tracker, target=ISSUE, marker="<!-- note -->", body="first")
     gate = _gate(tracker, ledger)
     await gate.delta()
     extra = "principal changed metadata"
     server._moved(ISSUE)
-    await tracker.upsert_comment(target=ISSUE, marker="<!-- note -->", body="our edit")
+    await leased_comment(tracker, target=ISSUE, marker="<!-- note -->", body="our edit")
     assert (await gate.delta()).changed == (ISSUE,)
 
 
@@ -443,7 +446,7 @@ async def test_lagging_gate_and_rearm_wake_when_receipt_history_expires() -> Non
     ledger = SelfWriteLedger()
     tracker = _tracker(server, ledger)
     marker = "<!-- retained note -->"
-    await tracker.upsert_comment(target=ISSUE, marker=marker, body="initial")
+    await leased_comment(tracker, target=ISSUE, marker=marker, body="initial")
     fast, lagging = _gate(tracker, ledger), _gate(tracker, ledger)
     await fast.delta()
     await lagging.delta()
@@ -451,7 +454,7 @@ async def test_lagging_gate_and_rearm_wake_when_receipt_history_expires() -> Non
     # Fast readers continue to suppress ordinary own edits. The other gate
     # retains an old snapshot, whose receipt prefix eventually expires.
     for index in range(257):
-        await tracker.upsert_comment(target=ISSUE, marker=marker, body=f"edit {index}")
+        await leased_comment(tracker, target=ISSUE, marker=marker, body=f"edit {index}")
         assert (await fast.delta()).changed == ()
     fast.rearm()
     assert (await fast.delta()).changed == ()

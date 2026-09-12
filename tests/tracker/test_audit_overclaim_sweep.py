@@ -15,6 +15,7 @@ from kodezart.types.domain.agent import (
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_overclaim import AuditOverclaimReport, OverclaimKind
 from kodezart.types.domain.tracker import WorkflowStateKind
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_audit_overclaim import payload as original_payload
 from tests.tracker.test_audit_sweep import BODY, CHECK, CHILD, HEAD, PRIOR, ROOT, state
 from tests.tracker.test_audit_sweep import server as server
@@ -279,8 +280,11 @@ async def test_cross_arm_source_drift_cannot_become_a_coherent_sweep(
                     '"head-full-identity"', '"other-head"'
                 )
                 assert replacement != stored.body
-                await tracker.upsert_comment(
-                    target=ROOT, marker=stored.body.splitlines()[0], body=replacement
+                await leased_comment(
+                    tracker,
+                    target=ROOT,
+                    marker=stored.body.splitlines()[0],
+                    body=replacement,
                 )
                 same, parsed = await reader.read(
                     issue_key=ROOT,

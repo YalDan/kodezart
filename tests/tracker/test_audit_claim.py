@@ -35,6 +35,7 @@ from tests.fakes import (
 from tests.prompts.sets import OPUS_SET, V5_SET
 from tests.prompts.test_prompt_wiring import load_registry
 from tests.tracker.conftest import fixture_server
+from tests.tracker.lease_fixtures import leased_comment
 
 ROOT = "audit/lane"
 CHILD = "audit/check"
@@ -235,7 +236,8 @@ async def test_inflight_changes_and_failed_sessions_never_return_observation(
                 issue_key=CHILD, body=BODY.replace(CHECK, "Changed Check.")
             )
         elif damage == "record":
-            await tracker.upsert_comment(
+            await leased_comment(
+                tracker,
                 target=ROOT,
                 marker=stored.body.splitlines()[0],
                 body=stored.body.partition("\n")[2].replace(

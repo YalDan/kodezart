@@ -21,6 +21,7 @@ from tests.tracker.conftest import (
     CLAIMED_ISSUE,
     linear_over_fake_mcp,
 )
+from tests.tracker.lease_fixtures import leased_comment
 from tests.tracker.test_comment_pages import CommentPageServer, comment
 
 PREFIXES = {"run_state": "fixture-record"}
@@ -39,8 +40,8 @@ async def seed(tracker: TrackerPort, *, data=None, body=None) -> TrackerComment:
             marker_prefixes=PREFIXES,
         )
     marker, content = body.split("\n", 1)
-    return await tracker.upsert_comment(
-        target=APPROVED_ISSUE, marker=marker, body=content
+    return await leased_comment(
+        tracker, target=APPROVED_ISSUE, marker=marker, body=content
     )
 
 
@@ -233,7 +234,8 @@ async def test_malformed_or_ambiguous_payload_is_a_typed_refusal(tracker, change
 
 
 async def test_legacy_manual_prose_requires_a_deliberate_migration(tracker):
-    await tracker.upsert_comment(
+    await leased_comment(
+        tracker,
         target=APPROVED_ISSUE,
         marker=MARKER,
         body="Branch: old-branch. Head: 123. Everything pushed.",

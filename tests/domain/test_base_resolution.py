@@ -296,6 +296,8 @@ async def test_a_redundant_edge_reduces_to_the_descendant_alone() -> None:
 def lifecycle(tracker: FakeTrackerPort) -> TrackerLifecycleWriter:
     """The shipped lifecycle writer — the only producer of DELIVERABLE refs."""
     return TrackerLifecycleWriter(
+        marker_prefixes={"run_outcome": "fixture-outcome"},
+        surface_lease_seconds=900,
         tracker=tracker,
         gate=PassThroughGate(),
         clock=lambda: FIXTURE_EPOCH,
