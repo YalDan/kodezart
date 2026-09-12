@@ -3246,7 +3246,10 @@ class FakeTrackerPort:
             return issue
         self.classification_writes.append((issue_key, classification))
         updated = TrackerIssue.model_validate(
-            {**issue.model_dump(), "issue_labels": issue.issue_labels | {classification}}
+            {
+                **issue.model_dump(),
+                "issue_labels": issue.issue_labels | {classification},
+            }
         )
         self.issues[issue_key] = updated
         self._wrote(issue_key)
