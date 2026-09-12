@@ -162,12 +162,15 @@ class StaleWriteError(Exception):
 class RulingRecordReadError(Exception):
     """The addressed issue's ruling records are unreadable or ambiguous."""
 
-    def __init__(self, *, issue_key: str, lane_key: str, reason: str) -> None:
+    def __init__(self, *, issue_key: str, lane_key: str | None, reason: str) -> None:
         self.issue_key = issue_key
         self.lane_key = lane_key
         self.reason = reason
+        region = (
+            "across its recorded lanes" if lane_key is None else f"for {lane_key!r}"
+        )
         super().__init__(
-            f"rulings on {issue_key!r} for {lane_key!r} could not be read: {reason}"
+            f"rulings on {issue_key!r} {region} could not be read: {reason}"
         )
 
 
