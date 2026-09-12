@@ -32,12 +32,13 @@ RETIRED: dict[str, str] = {
     "WorkflowCompleteEvent.error": r"WorkflowCompleteEvent[^\n]*\.error\b",
 }
 
-#: The terminal-outcome member and the active authored outcome producer.
-#: Removed alternative delivery code contributes no exclusions.
-_OUTCOME_MEMBER: frozenset[str] = frozenset(
+#: The terminal member and the actual authored/native delivery producers.
+#: Both the source address and exact line are pinned; another occurrence fails.
+_OUTCOME_MEMBER: frozenset[tuple[str, str]] = frozenset(
     {
-        'ci_passed = "ci_passed"',
-        "return WorkflowOutcome.ci_passed",
+        ("types/domain/outcome.py", 'ci_passed = "ci_passed"'),
+        ("domain/authored_outcome.py", "return WorkflowOutcome.ci_passed"),
+        ("types/domain/delivery.py", "return WorkflowOutcome.ci_passed"),
     },
 )
 
@@ -57,7 +58,8 @@ def test_no_retired_wire_name_survives_in_src(name: str) -> None:
     hits = [
         f"{path.relative_to(SRC)}: {line.strip()}"
         for path, line in _source_lines()
-        if pattern.search(line) and line.strip() not in _OUTCOME_MEMBER
+        if pattern.search(line)
+        and (path.relative_to(SRC).as_posix(), line.strip()) not in _OUTCOME_MEMBER
     ]
     assert hits == []
 
@@ -69,7 +71,9 @@ def test_the_only_excluded_occurrences_are_the_outcome_member() -> None:
     or grow — and the test above would keep passing either way.
     """
     excluded = [
-        line.strip() for _, line in _source_lines() if line.strip() in _OUTCOME_MEMBER
+        (path.relative_to(SRC).as_posix(), line.strip())
+        for path, line in _source_lines()
+        if (path.relative_to(SRC).as_posix(), line.strip()) in _OUTCOME_MEMBER
     ]
     assert sorted(excluded) == sorted(_OUTCOME_MEMBER)
 

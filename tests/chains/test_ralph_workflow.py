@@ -4920,6 +4920,7 @@ KEYED_DISPATCH_COUNTS = {
     "fire_specification.py": 3,
     "fire_review.py": 1,
     "authored_publication.py": 1,
+    "lane_delivery.py": 1,
     "remediation.py": 1,
     "ticket_generation.py": 2,
     "prompt_pass.py": 1,

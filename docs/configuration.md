@@ -746,7 +746,9 @@ cross-product is inferred.
 When those bindings are configured, set both
 `KODEZART_ORGANIZE__MAX_ADMISSION_ROUNDS` and
 `KODEZART_ORGANIZE__MAX_CONVERGENCE_ROUNDS` to positive integers. Neither bound
-has a default. Partial owner configuration refuses scheduling. The retired flat
-`KODEZART_ORGANIZE_MAX_*` spellings remain rejected. Each native tick uses the
+has a default. The optional `KODEZART_ORGANIZE` JSON container accepts the same
+`max_admission_rounds` and `max_convergence_rounds` fields. Partial owner
+configuration refuses scheduling. Retired flat Organize bound spellings remain
+rejected. Each native tick uses the
 existing grooming run identity and resolves the configured repository trunk to
 a fresh immutable remote commit before assessment.

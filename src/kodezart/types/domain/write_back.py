@@ -20,9 +20,28 @@ class WriteBackFinding(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    verdict: AuditVerdict
-    evidence: str = Field(min_length=1, pattern=r"\S")
-    cited_refs: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = ()
+    verdict: AuditVerdict = Field(
+        description=(
+            "Whether the exact re-read artifact's claims hold, are refuted, "
+            "or remain unverifiable against checked evidence."
+        )
+    )
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Concrete findings from checking the artifact's claims against "
+            "actual available sources."
+        ),
+    )
+    cited_refs: tuple[Annotated[str, Field(min_length=1, pattern=r"\S")], ...] = Field(
+        default=(),
+        description=(
+            "Actual paths, files, commits or other references checked for "
+            "this judgment; refutation requires at least one, and unavailable "
+            "evidence must not receive fabricated citations."
+        ),
+    )
 
     @model_validator(mode="after")
     def _refutation_names_something(self) -> Self:

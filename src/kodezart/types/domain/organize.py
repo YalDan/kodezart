@@ -73,34 +73,86 @@ class SpecFinding(CamelCaseModel):
 
 
 class _AdmissionFields(CamelCaseModel):
-    verdict: AdmissionVerdict
+    verdict: AdmissionVerdict = Field(
+        description="Buildability of the current issue under the configured mandate."
+    )
     model_config = ConfigDict(frozen=True)
 
-    issue_id: str = Field(min_length=1, pattern=r"\S")
-    evidence: str = Field(min_length=1, pattern=r"\S")
-    findings: tuple[SpecFinding, ...] = ()
+    issue_id: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="Exact native tracker key of the issue assessed.",
+    )
+    evidence: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Concrete current source evidence supporting this buildability judgment."
+        ),
+    )
+    findings: tuple[SpecFinding, ...] = Field(
+        default=(),
+        description=(
+            "Observed defects under the configured rubric, retaining their "
+            "owning issue keys."
+        ),
+    )
 
 
 class BuildableAdmission(_AdmissionFields):
     """No invented decision or unavailable artifact is carried by success."""
 
-    verdict: Literal[AdmissionVerdict.BUILDABLE]
+    verdict: Literal[AdmissionVerdict.BUILDABLE] = Field(
+        description=(
+            "The current issue can be built without inventing a decision or "
+            "missing evidence."
+        )
+    )
 
 
 class RefusedAdmission(_AdmissionFields):
     """A refusal names the decision and the route it requires."""
 
-    verdict: Literal[AdmissionVerdict.NOT_BUILDABLE]
-    invented_decision: str = Field(min_length=1, pattern=r"\S")
-    refusal_kind: RefusalKind
+    verdict: Literal[AdmissionVerdict.NOT_BUILDABLE] = Field(
+        description=(
+            "The current issue requires a specification repair or an "
+            "unresolved human choice."
+        )
+    )
+    invented_decision: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description="The exact choice an implementer would otherwise have to invent.",
+    )
+    refusal_kind: RefusalKind = Field(
+        description=(
+            "Whether re-authoring can repair the specification gap or a human "
+            "must settle the choice."
+        )
+    )
 
 
 class UnverifiableAdmission(_AdmissionFields):
     """Unavailable evidence retains its named dependency without inventing it."""
 
-    verdict: Literal[AdmissionVerdict.UNVERIFIABLE]
-    missing_artifact: str = Field(min_length=1, pattern=r"\S")
-    pending_blocker_id: str = Field(min_length=1, pattern=r"\S")
+    verdict: Literal[AdmissionVerdict.UNVERIFIABLE] = Field(
+        description="A named unavailable artifact prevents a buildability judgment."
+    )
+    missing_artifact: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "The actual unavailable artifact needed to assess the current issue."
+        ),
+    )
+    pending_blocker_id: str = Field(
+        min_length=1,
+        pattern=r"\S",
+        description=(
+            "Existing native blocker identity owning the unavailable "
+            "artifact; never invent one."
+        ),
+    )
 
 
 AdmissionDecision = Annotated[
