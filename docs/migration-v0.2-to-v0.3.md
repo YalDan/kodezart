@@ -86,6 +86,12 @@ the adapter choice moves into it as `BACKEND`.
 | `TRACKER_MCP_ERROR_DETAIL_LIMIT` | `TRACKER__ERROR_DETAIL_LIMIT` |
 | `TRACKER_MAX_RETRIES` | `TRACKER__MAX_RETRIES` |
 | `TRACKER_RETRY_BACKOFF_FACTOR` | `TRACKER__RETRY_BACKOFF_FACTOR` |
+| `TRACKER_SURFACE_LEASE_SECONDS` | `TRACKER__SURFACE_LEASE_SECONDS` |
+
+The composed lifecycle outcome writer uses the surface duration for acquisition
+and explicit renewal. Add a distinct `run_outcome` entry to `[marker_prefixes]`;
+this identifies the per-job terminal comment and has no fallback when absent.
+Existing `run_state` and `run_event` markers keep their own payload contracts.
 
 ### Knowledge
 
@@ -191,13 +197,12 @@ exactly as your v0.2 deployment spells them:
 | `KODEZART_CI_NO_CHECKS_GRACE_POLLS` | polls tolerated before an empty check set is read as "this repository runs no checks" |
 | `KODEZART_FORGE_API_TIMEOUT_SECONDS` | the forge HTTP exchange timeout |
 | `KODEZART_TRACKER_CLAIM_LEASE_SECONDS` | how long an acquired issue claim stays live without renewal |
-| `KODEZART_TRACKER__SURFACE_LEASE_SECONDS` | the default lease for a set of write surfaces |
 | `KODEZART_TRACKER_CLAIM_RENEWAL_FRACTION` | the fraction of a lease after which the heartbeat renews |
 
-The claim and lease durations sit beside the tracker section rather than in it
-on purpose: they are the ownership policy the run obeys, not part of the
-connection the adapter opens. A caller may pass a duration per acquisition,
-and that argument wins over the configured default for that grant alone.
+The existing claim duration and renewal fraction remain flat. Write-surface
+duration moved into the tracker section as listed in the rename table above.
+A caller may pass a duration per acquisition, and that argument wins over the
+configured default for that grant alone.
 
 ## 5. Removed with no replacement
 
@@ -254,11 +259,3 @@ is worth a second look.
 ships, with its default and its bounds, and a test derives both sides so the
 document cannot drift from the code. This guide covers only what a v0.2
 deployment has to change.
-
-Write-surface lease duration now lives in tracker subsystem settings. Rename
-`KODEZART_TRACKER_SURFACE_LEASE_SECONDS` to
-`KODEZART_TRACKER__SURFACE_LEASE_SECONDS`. The composed lifecycle outcome writer
-uses it for acquisition and explicit renewal. Add a distinct `run_outcome` entry
-to `[marker_prefixes]`; this identifies the per-job terminal comment and has no
-fallback when absent. Existing `run_state` and `run_event` markers keep their
-own payload contracts.

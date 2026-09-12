@@ -77,6 +77,7 @@ class AppConfig(BaseSettings):
                 "tracker_mcp_error_detail_limit",
                 "tracker_max_retries",
                 "tracker_retry_backoff_factor",
+                "tracker_surface_lease_seconds",
                 "organize_max_admission_rounds",
                 "organize_max_convergence_rounds",
                 "union_check_cleanup_poll_interval_seconds",
