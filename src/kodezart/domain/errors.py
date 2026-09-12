@@ -108,6 +108,22 @@ class SurfaceLeaseError(Exception):
         self.current_holder: str | None = current_holder
 
 
+class SurfaceLeaseLostError(Exception):
+    """Renewal could not confirm the run's complete declared write set.
+
+    The renewal result does not identify a competing holder or prove that
+    the surfaces are unheld. Callers stop writing without inventing either
+    fact and must not reacquire as part of handling this failure.
+    """
+
+    def __init__(
+        self, *, job_id: str, surfaces: frozenset[WritableSurface]
+    ) -> None:
+        self.job_id = job_id
+        self.surfaces = surfaces
+        super().__init__(f"run {job_id!r} lost its declared surface lease")
+
+
 class DuplicateCommentMarkerError(Exception):
     """Several comments claim the same first-line marker on one target."""
 
