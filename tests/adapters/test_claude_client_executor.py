@@ -26,6 +26,7 @@ from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.core.errors import OutputStyleNotConfirmedError
 from kodezart.domain.errors import AgentSDKError
 from kodezart.types.domain.agent import AgentEvent, SystemEvent
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.subagents import SessionPolicy, WorkflowAccess
 from tests.fakes import (
     DEFAULT_SETTING_SOURCES,
@@ -79,7 +80,7 @@ async def _failure_of(exc: Exception) -> AgentSDKError:
         async for event in executor.stream(
             prompt="x",
             cwd="/tmp",
-            permission_mode="default",
+            permission_mode=PermissionMode.INTERACTIVE,
             allowed_tools=[],
             skills=SUPPRESS_ALL_SKILLS,
             session_type=FAKE_SESSION_TYPE,

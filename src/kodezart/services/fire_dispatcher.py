@@ -57,8 +57,9 @@ from kodezart.types.domain.dispatch import (
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.operation import OperationConfig, QueueState
 from kodezart.types.domain.run_records import RunOutcome
+from kodezart.types.domain.session import PermissionMode, ToolPreset
 from kodezart.types.domain.tracker import ClaimStatus, IssueQuery, TrackerIssue
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 
 
 def _uniform_draw(candidates: Sequence[str]) -> str:
@@ -445,12 +446,14 @@ class FireDispatcher:
         await self._tracker.record_base_spec(issue_key=winner.issue_key, spec=spec)
         record = await self._queue.submit(
             lane=self._lane,
-            request=WorkflowRequest(
+            request=WorkflowSubmission(
                 prompt=context.render(),
+                repo_path=None,
                 repo_url=self._repo_url,
-                base_branch=spec.base_branch,
                 base_spec=spec,
                 implied_base=spec,
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=ToolPreset.IMPLEMENTATION,
             ),
         )
         self._jobs_by_issue[winner.issue_key] = record.job_id

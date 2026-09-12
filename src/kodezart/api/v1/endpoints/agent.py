@@ -83,7 +83,11 @@ async def stream_workflow(
     config: AppConfig = request.app.state.config
     queue: JobQueue = request.app.state.job_queue
     try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
+        record: JobRecord = await AgentHandler(
+            service=request.app.state.agent_service,
+            skills=request.app.state.skills,
+            queue=queue,
+        ).submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 
@@ -112,7 +116,11 @@ async def fire_workflow(body: WorkflowRequest, request: Request) -> Response:
     config: AppConfig = request.app.state.config
     queue: JobQueue = request.app.state.job_queue
     try:
-        record: JobRecord = await queue.submit(lane=DEFAULT_LANE, request=body)
+        record: JobRecord = await AgentHandler(
+            service=request.app.state.agent_service,
+            skills=request.app.state.skills,
+            queue=queue,
+        ).submit_workflow(body, lane=DEFAULT_LANE)
     except QueueFullError as exc:
         return _queue_full_response(exc)
 

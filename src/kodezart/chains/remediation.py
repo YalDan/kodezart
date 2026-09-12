@@ -10,7 +10,7 @@ remember to route through, because there is no second path.
 
 from collections.abc import AsyncIterator
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import AgentRunner, PromptSetProvider
@@ -24,7 +24,7 @@ from kodezart.types.domain.agent import (
     WorkflowRemediationEvent,
 )
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
 
@@ -76,7 +76,7 @@ class RemediationChain:
                 repo_url=repo_url,
                 branch=request.work_base_ref,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                allowed_tools=ToolPreset.DELEGATED_EVALUATION,
                 skills=self._prompts.session_skills(
                     PromptKey.REMEDIATION_TICKET, self._skills
                 ),

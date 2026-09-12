@@ -33,6 +33,7 @@ from kodezart.domain.git_url import is_forge_less_origin
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import AgentEvent
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.skills import SkillsSelection
 
 
@@ -86,8 +87,8 @@ class OriginRoutedWorkflowEngine:
         repo_url: str | None,
         base_spec: BaseSpec,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Run on the arm this origin's forge capability allows.

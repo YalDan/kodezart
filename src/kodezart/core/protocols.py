@@ -33,7 +33,7 @@ from kodezart.types.domain.run import RunState
 from kodezart.types.domain.run_records import RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -54,8 +54,7 @@ from kodezart.types.domain.tracker import (
     TrackerIssue,
     TrackerReview,
 )
-from kodezart.types.domain.workflow import RemediationRequest
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import RemediationRequest, WorkflowSubmission
 
 
 @runtime_checkable
@@ -259,8 +258,8 @@ class AgentExecutor(Protocol):
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1049,8 +1048,8 @@ class AgentRunner(Protocol):
         repo_path: str | None = None,
         repo_url: str | None = None,
         branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1071,8 +1070,8 @@ class AgentRunner(Protocol):
         base_branch: str = "main",
         branch_name: str | None = None,
         ralph_branch: str | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         visibility: RepoVisibility,
@@ -1089,8 +1088,8 @@ class AgentRunner(Protocol):
         *,
         prompt: str,
         workspace_path: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         skills: SkillsSelection,
         session_type: SessionType,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
@@ -1135,8 +1134,8 @@ class QualityGate(Protocol):
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
@@ -1195,8 +1194,8 @@ class WorkflowEngine(Protocol):
         repo_url: str | None,
         base_spec: BaseSpec,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Full pipeline: branch → ticket → criteria → loop → merge.
@@ -1218,7 +1217,7 @@ class JobQueue(Protocol):
     persistence machinery stands behind it.
     """
 
-    async def submit(self, *, lane: str, request: WorkflowRequest) -> JobRecord:
+    async def submit(self, *, lane: str, request: WorkflowSubmission) -> JobRecord:
         """Enqueue *request* on *lane*. Raises ``QueueFullError`` at capacity."""
         ...
 

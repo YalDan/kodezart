@@ -8,7 +8,7 @@ from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -38,7 +38,12 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import FanInReport, ValidatedCriterion
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import (
+    AllowedTools,
+    PermissionMode,
+    SessionType,
+    ToolPreset,
+)
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.trajectory import IterationRecord
@@ -101,8 +106,8 @@ class RalphLoop:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
@@ -266,7 +271,7 @@ class RalphLoop:
                     repo_url=ctx.repo_url,
                     branch=ctx.ralph_branch,
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.EVALUATION, self._skills
                     ),

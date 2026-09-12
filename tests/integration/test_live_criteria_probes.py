@@ -48,7 +48,7 @@ from kodezart.adapters.git_worktree_provider import GitWorktreeProvider
 from kodezart.adapters.local_bare_repo_cache import LocalBareRepoCache
 from kodezart.adapters.subprocess_git_service import SubprocessGitService
 from kodezart.core.config import AppConfig
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.stream_drain import drain
 from kodezart.domain.criteria import mint_criteria
 from kodezart.services.agent_service import AgentService
@@ -59,6 +59,7 @@ from kodezart.types.domain.agent import (
 )
 from kodezart.types.domain.criteria import GeneratedCriterion
 from kodezart.types.domain.prompts import PromptKey
+from kodezart.types.domain.session import ToolPreset
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.test_lane_verification import default_registry
 
@@ -144,7 +145,7 @@ async def _generate_live(
             repo_path=str(repo),
             branch=base_ref,
             permission_mode=EVAL_PERMISSION_MODE,
-            allowed_tools=EVAL_TOOLS_WITH_AGENT,
+            allowed_tools=ToolPreset.DELEGATED_EVALUATION,
             skills=SkillsSelection(mode=SkillsMode.NONE),
             output_format={
                 "type": "json_schema",

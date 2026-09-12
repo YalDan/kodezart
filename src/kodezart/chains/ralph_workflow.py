@@ -13,8 +13,6 @@ from pydantic import ValidationError
 
 from kodezart.core.constants import (
     EVAL_PERMISSION_MODE,
-    EVAL_TOOLS,
-    EVAL_TOOLS_WITH_AGENT,
 )
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
@@ -123,7 +121,12 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.session import (
+    AllowedTools,
+    PermissionMode,
+    SessionType,
+    ToolPreset,
+)
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import NO_SUBAGENTS
 from kodezart.types.domain.workflow import (
@@ -223,8 +226,8 @@ class RalphWorkflowEngine:
         repo_url: str | None,
         base_spec: BaseSpec,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         cache_key: str,
     ) -> AsyncIterator[AgentEvent]:
         """Execute the full workflow pipeline.
@@ -654,7 +657,7 @@ class RalphWorkflowEngine:
                 repo_url=ctx.repo_url,
                 branch=ctx.base_branch,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                allowed_tools=ToolPreset.DELEGATED_EVALUATION,
                 skills=self._prompts.session_skills(
                     PromptKey.ACCEPTANCE_CRITERIA, self._skills
                 ),
@@ -740,7 +743,7 @@ class RalphWorkflowEngine:
                     repo_url=ctx.repo_url,
                     branch=ctx.base_branch,
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.CRITERIA_VALIDATION, self._skills
                     ),
@@ -844,8 +847,8 @@ class RalphWorkflowEngine:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
-        allowed_tools: list[str],
+        permission_mode: PermissionMode,
+        allowed_tools: AllowedTools,
         acceptance_criteria: list[ValidatedCriterion],
         cache_key: str,
         repo_visibility: RepoVisibility,
@@ -1340,7 +1343,7 @@ class RalphWorkflowEngine:
                     repo_url=ctx.repo_url,
                     branch=state["feature_branch"],
                     permission_mode=EVAL_PERMISSION_MODE,
-                    allowed_tools=EVAL_TOOLS,
+                    allowed_tools=ToolPreset.EVALUATION,
                     skills=self._prompts.session_skills(
                         PromptKey.POST_MERGE_REVIEW, self._skills
                     ),
