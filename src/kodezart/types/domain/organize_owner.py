@@ -7,7 +7,12 @@ from pydantic import ConfigDict, Field, RootModel, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.audit import AuditVerdict
-from kodezart.types.domain.organize import AdmissionResult, MandateKind, SpecFinding
+from kodezart.types.domain.organize import (
+    AdmissionResult,
+    MandateKind,
+    RefusalKind,
+    SpecFinding,
+)
 from kodezart.types.domain.write_back import WriteBackResult
 
 
@@ -101,7 +106,9 @@ class OrganizeBoundEvidence(CamelCaseModel):
         return self
 
 
-class StageHaltReport(CamelCaseModel):
+class _HaltEvidence(CamelCaseModel):
+    """The stable serialized fields shared by the closed halt causes."""
+
     model_config = ConfigDict(frozen=True)
     cause: StageHaltCause
     bound: OrganizeBoundEvidence | None = None
@@ -112,36 +119,121 @@ class StageHaltReport(CamelCaseModel):
     unrecorded_escalation_issue_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def _recording_failure_names_issues(self) -> Self:
-        if (self.cause == "escalation_unrecorded") != bool(
-            self.unrecorded_escalation_issue_ids
-        ):
-            raise ValueError(
-                "only an unrecorded escalation requires affected issue IDs"
-            )
-        exhausted = self.cause in {
-            StageHaltCause.ADMISSION_EXHAUSTED,
-            StageHaltCause.CONVERGENCE_EXHAUSTED,
-        }
-        if exhausted != (self.bound is not None):
-            raise ValueError("only exhausted halts require actual bound evidence")
-        if self.bound is not None:
-            convergence = self.cause is StageHaltCause.CONVERGENCE_EXHAUSTED
-            if convergence != (self.bound.loop == "convergence"):
-                raise ValueError("the exhausted bound must match the halt cause")
-            if self.bound.loop == "write_back" and (
-                not self.write_back_results
-                or any(
-                    len(result.rounds) != self.bound.rounds_used
-                    for result in self.write_back_results
-                )
-            ):
-                raise ValueError("write-back exhaustion retains its actual rounds")
+    def _retained_write_back_is_unsettled(self) -> Self:
         if any(
             result.verdict is AuditVerdict.HOLDS for result in self.write_back_results
         ):
             raise ValueError("a halted write-back must retain an unsettled result")
         return self
+
+
+class AdmissionExhaustedHalt(_HaltEvidence):
+    cause: Literal[StageHaltCause.ADMISSION_EXHAUSTED]
+    bound: OrganizeBoundEvidence
+    questions: tuple[()] = ()
+    unrecorded_escalation_issue_ids: tuple[()] = ()
+
+    @model_validator(mode="after")
+    def _admission_bound_matches_its_evidence(self) -> Self:
+        if self.bound.loop == "convergence":
+            raise ValueError("an admission halt requires its actual admission bound")
+        if self.bound.loop == "write_back":
+            if not self.write_back_results or any(
+                len(result.rounds) != self.bound.rounds_used
+                for result in self.write_back_results
+            ):
+                raise ValueError("write-back exhaustion retains its actual rounds")
+        elif self.write_back_results:
+            raise ValueError("write-back results require a write-back exhaustion bound")
+        return self
+
+
+class ConvergenceExhaustedHalt(_HaltEvidence):
+    cause: Literal[StageHaltCause.CONVERGENCE_EXHAUSTED]
+    bound: OrganizeBoundEvidence
+    questions: tuple[()] = ()
+    write_back_results: tuple[()] = ()
+    unrecorded_escalation_issue_ids: tuple[()] = ()
+
+    @model_validator(mode="after")
+    def _convergence_bound_is_its_own(self) -> Self:
+        if self.bound.loop != "convergence":
+            raise ValueError("a convergence halt requires its actual convergence bound")
+        return self
+
+
+class HumanDecisionHalt(_HaltEvidence):
+    """An actual unresolved choice, from admission or the author, never a gap."""
+
+    cause: Literal[StageHaltCause.HUMAN_DECISION]
+    bound: None = None
+    surviving_findings: tuple[()] = ()
+    write_back_results: tuple[()] = ()
+    unrecorded_escalation_issue_ids: tuple[()] = ()
+
+    @model_validator(mode="after")
+    def _human_choice_is_recorded(self) -> Self:
+        if not self.questions and not self.admission_results:
+            raise ValueError("a human halt requires an evidenced unresolved choice")
+        if any(
+            result.refusal_kind is not RefusalKind.HUMAN_DECISION
+            for result in self.admission_results
+        ):
+            raise ValueError(
+                "a human halt requires explicitly classified human refusals"
+            )
+        return self
+
+
+class EscalationUnrecordedHalt(_HaltEvidence):
+    cause: Literal[StageHaltCause.ESCALATION_UNRECORDED]
+    bound: None = None
+    unrecorded_escalation_issue_ids: tuple[
+        Annotated[str, Field(min_length=1, pattern=r"\S")], ...
+    ] = Field(min_length=1)
+
+
+type StageHalt = Annotated[
+    AdmissionExhaustedHalt
+    | ConvergenceExhaustedHalt
+    | HumanDecisionHalt
+    | EscalationUnrecordedHalt,
+    Field(discriminator="cause"),
+]
+
+
+class StageHaltReport(RootModel[StageHalt]):
+    """A flat serialized halt whose cause owns its legal evidence shape."""
+
+    model_config = ConfigDict(frozen=True)
+
+    @property
+    def cause(self) -> StageHaltCause:
+        return self.root.cause
+
+    @property
+    def bound(self) -> OrganizeBoundEvidence | None:
+        return self.root.bound
+
+    @property
+    def admission_results(self) -> tuple[AdmissionResult, ...]:
+        return self.root.admission_results
+
+    @property
+    def surviving_findings(self) -> tuple[SpecFinding, ...]:
+        return self.root.surviving_findings
+
+    @property
+    def write_back_results(self) -> tuple[WriteBackResult, ...]:
+        return self.root.write_back_results
+
+    @property
+    def questions(self) -> tuple[UnresolvedProposal, ...]:
+        return self.root.questions
+
+    @property
+    def unrecorded_escalation_issue_ids(self) -> tuple[str, ...]:
+        return self.root.unrecorded_escalation_issue_ids
 
 
 class OrganizeReport(CamelCaseModel):

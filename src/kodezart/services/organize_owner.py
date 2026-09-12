@@ -58,6 +58,7 @@ from kodezart.types.domain.organize import (
 from kodezart.types.domain.organize_owner import (
     BodyProposal,
     CriteriaProposal,
+    EscalationUnrecordedHalt,
     OrganizeBoundEvidence,
     OrganizePolicy,
     OrganizeReport,
@@ -673,12 +674,14 @@ class OrganizeOwner:
                 SurfaceLeaseError,
             ):
                 return StageHaltReport(
-                    cause=StageHaltCause.ESCALATION_UNRECORDED,
-                    unrecorded_escalation_issue_ids=(issue_key,),
-                    admission_results=tuple(results),
-                    questions=tuple(questions),
-                    surviving_findings=tuple(findings),
-                    write_back_results=tuple(write_back_results),
+                    EscalationUnrecordedHalt(
+                        cause=StageHaltCause.ESCALATION_UNRECORDED,
+                        unrecorded_escalation_issue_ids=(issue_key,),
+                        admission_results=tuple(results),
+                        questions=tuple(questions),
+                        surviving_findings=tuple(findings),
+                        write_back_results=tuple(write_back_results),
+                    )
                 )
         return StageHaltReport.model_validate(
             {
