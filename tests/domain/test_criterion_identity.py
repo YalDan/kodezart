@@ -216,5 +216,29 @@ def test_authored_pattern_requires_authored_identity_even_on_native_shape():
 
 @pytest.mark.parametrize("key", ["fire/native-key", "KOD-815", "AC-1"])
 def test_shared_identity_lists_preserve_nonblank_native_or_authored_keys(key):
-    record = Contradiction(criterion_ids=[key, "another/key"], explanation="conflict")
-    assert record.criterion_ids[0] == key
+    record = IterationGrade.model_validate(
+        {
+            "results": [
+                {
+                    "criterionId": "AC-1",
+                    "criterion": "c",
+                    "passed": True,
+                    "reasoning": "r",
+                }
+            ],
+            "missingIds": [key, "another/key"],
+            "dispatchedCount": 3,
+            "passedCount": 1,
+            "verdict": "rejected",
+        }
+    )
+    assert record.missing_ids == [key, "another/key"]
+
+
+@pytest.mark.parametrize("key", ["fire/native-key", "KOD-815"])
+def test_authored_contradiction_rejects_native_criterion_keys(key):
+    with pytest.raises(ValidationError) as excinfo:
+        Contradiction.model_validate(
+            {"criterionIds": ["AC-1", key], "explanation": "conflict"}
+        )
+    assert excinfo.value.errors()[0]["loc"] == ("criterionIds", 1)
