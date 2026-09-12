@@ -1041,7 +1041,7 @@ class TrackerPort(
         ...
 
     async def upsert_comment(
-        self, *, target: str, marker: str, body: str
+        self, *, target: str, marker: str, body: str, holder: str | None = None
     ) -> TrackerComment:
         """Create or edit the issue comment with *marker* as its first line.
 
@@ -1049,6 +1049,9 @@ class TrackerPort(
         writes nothing. Several comments under the marker raise
         ``DuplicateCommentMarkerError`` before any write. Callers compose
         the marker and serialize concurrent writers to the same target.
+        The writing queue job must hold its marker surface under ``holder``;
+        an absent, expired or different holder raises ``SurfaceLeaseError``
+        carrying the surface and the observed current holder.
         """
         ...
 
