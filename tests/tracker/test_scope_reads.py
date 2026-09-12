@@ -10,7 +10,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpTransportError,
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
 from kodezart.core.protocols import TrackerPort
 from kodezart.domain.errors import ScopeReadError
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
@@ -357,14 +361,19 @@ async def test_missing_scope_refuses_with_the_requested_address(
 ) -> None:
     ref = ScopeRef(kind=kind, key="absent-scope")
 
-    with pytest.raises((ScopeReadError, McpTransportError)) as caught:
+    with pytest.raises((ScopeReadError, TrackerUnavailableError)) as caught:
         await scope_fixture.tracker.scope_issues(ref=ref)
 
     failure = caught.value
     if isinstance(failure, ScopeReadError):
         assert failure.ref == ref
     else:
-        assert failure.tool_name in {"get_issue", "get_project", "get_initiative"}
+        assert isinstance(failure.__cause__, McpTransportError)
+        assert failure.__cause__.tool_name in {
+            "get_issue",
+            "get_project",
+            "get_initiative",
+        }
 
 
 @pytest.mark.parametrize("ref", [INITIATIVE, PROJECT, MILESTONE])

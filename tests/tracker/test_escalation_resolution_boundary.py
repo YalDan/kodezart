@@ -2,7 +2,11 @@
 
 import pytest
 
-from kodezart.core.errors import McpCredentialRefusedError, TrackerProtocolError
+from kodezart.core.errors import (
+    McpCredentialRefusedError,
+    TrackerAccessDeniedError,
+    TrackerProtocolError,
+)
 from kodezart.domain.errors import EscalationReadError
 from kodezart.types.domain.escalation import EscalationResolutionState
 from kodezart.types.domain.operation import OperationMemberAbsentError
@@ -158,7 +162,8 @@ async def test_failed_transport_remains_typed_with_its_original_cause(failure):
         await linear_over_fake_mcp(server).read_escalation_resolution(**ADDRESS)
     assert raised.value.__cause__ is not None
     if failure == "credential":
-        assert isinstance(raised.value.__cause__, McpCredentialRefusedError)
+        assert isinstance(raised.value.__cause__, TrackerAccessDeniedError)
+        assert isinstance(raised.value.__cause__.__cause__, McpCredentialRefusedError)
 
 
 async def test_missing_prefix_is_a_configuration_refusal():

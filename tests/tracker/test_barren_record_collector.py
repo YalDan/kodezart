@@ -8,7 +8,7 @@ import json
 import pytest
 
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.domain.errors import (
     CriterionReadError,
     LaneRecordReadError,
@@ -259,7 +259,7 @@ async def test_every_native_read_propagates_failure_or_cancellation(
             if cancel:
                 raise asyncio.CancelledError
             if method == "list_comments":
-                raise McpTransportError("unreadable", server_name="fixture")
+                raise TrackerUnavailableError("unreadable")
             raise CriterionReadError(issue_key=APPROVED_ISSUE, reason="unreadable")
         return await original(**kwargs)
 

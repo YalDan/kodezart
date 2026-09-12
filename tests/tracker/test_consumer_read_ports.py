@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from kodezart.core.errors import McpTransportError
+from kodezart.core.errors import TrackerUnavailableError
 from kodezart.core.protocols import (
     TrackerCommentReader,
     TrackerContextReader,
@@ -112,9 +112,7 @@ async def test_each_record_reader_preserves_failure_or_cancellation(
     tracker, monkeypatch, cancelled
 ):
     failure = (
-        asyncio.CancelledError()
-        if cancelled
-        else McpTransportError("unreadable", server_name="fixture")
+        asyncio.CancelledError() if cancelled else TrackerUnavailableError("unreadable")
     )
 
     async def fail(*, issue_key):

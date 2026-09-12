@@ -9,7 +9,10 @@ import pytest
 from kodezart.composition.tracker import build_tracker
 from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
-from kodezart.core.errors import McpTransportError, TrackerProtocolError
+from kodezart.core.errors import (
+    TrackerProtocolError,
+    TrackerUnavailableError,
+)
 from kodezart.core.protocols import McpToolResult, TrackerPort
 from kodezart.domain.errors import ScopeReadError
 from kodezart.types.domain.operation import OperationMemberAbsentError, ScopeLabel
@@ -246,7 +249,7 @@ async def test_missing_ancestry_refuses_instead_of_returning_false(
     else:
         del approval.server.initiatives[INITIATIVE.key]
         del approval.fake.scope_containers[INITIATIVE]
-    with pytest.raises((ScopeReadError, McpTransportError)):
+    with pytest.raises((ScopeReadError, TrackerUnavailableError)):
         await approval.tracker.execution_approved(issue_key=CHILD.key)
 
 
