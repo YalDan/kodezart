@@ -163,3 +163,19 @@ async def revalidate_criteria(
         "fire_spec": spec,
         "criterion_set": await source.read_current(spec=spec),
     }
+
+
+async def require_current_native_snapshot(
+    state: WorkflowState, *, reader: FireCriteriaReader | None
+) -> None:
+    """Permit a recorded judgment's effect only while its obligations hold."""
+    spec = state["fire_spec"]
+    if not isinstance(spec, TrackerSpec):
+        return
+    current = await current_native_criteria(spec=spec, reader=reader)
+    recorded = state["criterion_set"]
+    if not isinstance(recorded, TrackerCriterionSet) or current != recorded:
+        raise FireSpecEntryError(
+            issue_key=spec.subject,
+            reason="current tracker criteria differ from the evaluated snapshot",
+        )

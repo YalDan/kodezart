@@ -10,11 +10,13 @@ remember to route through, because there is no second path.
 
 from collections.abc import AsyncIterator
 
+from kodezart.chains.criteria import current_native_criteria
 from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptSetProvider
+from kodezart.core.protocols import AgentRunner, FireCriteriaReader, PromptSetProvider
 from kodezart.core.stream_drain import drain
+from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.remediation import done_work_summary
 from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.agent import (
@@ -50,8 +52,10 @@ class RemediationChain:
         *,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
+        criteria_reader: FireCriteriaReader | None = None,
     ) -> None:
         self._service: AgentRunner = service
+        self._criteria_reader = criteria_reader
         self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._log: BoundLogger = get_logger(__name__)
@@ -75,6 +79,13 @@ class RemediationChain:
         )
 
         native = isinstance(request.original_spec, TrackerSpec)
+        spec = request.original_spec
+        if isinstance(spec, TrackerSpec):
+            current = await current_native_criteria(
+                spec=spec,
+                reader=self._criteria_reader,
+            )
+            prompt += "\n\n" + tracker_checks_section(current)
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
                 prompt=prompt,

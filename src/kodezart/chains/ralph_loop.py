@@ -31,6 +31,7 @@ from kodezart.domain.fan_in import fan_in_report, require_permutation
 from kodezart.domain.prompt_variables import (
     changeset_variables,
     execution_criteria_variables,
+    tracker_checks_section,
 )
 from kodezart.domain.thread_id import ralph_thread_id
 from kodezart.domain.trajectory import fold_trajectory
@@ -46,6 +47,7 @@ from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.criteria import ExecutionCriterion, FanInReport
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.grading import IterationGrade
 from kodezart.types.domain.node_session import NodeInvocation
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunIdentity
@@ -236,10 +238,7 @@ class RalphLoop:
             )
 
         if native_criteria is not None:
-            prompt += "\n\n## Current tracker Checks\n" + "\n\n".join(
-                f"### {criterion.id}\n{criterion.text}"
-                for criterion in native_criteria.criteria
-            )
+            prompt += "\n\n" + tracker_checks_section(native_criteria)
 
         commit_sha: str | None = None
         async for event in self._service.stream_workflow(
@@ -274,13 +273,6 @@ class RalphLoop:
         config: RunnableConfig,
     ) -> dict[str, object]:
         ctx = RalphLoopContext.from_configurable(config)
-        criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
-        if ctx.tracker_spec is not None:
-            snapshot = await current_native_criteria(
-                spec=ctx.tracker_spec,
-                reader=self._criteria_reader,
-            )
-            criteria = list(snapshot.criteria)
         writer = get_stream_writer()
         cwd = (
             ctx.repo_path
@@ -295,12 +287,6 @@ class RalphLoop:
             base_ref=ctx.base_branch,
             head_ref=ctx.ralph_branch,
         )
-        eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
-            {
-                **execution_criteria_variables(criteria),
-                **changeset_variables(changeset),
-            },
-        )
 
         # The graph can retry this node after it already opened a session.
         # Give that execution a fresh invocation component; iteration and
@@ -308,7 +294,20 @@ class RalphLoop:
         node_execution = uuid4().hex
         evaluation_attempt = 0
 
-        async def evaluate() -> AcceptanceCriteriaOutput:
+        async def evaluate() -> IterationGrade:
+            criteria: list[ExecutionCriterion] = ctx.acceptance_criteria
+            if ctx.tracker_spec is not None:
+                snapshot = await current_native_criteria(
+                    spec=ctx.tracker_spec,
+                    reader=self._criteria_reader,
+                )
+                criteria = list(snapshot.criteria)
+            eval_prompt = self._prompts.template_for(PromptKey.EVALUATION).render(
+                {
+                    **execution_criteria_variables(criteria),
+                    **changeset_variables(changeset),
+                },
+            )
             nonlocal evaluation_attempt
             evaluation_attempt += 1
             observer = None
@@ -371,20 +370,18 @@ class RalphLoop:
                     rate_limit_rejected=rate_limit_rejected,
                 )
 
-            return AcceptanceCriteriaOutput.model_validate(
+            output = AcceptanceCriteriaOutput.model_validate(
                 result_event.structured_output,
             )
+            return grade_iteration(criteria, output)
 
-        output, unresolved, attempts = await until_permutation(
+        grade, unresolved, attempts = await until_permutation(
             dispatch=evaluate,
-            check=lambda candidate: require_permutation(
-                grade_iteration(criteria, candidate),
-            ),
+            check=require_permutation,
             max_attempts=self._fan_in_max_attempts,
             site="ralph_evaluator",
             log=self._log,
         )
-        grade = grade_iteration(criteria, output)
         fan_in: FanInReport | None = None
         if unresolved is not None:
             # The bound is spent: grade what came back against the

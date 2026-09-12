@@ -217,6 +217,7 @@ def build_workflow_engine(
         delay_floor_for=delay_floor_for,
     )
     remediator = RemediationChain(
+        criteria_reader=criteria,
         service=agent_service,
         prompts=prompts,
         skills=skills,

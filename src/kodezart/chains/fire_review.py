@@ -42,6 +42,7 @@ from kodezart.types.domain.criteria import (
     FanInReport,
 )
 from kodezart.types.domain.fire_spec import TrackerSpec
+from kodezart.types.domain.grading import IterationGrade
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
@@ -95,12 +96,6 @@ class FireReview:
 
         spec = current_fire_spec(state)
         criterion_set = state["criterion_set"]
-        if isinstance(spec, TrackerSpec):
-            criterion_set = await current_native_criteria(
-                spec=spec,
-                reader=self._criteria_reader,
-            )
-        criteria = validated_criteria({**state, "criterion_set": criterion_set})
         ctx = ExecutionContext.from_configurable(config)
         writer = get_stream_writer()
         cwd = await resolve_workflow_cwd(ctx, self._cache)
@@ -109,14 +104,21 @@ class FireReview:
             base_ref=review_base_sha,
             head_ref=review_head_sha,
         )
-        prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
-            {
-                **execution_criteria_variables(criteria),
-                **changeset_variables(changeset),
-            },
-        )
 
-        async def review() -> AcceptanceCriteriaOutput:
+        async def review() -> IterationGrade:
+            nonlocal criterion_set
+            if isinstance(spec, TrackerSpec):
+                criterion_set = await current_native_criteria(
+                    spec=spec,
+                    reader=self._criteria_reader,
+                )
+            criteria = validated_criteria({**state, "criterion_set": criterion_set})
+            prompt = self._prompts.template_for(PromptKey.POST_MERGE_REVIEW).render(
+                {
+                    **execution_criteria_variables(criteria),
+                    **changeset_variables(changeset),
+                },
+            )
             result_event, rate_limit_rejected = await drain(
                 self._service.stream(
                     prompt=prompt,
@@ -152,20 +154,18 @@ class FireReview:
                     rate_limit_rejected=rate_limit_rejected,
                 )
 
-            return AcceptanceCriteriaOutput.model_validate(
+            output = AcceptanceCriteriaOutput.model_validate(
                 result_event.structured_output,
             )
+            return grade_iteration(criteria, output)
 
-        output, unresolved, attempts = await until_permutation(
+        grade, unresolved, attempts = await until_permutation(
             dispatch=review,
-            check=lambda candidate: require_permutation(
-                grade_iteration(criteria, candidate),
-            ),
+            check=require_permutation,
             max_attempts=self._fan_in_max_attempts,
             site="post_merge_review",
             log=self._log,
         )
-        grade = grade_iteration(criteria, output)
         fan_in: FanInReport | None = None
         if unresolved is not None:
             # Same guard, same exhaustion arm as the loop's evaluator —

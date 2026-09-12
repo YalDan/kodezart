@@ -172,6 +172,7 @@ def engine(
     real_loop: bool = False,
     remediation_rounds: int = 0,
     max_iterations: int = 1,
+    fan_in_max_attempts: int = 1,
     checkpointer=None,
 ) -> RalphWorkflowEngine:
     """The fire engine, wired the way composition wires it, plus the stage."""
@@ -197,7 +198,7 @@ def engine(
             retry_max_attempts=1,
             retry_initial_interval=0,
             delay_floor_for=no_delay_floor,
-            fan_in_max_attempts=1,
+            fan_in_max_attempts=fan_in_max_attempts,
         )
     return RalphWorkflowEngine(
         specification=FireSpecification(
@@ -215,7 +216,9 @@ def engine(
             quality_gate=quality_gate
             or FakeQualityGate(
                 events=[],
-                evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
+                evaluation=AcceptanceCriteriaOutput.model_validate(
+                    native_evaluation(reconciled=True)
+                ),
                 last_commit_sha="a" * 40,
             ),
             prompts=prompts,
@@ -243,7 +246,10 @@ def engine(
         remediation=FireRemediation(
             remediator=(
                 RemediationChain(
-                    service=service, prompts=prompts, skills=SUPPRESS_ALL_SKILLS
+                    criteria_reader=criteria,
+                    service=service,
+                    prompts=prompts,
+                    skills=SUPPRESS_ALL_SKILLS,
                 )
                 if remediation_rounds
                 else None
@@ -346,7 +352,9 @@ def test_the_loop_is_unreachable_without_the_pre_loop_step() -> None:
 async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop() -> None:
     gate = FakeQualityGate(
         events=[],
-        evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
+        evaluation=AcceptanceCriteriaOutput.model_validate(
+            native_evaluation(reconciled=True)
+        ),
         last_commit_sha="a" * 40,
     )
     port = tracker(bodies={NESTED_OWED: "**Do:** a body that states no check"})
@@ -364,7 +372,9 @@ async def test_a_criterion_that_lost_its_check_stops_the_fire_before_the_loop() 
 async def test_valid_native_fire_reaches_shared_execution_with_tracker_checks() -> None:
     gate = FakeQualityGate(
         events=[],
-        evaluation=AcceptanceCriteriaOutput.model_validate(native_evaluation()),
+        evaluation=AcceptanceCriteriaOutput.model_validate(
+            native_evaluation(reconciled=True)
+        ),
         last_commit_sha="a" * 40,
     )
     fire = engine(criteria=TrackerCriteria(tracker=tracker()), quality_gate=gate)
@@ -509,13 +519,14 @@ async def test_a_criterion_the_fire_does_not_owe_is_not_revalidated() -> None:
 OWED_KEYS = (DIRECT_OWED, DIRECT_OWED_TOO, NESTED_OWED)
 
 
-def native_evaluation(*, failed: bool = False, checks=None):
+def native_evaluation(*, failed: bool = False, checks=None, reconciled=False):
+    """Script raw agent echoes or the quality gate's reconciled source text."""
     selected = checks or {key: check_of(key) for key in OWED_KEYS}
     return {
         "criteriaResults": [
             {
                 "criterionId": key,
-                "criterion": "an evaluator echo",
+                "criterion": selected[key] if reconciled else "an evaluator echo",
                 "passed": not failed,
                 "reasoning": "Observed the selected check.",
             }
