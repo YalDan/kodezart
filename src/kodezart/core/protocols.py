@@ -124,7 +124,12 @@ class GitSourceReader(Protocol):
 
 @runtime_checkable
 class GitService(Protocol):
-    """Git operations port — SubprocessGitService satisfies this."""
+    """Git operations port — SubprocessGitService satisfies this.
+
+    Unsuccessful command exits or invalid command responses raise the neutral
+    ``GitOperationError``; merge conflicts retain ``MergeConflictError``.
+    Argument validation and process startup failures keep their own types.
+    """
 
     async def validate_repo(self, repo_path: str) -> None: ...
 

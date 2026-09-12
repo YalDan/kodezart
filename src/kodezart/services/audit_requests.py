@@ -15,6 +15,7 @@ from kodezart.services.audit_collection import (
     AuditCandidateSnapshot,
     read_audit_candidate_snapshot,
 )
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES
 from kodezart.services.lane_records import LaneRecordReader
 from kodezart.types.domain.audit import AuditClaimRequest
 from kodezart.types.domain.audit_terminal import AuditTerminalRequest
@@ -152,7 +153,7 @@ class AuditRequestReader:
                         ):
                             raise AuditClaimReadError("the native owning issue changed")
                         sources[owner_key] = await self._lane(owner)
-                    except Exception as exc:
+                    except AUDIT_READ_FAILURES as exc:
                         failures[owner_key] = f"{type(exc).__name__}: {exc}"
                 if owner_key in failures:
                     reason = failures[owner_key]

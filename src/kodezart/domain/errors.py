@@ -26,6 +26,10 @@ class IssueLabelReadError(Exception):
         super().__init__(f"issue label {classification!r} could not be read: {reason}")
 
 
+class GitOperationError(RuntimeError):
+    """A Git command failed or returned an invalid provider response."""
+
+
 class GitSourceReadError(Exception):
     """The requested immutable repository object cannot supply source bytes."""
 
