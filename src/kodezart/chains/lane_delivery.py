@@ -124,25 +124,8 @@ class LaneDeliveryCoordinator:
         if len(matches) > 1:
             raise ValueError("delivery repository declarations are ambiguous")
         repository = matches[0] if matches else None
-        cwd = context.repo_path or "."
-        remote_sha = await self._git.remote_branch_sha(cwd, repo_url, head)
-        if remote_sha != sha:
-            raise DeliveryHeadError(
-                issue_id=issue_id,
-                branch=head,
-                expected_sha=sha,
-                observed_sha=remote_sha,
-            )
+        await self._require_remote_refs(state, context)
         base = context.base_branch
-        if await self._git.remote_branch_sha(cwd, repo_url, base) is None:
-            raise BaseResolutionError(
-                "The dispatch-resolved base is absent from the remote",
-                issue_id=issue_id,
-                branches=(base,),
-                blocker_issue_ids=tuple(
-                    item.blocker_issue_id for item in context.base_spec.inputs
-                ),
-            )
         existing = await self._forge_query.open_pr_for_head(
             repo_url=repo_url, head=head
         )
@@ -233,6 +216,37 @@ class LaneDeliveryCoordinator:
                 )
         return result
 
+    async def _require_remote_refs(
+        self, state: WorkflowState, context: ExecutionContext
+    ) -> None:
+        issue_id, sha, repo_url = (
+            state["issue_key"],
+            state["feature_tip_sha"],
+            context.repo_url,
+        )
+        if issue_id is None or sha is None or repo_url is None:
+            raise ValueError("Delivery remote checks require their captured address")
+        head = state["feature_branch"]
+        cwd = context.repo_path or "."
+        remote_sha = await self._git.remote_branch_sha(cwd, repo_url, head)
+        if remote_sha != sha:
+            raise DeliveryHeadError(
+                issue_id=issue_id,
+                branch=head,
+                expected_sha=sha,
+                observed_sha=remote_sha,
+            )
+        base = context.base_branch
+        if await self._git.remote_branch_sha(cwd, repo_url, base) is None:
+            raise BaseResolutionError(
+                "The dispatch-resolved base is absent from the remote",
+                issue_id=issue_id,
+                branches=(base,),
+                blocker_issue_ids=tuple(
+                    item.blocker_issue_id for item in context.base_spec.inputs
+                ),
+            )
+
     async def _open_pr(self, state: WorkflowState, ctx: ExecutionContext) -> LanePR:
         repo_url = ctx.repo_url
         if repo_url is None:
@@ -295,6 +309,7 @@ class LaneDeliveryCoordinator:
             state["issue_key"],
         )
         await require_current_native_snapshot(state, reader=self._criteria_reader)
+        await self._require_remote_refs(state, ctx)
         url, number = await self._pr_creator.create_pr(
             repo_url=repo_url,
             title=title,
