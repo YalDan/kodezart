@@ -105,10 +105,10 @@ class TestLifecycleWrites:
         )
         assert tracker.workflow_writes == [("K-1", LifecycleStage.IN_REVIEW)]
 
-    async def test_a_verified_merge_is_the_terminal_transition(self) -> None:
+    async def test_a_verified_merge_retires_only_the_queue_entry(self) -> None:
         write, tracker = writer()
         await write.on_verified_merge(issue_key="K-1")
-        assert tracker.workflow_writes == [("K-1", LifecycleStage.DONE)]
+        assert tracker.workflow_writes == []
         assert tracker.queue_writes == [("K-1", QueueState.DONE)]
 
     async def test_approval_is_never_demoted_before_the_terminal_write(self) -> None:
@@ -227,7 +227,6 @@ class TestTheDeliverableRef:
         assert conflict["offered_branch"] == FEATURE_BRANCH
         assert tracker.workflow_writes == [
             ("K-1", LifecycleStage.IN_REVIEW),
-            ("K-1", LifecycleStage.DONE),
         ]
         assert tracker.queue_writes == [("K-1", QueueState.DONE)]
 

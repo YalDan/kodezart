@@ -545,9 +545,8 @@ class LifecycleWatcher:
             )
             return
         if isinstance(event, WorkflowCompleteEvent):
-            # Order matters: the terminal comment reports the outcome of a
-            # run whose state transitions have already landed, so a reader
-            # who sees the comment never sees a stale state beside it.
+            # The queue disposition precedes its report. A merged branch
+            # does not establish the parent's current criterion closure.
             if event.merged:
                 await self._writer.on_verified_merge(issue_key=issue_key)
             await self._writer.on_terminal_outcome(
