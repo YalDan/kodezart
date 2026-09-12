@@ -11,7 +11,10 @@ assertions about the wire are not pins of stripped output and are never
 deleted with the mechanism they outlived.
 """
 
+import ast
 import re
+import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -32,6 +35,7 @@ from kodezart.types.domain.agent import (
     TicketReviewOutput,
 )
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
+from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,7 +46,9 @@ SRC = REPO_ROOT / "src" / "kodezart"
 #: pattern reads the dispatch site as text, so a site that inlines a raw
 #: ``model_json_schema()`` call is caught by the same check that catches a
 #: site filtering a schema through a stripper.
-SCHEMA_ARGUMENT = re.compile(r'"schema"\s*:\s*([A-Za-z_][A-Za-z0-9_.()\[\]]*)')
+SCHEMA_ARGUMENT = re.compile(
+    r'(?:"schema"\s*:\s*|output_schema\s*=\s*)([A-Za-z_][A-Za-z0-9_.()\[\]]*)'
+)
 #: The deleted stripper's call shape, kept as text: a dispatch site that
 #: re-introduces a keyword filter under the old name is rejected by the
 #: same sweep that rejects an unrostered schema.
@@ -65,6 +71,7 @@ WIRE_MODELS: dict[str, type[BaseModel]] = {
     "PR_DESCRIPTION_SCHEMA": PRDescriptionOutput,
     "CONTENT_AUDIT_SCHEMA": ContentAuditOutput,
     "DRAFT_CRITIQUE_SCHEMA": DraftCritiqueOutput,
+    "WRITE_BACK_SCHEMA": WriteBackFinding,
 }
 
 
@@ -184,16 +191,18 @@ def test_the_wire_schema_roster_is_every_precomputed_schema() -> None:
 def test_every_dispatch_site_sends_the_models_own_schema() -> None:
     """Every site names a roster schema; none filters or builds its own."""
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path, source in source_files().items():
+        forwarded = audit_forwarding_lines(source, relative_path=path)
         for line_number, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(),
+            source.splitlines(),
             start=1,
         ):
             for argument in SCHEMA_ARGUMENT.findall(line):
-                if not is_rostered_argument(argument):
+                if not is_rostered_argument(argument) and not (
+                    argument == "output_schema" and line_number in forwarded
+                ):
                     offenders.append(
-                        f"{path.relative_to(REPO_ROOT).as_posix()}:{line_number}"
-                        f" sends {argument}"
+                        f"src/kodezart/{path}:{line_number} sends {argument}"
                     )
     assert offenders == []
 
@@ -223,3 +232,185 @@ def test_every_dispatch_site_is_accounted_for() -> None:
         for argument in SCHEMA_ARGUMENT.findall(path.read_text(encoding="utf-8"))
     ]
     assert len(sites) >= len(WIRE_SCHEMAS)
+
+
+def source_files():
+    return {
+        path.relative_to(SRC).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(SRC.rglob("*.py"))
+    }
+
+
+def scoped_calls(source: str):
+    """Retain lexical owners so shared forwarding never exempts another call."""
+
+    class Calls(ast.NodeVisitor):
+        def __init__(self):
+            self.scope = []
+            self.calls = []
+
+        def visit_ClassDef(self, node):
+            self.scope.append(node.name)
+            self.generic_visit(node)
+            self.scope.pop()
+
+        def visit_FunctionDef(self, node):
+            self.scope.append(node.name)
+            self.generic_visit(node)
+            self.scope.pop()
+
+        def visit_AsyncFunctionDef(self, node):
+            self.visit_FunctionDef(node)
+
+        def visit_Lambda(self, node):
+            self.scope.append("<lambda>")
+            self.generic_visit(node)
+            self.scope.pop()
+
+        def visit_Call(self, node):
+            self.calls.append((tuple(self.scope), node))
+            self.generic_visit(node)
+
+    visitor = Calls()
+    visitor.visit(ast.parse(source))
+    return visitor.calls
+
+
+def audit_forwarding_lines(source: str, *, relative_path: str) -> set[int]:
+    """Only the actual shared dispatch forwards its caller-provided schema."""
+    if relative_path != "services/audit_sessions.py":
+        return set()
+    lines = set()
+    for scope, call in scoped_calls(source):
+        target = ast.unparse(call.func)
+        for keyword in call.keywords:
+            if (
+                scope != ("judge_in_workspace",)
+                or target != "runner.stream_in_workspace"
+                or keyword.arg != "output_format"
+                or not isinstance(keyword.value, ast.Dict)
+            ):
+                continue
+            for key, value in zip(
+                keyword.value.keys, keyword.value.values, strict=True
+            ):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "schema"
+                    and isinstance(value, ast.Name)
+                    and value.id == "output_schema"
+                ):
+                    lines.add(value.lineno)
+    return lines
+
+
+def audit_schema_bindings(source: str, *, relative_path: str):
+    """Each actual shared-helper caller supplies its own exact model schema."""
+    return [
+        (relative_path, scope, ast.unparse(call.func), ast.unparse(keyword.value))
+        for scope, call in scoped_calls(source)
+        for keyword in call.keywords
+        if keyword.arg == "output_schema"
+    ]
+
+
+AUDIT_SCHEMA_BINDINGS = [
+    (
+        "chains/write_back_verifier.py",
+        ("FreshWriteBackJudge", "judge"),
+        "judge_in_workspace",
+        "WRITE_BACK_SCHEMA",
+    ),
+]
+
+
+def test_only_the_actual_owned_audit_forwarding_site_is_registered():
+    path = SRC / "services" / "audit_sessions.py"
+    source = path.read_text(encoding="utf-8")
+    forwarded = audit_forwarding_lines(
+        source, relative_path="services/audit_sessions.py"
+    )
+    assert len(forwarded) == 1
+    assert not is_rostered_argument("output_schema")
+    for line in forwarded:
+        assert "output_schema" in SCHEMA_ARGUMENT.findall(source.splitlines()[line - 1])
+
+
+def test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain():
+    bindings = [
+        binding
+        for path, source in source_files().items()
+        for binding in audit_schema_bindings(source, relative_path=path)
+    ]
+    assert Counter(bindings) == Counter(AUDIT_SCHEMA_BINDINGS)
+
+
+@pytest.mark.parametrize(
+    "damage", ["path", "owner", "nested", "lambda", "target", "filter", "wrong"]
+)
+def test_audit_schema_forwarding_registration_is_scoped_and_unfiltered(damage):
+    source = (
+        "async def judge_in_workspace():\n"
+        "    return runner.stream_in_workspace(\n"
+        '        output_format={"schema": output_schema})\n'
+    )
+    path = "services/audit_sessions.py"
+    assert len(audit_forwarding_lines(source, relative_path=path)) == 1
+    if damage == "path":
+        path = "chains/other.py"
+    elif damage == "owner":
+        source = source.replace("async def judge", "async def unrelated")
+    elif damage == "nested":
+        indentation = "    "
+        source = source.replace(
+            indentation + "return",
+            indentation + "def unrelated():\n" + indentation + "    return",
+        )
+    elif damage == "lambda":
+        source = source.replace("return ", "return lambda: ")
+    elif damage == "target":
+        source = source.replace(
+            "return judge_in_workspace", "return unrelated"
+        ).replace("runner.stream_in_workspace", "unrelated.stream_in_workspace")
+    elif damage == "filter":
+        source = source.replace(
+            "=output_schema)", "=sanitize_schema(output_schema))"
+        ).replace('"schema": output_schema', '"schema": sanitize_schema(output_schema)')
+    else:
+        source = source.replace("=output_schema)", "=AUDIT_CLAIM_SCHEMA)").replace(
+            '"schema": output_schema', '"schema": AUDIT_CLAIM_SCHEMA'
+        )
+    assert audit_forwarding_lines(source, relative_path=path) == set()
+
+
+@pytest.mark.parametrize("damage", ["caller", "filter", "unrelated", "missing"])
+def test_actual_writeback_dispatch_census_rejects_changed_source(monkeypatch, damage):
+    sources = source_files()
+    if damage == "caller":
+        sources["chains/write_back_verifier.py"] = sources[
+            "chains/write_back_verifier.py"
+        ].replace(
+            "output_schema=WRITE_BACK_SCHEMA", "output_schema=COMMIT_MESSAGE_SCHEMA"
+        )
+        guard = (
+            test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain
+        )
+    elif damage == "missing":
+        sources.pop("chains/write_back_verifier.py")
+        guard = (
+            test_shared_judgment_callers_keep_their_exact_schema_and_forwarding_chain
+        )
+    else:
+        path = (
+            "services/audit_sessions.py" if damage == "filter" else "services/other.py"
+        )
+        sources[path] = sources["services/audit_sessions.py"].replace(
+            '"schema": output_schema',
+            '"schema": sanitize_schema(output_schema)'
+            if damage == "filter"
+            else '"schema": output_schema',
+        )
+        guard = test_every_dispatch_site_sends_the_models_own_schema
+    monkeypatch.setattr(sys.modules[__name__], "source_files", lambda: sources)
+    with pytest.raises(AssertionError):
+        guard()

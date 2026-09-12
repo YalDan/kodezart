@@ -327,3 +327,28 @@ config.
 > replacement for the configurable dict pattern. The codebase pins
 > `langgraph>=0.2.0` and does not use `config_schema`. This pattern may need
 > migration in future LangGraph versions.
+
+## Shared tracker write verification
+
+`WriteBackVerifier` drives an explicitly bounded write, reread, fresh judgment,
+and repair sequence. Its `WriteBackStep` owns the addressed write and its existing
+lease and outbound-content preconditions. `WriteBackJudge` receives the exact
+artifact returned by the tracker and the caller's repository ref. A successful
+write call alone cannot settle the artifact's claims. Exhaustion returns
+`unverifiable` with every actual finding in order, including refutations and
+their checked references.
+
+`FreshWriteBackJudge` uses the registered `write_back_verify` role through
+`AgentService`, with no resumed session and the existing read-only evaluation
+tool policy. It owns a detached workspace at a complete commit SHA, checks head,
+dirtiness and native Git replacement refs before and after judgment, and settles
+owned reads and workspace cleanup before propagating cancellation.
+
+The initial extracted artifact reader supports issue descriptions, exact
+marker-keyed comments and container descriptions. Other declared surfaces raise
+`WriteBackReadError` before the step writes. Label and criterion readback remain
+an explicit shared-reader increment after the native-read port prerequisites;
+graph and split readers belong to their later Organize integration. This slice
+does not add scheduler consumers, state transitions, content-gate bypasses or
+backend fencing. Configured adoption of the shared verification bound and every
+lane's actual writer remains with those consumers.

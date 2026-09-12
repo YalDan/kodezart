@@ -38,6 +38,7 @@ class PromptKey(StrEnum):
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
     CONTENT_AUDIT = "content_audit"
+    WRITE_BACK_VERIFY = "write_back_verify"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level
     #: fragment metadata, so it enters this census and the set-completeness
