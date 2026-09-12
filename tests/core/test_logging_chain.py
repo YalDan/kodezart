@@ -282,3 +282,27 @@ async def test_the_console_renderer_also_names_the_frames() -> None:
         "ConsoleRenderer was handed a pre-formatted exception; "
         "the coloured traceback this deployment exists for is gone"
     )
+
+
+async def test_pretty_tracebacks_do_not_render_live_workflow_locals() -> None:
+    """Formatting diagnostics must not traverse live graph/workspace objects."""
+
+    class LiveWorkflow:
+        def __init__(self) -> None:
+            self.repr_calls = 0
+
+        def __repr__(self) -> str:
+            self.repr_calls += 1
+            return "a live workflow with arbitrary user-defined repr work"
+
+    workflow = LiveWorkflow()
+    with configured_chain(pretty=True) as buffer:
+        log = get_logger("kodezart.tests.logging_chain")
+        try:
+            raise RuntimeError(FAILURE)
+        except RuntimeError:
+            await log.aexception("job_failed", job_id="job-0001")
+
+    assert workflow.repr_calls == 0
+    assert FAILURE in buffer.getvalue()
+    assert "test_logging_chain" in buffer.getvalue()
