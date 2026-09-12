@@ -59,6 +59,7 @@ from kodezart.core.errors import (
     McpSessionClosedError,
     McpTransportError,
 )
+from tests.core.test_logging_chain import configured_chain
 
 _FIXTURE_TOKEN: Final[str] = "fixture-tracker-token"
 _ERROR_DETAIL_LIMIT: Final[int] = 500
@@ -1574,8 +1575,10 @@ class TestWorkersHitByOneDropShareOneReopen:
         assert [log["event"] for log in logs].count("mcp_session_reopened") == 1
         await caller.close()
 
+    @pytest.mark.parametrize("pretty", [False, True])
     async def test_a_call_arriving_during_a_siblings_reopen_rides_its_session(
         self,
+        pretty: bool,
     ) -> None:
         """A worker meeting a reopen in progress waits for it, not for a refusal.
 
@@ -1583,32 +1586,42 @@ class TestWorkersHitByOneDropShareOneReopen:
         which the record path reads as a payload to fix rather than a
         transport to reopen (KOD-177).
         """
-        server = _FakeStreamableServer(
-            on_call=_CallBehaviour.DROPS_ONCE,
-            hold_reopens=True,
-        )
-        caller = caller_fixture(client_factory=client_over(server.transport))
-        await caller.open()
-        # The call the drop lands under is told, not re-sent (KOD-305); it
-        # is the NEXT one that pays for the reopen the sibling then meets.
-        with pytest.raises(McpCallUnansweredError):
-            await caller.call_tool(name="get_issue", arguments={})
-        first = asyncio.create_task(caller.call_tool(name="get_issue", arguments={}))
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            while server.requests.count("initialize") < 2:
+        with configured_chain(pretty=pretty) as rendered:
+            server = _FakeStreamableServer(
+                on_call=_CallBehaviour.DROPS_ONCE,
+                hold_reopens=True,
+            )
+            caller = caller_fixture(client_factory=client_over(server.transport))
+            await caller.open()
+            # The call the drop lands under is told, not re-sent (KOD-305); it
+            # is the NEXT one that pays for the reopen the sibling then meets.
+            with pytest.raises(McpCallUnansweredError):
+                await caller.call_tool(name="get_issue", arguments={})
+            first = asyncio.create_task(
+                caller.call_tool(name="get_issue", arguments={})
+            )
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                while server.requests.count("initialize") < 2:
+                    await asyncio.sleep(0)
+
+            second = asyncio.create_task(
+                caller.call_tool(name="list_issues", arguments={})
+            )
+            for _ in range(_SETTLE_TURNS):
                 await asyncio.sleep(0)
+            assert not second.done(), "the sibling was answered before the session was"
+            server.release_reopen.set()
+            async with asyncio.timeout(_HANG_CEILING_SECONDS):
+                results = [await first, await second]
 
-        second = asyncio.create_task(caller.call_tool(name="list_issues", arguments={}))
-        for _ in range(_SETTLE_TURNS):
-            await asyncio.sleep(0)
-        assert not second.done(), "the sibling was answered before the session was"
-        server.release_reopen.set()
-        async with asyncio.timeout(_HANG_CEILING_SECONDS):
-            results = [await first, await second]
-
-        assert results == [{"id": "K-1"}, {"id": "K-1"}]
-        assert server.requests.count("initialize") == 2, "the sibling dialled its own"
-        await caller.close()
+            assert results == [{"id": "K-1"}, {"id": "K-1"}]
+            assert server.requests.count("initialize") == 2, (
+                "the sibling dialled its own"
+            )
+            await caller.close()
+        assert "mcp_session_ended" in rendered.getvalue()
+        assert "hosted_mcp_session.py" in rendered.getvalue()
+        assert "the server dropped the stream mid-call" in rendered.getvalue()
 
     async def test_siblings_of_a_failed_reopen_each_try_their_own(self) -> None:
         """The paired negative: once per CALL, and a failed reopen serves nobody.
