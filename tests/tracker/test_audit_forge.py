@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from kodezart.chains.audit_forge import AuditForgeVerifier
 from kodezart.core.config import AppConfig
-from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.errors import AuditEvidenceReadError, ForgeAPIError
 from kodezart.types.domain.audit import AuditVerdict
 from kodezart.types.domain.audit_forge import AuditForgeObservation, AuditForgeRequest
 from kodezart.types.domain.delivery import CheckRedClass
@@ -400,7 +400,9 @@ async def test_contradictory_or_failed_port_evidence_is_not_a_classified_red(
 
         async def changed(**kwargs):
             if damage == "reader-error":
-                raise OSError("forge read failed")
+                raise ForgeAPIError(
+                    "forge read failed", status_code=None, detail="fixture CI watch"
+                )
             row = await original(**kwargs)
             values = row.model_dump()
             if damage == "failed-names":

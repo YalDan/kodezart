@@ -1,7 +1,8 @@
 """Read actual grading and branch sources before judging deleted detection."""
 
 from kodezart.core.protocols import GitSourceReader, PromptSetProvider
-from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES
 from kodezart.services.audit_sessions import FreshAuditSession
 from kodezart.services.audit_sources import AuditSourceReader, AuditSourceSnapshot
 from kodezart.types.domain.agent import DETECTOR_REMOVAL_SCHEMA
@@ -42,19 +43,25 @@ class DetectorRemovalVerifier:
             baseline.commit_sha != snapshot.evidence.graded_sha
             or baseline.path != quote.path
         ):
-            raise ValueError("the baseline excerpt belongs to another source")
+            raise AuditClaimReadError("the baseline excerpt belongs to another source")
         quoted = quote.text.encode("utf-8")
         lines = baseline.content.splitlines(keepends=True)
         if not b"".join(lines[quote.line - 1 :]).startswith(quoted):
-            raise ValueError("the excerpt is not exact source at its stated line")
+            raise AuditClaimReadError(
+                "the excerpt is not exact source at its stated line"
+            )
         current = await self._git.find_source(
             cwd=snapshot.repository, commit_sha=snapshot.head_sha, path=quote.path
         )
         if current is not None:
             if current.commit_sha != snapshot.head_sha or current.path != quote.path:
-                raise ValueError("the current excerpt belongs to another source")
+                raise AuditClaimReadError(
+                    "the current excerpt belongs to another source"
+                )
             if quoted in current.content:
-                raise ValueError("a reported removal is still present at the head")
+                raise AuditClaimReadError(
+                    "a reported removal is still present at the head"
+                )
 
     async def observe(self, request: AuditClaimRequest) -> DetectorRemovalObservation:
         """Inspect real revisions, then validate source quotations and coherence."""
@@ -79,7 +86,9 @@ class DetectorRemovalVerifier:
             )
             judgment = DetectorRemovalJudgment.model_validate(payload)
             if judgment.criterion_key != snapshot.criterion.issue_key:
-                raise ValueError("the detector judgment names another criterion")
+                raise AuditClaimReadError(
+                    "the detector judgment names another criterion"
+                )
             for finding in judgment.findings:
                 await self._require_removed_quote(snapshot, finding.mechanism)
                 await self._require_removed_quote(snapshot, finding.detector)
@@ -93,7 +102,7 @@ class DetectorRemovalVerifier:
             )
         except AuditEvidenceReadError:
             raise
-        except Exception as exc:
+        except AUDIT_READ_FAILURES as exc:
             raise AuditEvidenceReadError(
                 criterion_key=request.criterion_key, reason=str(exc)
             ) from exc

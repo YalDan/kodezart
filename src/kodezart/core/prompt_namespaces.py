@@ -265,7 +265,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     # exactly the run kinds (refused otherwise at load, KOD-170), so every
     # kind binds the house pair — the declared destination, or the named
     # absence a pass renders its record-nothing arm from.  No whole-registry
-    # marker exists: an empty [records] table IS three named absences, and
+    # marker exists: an empty [records] table IS one named absence per run kind, and
     # the RunRecorder routes off the same declaration this binds.
     records_namespace: dict[str, object] = {}
     for kind in RunKind:

@@ -3,9 +3,9 @@
 from kodezart.chains.audit_pass import AuditClaimVerifier
 from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import GitService, GitSourceReader, RepoCache, TrackerPort
-from kodezart.domain.criterion_evidence import parse_criterion_evidence
-from kodezart.domain.errors import AuditEvidenceReadError
+from kodezart.domain.errors import AuditClaimReadError, AuditEvidenceReadError
 from kodezart.domain.fire_spec import criterion_check
+from kodezart.services.audit_failures import AUDIT_READ_FAILURES, parse_audit_evidence
 from kodezart.services.criterion_sources import resolve_criterion
 from kodezart.services.git_observations import read_replace_refs
 from kodezart.services.lane_records import LaneRecordReader
@@ -64,12 +64,16 @@ class AuditEvidenceVerifier:
         async def observe() -> str:
             await self._git.fetch(repository)
             if await read_replace_refs(git=self._git, workspace=repository):
-                raise ValueError("the Evidence repository substitutes Git objects")
+                raise AuditClaimReadError(
+                    "the Evidence repository substitutes Git objects"
+                )
             head = await self._git.remote_branch_sha(repository, self._remote, branch)
             if not head:
-                raise ValueError("the recorded branch has no live remote head")
+                raise AuditClaimReadError("the recorded branch has no live remote head")
             if await self._source.resolve_commit(cwd=repository, ref=head) != head:
-                raise ValueError("the remote head did not resolve to the same commit")
+                raise AuditClaimReadError(
+                    "the remote head did not resolve to the same commit"
+                )
             if completed:
                 if (
                     await self._source.resolve_commit(
@@ -77,11 +81,15 @@ class AuditEvidenceVerifier:
                     )
                     != evidence.graded_sha
                 ):
-                    raise ValueError("the graded reference is not its recorded commit")
+                    raise AuditClaimReadError(
+                        "the graded reference is not its recorded commit"
+                    )
                 if not await self._git.is_ancestor(
                     repository, evidence.graded_sha, head
                 ):
-                    raise ValueError("the graded commit is not on the recorded branch")
+                    raise AuditClaimReadError(
+                        "the graded commit is not on the recorded branch"
+                    )
             return head
 
         head = await settle(observe())
@@ -93,7 +101,7 @@ class AuditEvidenceVerifier:
             return await self._observe(request)
         except AuditEvidenceReadError:
             raise
-        except Exception as exc:
+        except AUDIT_READ_FAILURES as exc:
             raise AuditEvidenceReadError(
                 criterion_key=request.criterion_key, reason=str(exc)
             ) from exc
@@ -106,8 +114,10 @@ class AuditEvidenceVerifier:
             or criterion.state_name
             != self._operation.workflow_states.get(LifecycleStage.IN_REVIEW)
         ):
-            raise ValueError("a completed or configured review claim is required")
-        evidence = parse_criterion_evidence(criterion.body)
+            raise AuditClaimReadError(
+                "a completed or configured review claim is required"
+            )
+        evidence = parse_audit_evidence(criterion.body)
         comment, record = await self._records.read(
             issue_key=request.lane_issue_key,
             lane_key=request.lane_key,
@@ -128,29 +138,37 @@ class AuditEvidenceVerifier:
         verdict = AuditVerdict.UNVERIFIABLE
         if not completed or evidence.graded_sha == head:
             claim = await self._claims.verify(
-                request.model_copy(update={"record_ref": comment.comment_key})
+                AuditClaimRequest.model_validate(
+                    {**request.model_dump(), "record_ref": comment.comment_key}
+                )
             )
             if claim.check != criterion_check(
                 criterion=criterion, issue_key=request.lane_issue_key
             ):
-                raise ValueError("the fresh claim examined a different Check")
+                raise AuditClaimReadError("the fresh claim examined a different Check")
             verdict = claim.judgment.verdict
         if await self._criterion(request) != criterion:
-            raise ValueError("the criterion changed during Evidence verification")
+            raise AuditClaimReadError(
+                "the criterion changed during Evidence verification"
+            )
         latest_record = await self._records.read(
             issue_key=request.lane_issue_key,
             lane_key=request.lane_key,
             record_ref=comment.comment_key,
         )
         if latest_record != (comment, record):
-            raise ValueError("the lane record changed during Evidence verification")
+            raise AuditClaimReadError(
+                "the lane record changed during Evidence verification"
+            )
         latest_head = await settle(
             self._git.remote_branch_sha(repository, self._remote, record.branch)
         )
         if latest_head != head:
-            raise ValueError("the remote head changed during Evidence verification")
+            raise AuditClaimReadError(
+                "the remote head changed during Evidence verification"
+            )
         if await read_replace_refs(git=self._git, workspace=repository):
-            raise ValueError("the Evidence repository substitutes Git objects")
+            raise AuditClaimReadError("the Evidence repository substitutes Git objects")
         return AuditEvidenceObservation(
             criterion=criterion,
             recorded_evidence=evidence,

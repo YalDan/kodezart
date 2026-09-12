@@ -6,7 +6,8 @@ from dataclasses import replace
 import pytest
 
 from kodezart.core.constants import EVAL_PERMISSION_MODE
-from kodezart.domain.errors import AuditClaimReadError
+from kodezart.core.errors import TrackerUnavailableError
+from kodezart.domain.errors import AgentSDKError, AuditClaimReadError
 from kodezart.domain.lane_record import render_lane_record
 from kodezart.types.domain.agent import AUDIT_MANDATE_SCHEMA
 from kodezart.types.domain.audit import AuditVerdict
@@ -69,7 +70,7 @@ async def test_native_terminal_refutation_reuses_actual_mandate_hunt(
             if fail and issue_key == CHILD:
                 fail = False
                 failed = True
-                raise RuntimeError("native body temporarily unreadable")
+                raise TrackerUnavailableError("native body temporarily unreadable")
             return await original_get(issue_key=issue_key)
 
         monkeypatch.setattr(sweep._terminals, "observe", observe)
@@ -138,7 +139,9 @@ async def test_mandate_failure_retains_native_terminal_and_refuses_complete_repo
 
         async def during(kwargs):
             if kwargs["output_format"]["schema"] == AUDIT_MANDATE_SCHEMA:
-                raise RuntimeError("actual mandate session unavailable")
+                raise AgentSDKError(
+                    "actual mandate session unavailable", error_kind="fixture"
+                )
 
         executor.during = during
     else:

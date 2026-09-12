@@ -766,3 +766,44 @@ The retired flat `write_back_max_verify_rounds` field and its uppercase
 `KODEZART_` environment spelling are refused; migrate to the nested spelling.
 Deployments without a configured tracker-writing owner can leave the section
 absent. A configured owner with no verification budget refuses at startup.
+
+
+## Native Audit scheduling
+
+Audit uses its own explicit `[[audit_scopes]]` operation rows. Each row declares
+`scope` (a typed native scope), `repo_url` matching one declared repository, and
+`report_issue_key` naming the native tracker destination for the verified scope
+summary. Organize bindings do not supply this roster. Duplicate scope bindings
+and repository ambiguity refuse configuration.
+
+Set required positive `KODEZART_AUDIT__TIMEOUT_SECONDS` and the shared
+`KODEZART_WRITE_BACK__MAX_VERIFY_ROUNDS` (1 through 10); neither has a default.
+`KODEZART_AUDIT` also accepts a JSON object with `timeout_seconds`. The existing
+`audit_sweep_interval_seconds` and `audit_full_sweep_interval_seconds` control the
+actual scheduled tick and periodic full coverage. The scheduler owns timing.
+
+Configured Audit also requires the actual tracker and forge reader, the
+`audit` and `escalation` marker prefixes, the `decision` issue classification,
+and the configured `in_review` workflow state. Partial configuration refuses
+preflight before queue startup. With both roster and settings absent, the named
+`audit_pass_not_wired` event records `audit_unconfigured`.
+
+The additive `audit` run kind uses the existing per-kind recorder interface.
+Currently `records.audit` explicitly refuses at startup: generic record sinks
+lack the canonical publication verification contract. Native subject comments
+and the scope summary instead use the canonical reread, fresh judge and bounded
+repair loop. A verified summary references actual verified native records; only
+completed selections advance the disposable coverage cache. This restriction
+is a remaining generic recorder implementation gap, not a new operator policy.
+
+Audit publishes completed observations without applying workflow transitions.
+Unverifiable claims make no claim-publication write. A published refutation
+retains incomplete coverage while its workflow-state authority is unresolved;
+unknown native lapse classification likewise remains explicit unavailability.
+Neither case manufactures a classification or marks a criterion Done.
+
+Audit summaries carry the actual addressed record snapshots as well as their
+native references. Those records are reread before summary publication and after
+its verification; missing or changed records leave coverage incomplete. The same
+privacy gate checks the complete summary payload. These freshness checks do not
+provide backend compare-and-set or fence an already issued write.

@@ -172,3 +172,30 @@ def test_coverage_adds_no_clock_or_numeric_policy():
         if isinstance(node, ast.Attribute)
         and node.attr in {"sleep", "now", "time", "monotonic"}
     ]
+
+
+@pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
+async def test_failed_publication_completion_does_not_advance_visited_selection(
+    failure,
+):
+    service = AuditCoverage(config=CONFIG)
+    seen = []
+
+    async def visit_all(candidate):
+        seen.append(candidate.issue_key)
+
+    async def publish(selected):
+        assert [candidate.issue_key for candidate in selected.covered] == seen
+        raise failure()
+
+    with pytest.raises(failure):
+        await service.cover(
+            scope=SCOPE,
+            candidates=[row("a"), row("b")],
+            observed_at=NOW,
+            visit=visit_all,
+            complete=publish,
+        )
+    assert seen == ["a", "b"]
+    replay = await cover(service, [row("a"), row("b")], 60)
+    assert replay.full and replay.covered == (row("a"), row("b"))
