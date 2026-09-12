@@ -18,6 +18,7 @@ from kodezart.core.protocols import (
     TrackerPort,
     WorkspaceProvider,
 )
+from kodezart.domain.fire_spec import criterion_check
 from kodezart.domain.amendment import (
     AmendmentRequiresWriteError,
     NativeWriteRefusalError,
@@ -38,7 +39,7 @@ from kodezart.types.domain.amendment import (
     NativeWriterStart,
     UpheldAmendment,
 )
-from kodezart.types.domain.criteria import TrackerCriterionSet
+from kodezart.types.domain.criteria import TrackerCriterion, TrackerCriterionSet
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.operation import (
     CheckPrerequisite,
@@ -49,6 +50,7 @@ from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
 from kodezart.types.domain.skills import SkillsSelection
+from kodezart.types.domain.tracker import TrackerComment, TrackerIssue, WorkflowStateKind
 
 
 class NativeAmendments:
@@ -104,7 +106,9 @@ class NativeAmendments:
             environment=environment,
         )
 
-    async def _read_rulings(self, spec: TrackerSpec) -> tuple[Ruling, ...]:
+    async def _read_authority(
+        self, spec: TrackerSpec
+    ) -> tuple[tuple[TrackerIssue, ...], tuple[tuple[TrackerComment, Ruling], ...]]:
         try:
             members = await read_scope_members(
                 tracker=self._tracker,
@@ -121,7 +125,19 @@ class NativeAmendments:
             raise NativeWriteRefusalError(
                 "Current ruling membership could not be read"
             ) from exc
-        rulings: list[Ruling] = []
+        criterion_issues = tuple(
+            sorted(
+                (i for i in members.values() if "criterion" in i.issue_labels),
+                key=lambda issue: issue.issue_key,
+            )
+        )
+        if not {str(ref) for ref in spec.criteria} <= {
+            issue.issue_key for issue in criterion_issues
+        }:
+            raise NativeWriteRefusalError("A named native criterion left the subtree")
+        for issue in criterion_issues:
+            criterion_check(criterion=issue, issue_key=spec.subject)
+        rulings: list[tuple[TrackerComment, Ruling]] = []
         for key in sorted(members):
             try:
                 records = await self._rulings.read_issue(issue_key=key)
@@ -129,13 +145,13 @@ class NativeAmendments:
                 raise NativeWriteRefusalError(
                     "The current ruling registry is unreadable"
                 ) from exc
-            rulings.extend(ruling for _, ruling in records)
-        identities = [ruling.ruling_id for ruling in rulings]
+            rulings.extend(records)
+        identities = [ruling.ruling_id for _, ruling in rulings]
         if len(identities) != len(set(identities)):
             raise NativeWriteRefusalError(
                 "The pinned ruling roster repeats an identity"
             )
-        return tuple(sorted(rulings, key=lambda ruling: ruling.ruling_id))
+        return criterion_issues, tuple(sorted(rulings, key=lambda row: row[1].ruling_id))
 
 
 class _NativeWriterGuard:
@@ -156,6 +172,8 @@ class _NativeWriterGuard:
         self._base_ref = base_ref
         self._environment = environment
         self._rulings: tuple[Ruling, ...] | None = None
+        self._criterion_issues: tuple[TrackerIssue, ...] | None = None
+        self._ruling_records: tuple[tuple[TrackerComment, Ruling], ...] | None = None
         self._base_sha: str | None = None
 
     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
@@ -165,7 +183,10 @@ class _NativeWriterGuard:
             cwd=workspace_path,
             ref=self._base_ref,
         )
-        self._rulings = await owner._read_rulings(self._spec)
+        self._criterion_issues, self._ruling_records = await owner._read_authority(
+            self._spec
+        )
+        self._rulings = tuple(ruling for _, ruling in self._ruling_records)
         registry = "\n".join(ruling.model_dump_json() for ruling in self._rulings)
         instructions = owner._prompts.template_for(
             PromptKey.NATIVE_WRITER_CONTRACT,
@@ -215,10 +236,13 @@ class _NativeWriterGuard:
         await self._require_head(workspace_path, expected_head_sha)
         if self._rulings is None or self._base_sha is None:
             raise NativeWriteRefusalError("The native writer was not initialized")
-        if await owner._read_rulings(self._spec) != self._rulings:
+        current_issues, current_records = await owner._read_authority(self._spec)
+        if current_records != self._ruling_records:
             raise NativeWriteRefusalError(
                 "Pinned rulings changed during native writing"
             )
+        if current_issues != self._criterion_issues:
+            raise NativeWriteRefusalError("Native criterion facts changed during writing")
         current = await owner._criteria.read_current(spec=self._spec)
         if current != self._criteria:
             raise NativeWriteRefusalError(
@@ -268,7 +292,9 @@ class _NativeWriterGuard:
         prompt = owner._prompts.template_for(PromptKey.AMENDMENT_JUDGE).render(
             {
                 "claim": claim.model_dump_json(),
-                "criteria": self._criteria.model_dump_json(),
+                "criteria": "\n".join(
+                    issue.model_dump_json() for issue in self._criterion_issues or ()
+                ),
                 "pinned_rulings": "\n".join(r.model_dump_json() for r in self._rulings),
                 "base_sha": self._base_sha,
             }
@@ -337,7 +363,9 @@ class _NativeWriterGuard:
         await self.require_current(workspace_path=workspace_path, start=start)
         if self._rulings is None:
             raise NativeWriteRefusalError("The ruling registry has not been read")
-        criterion_ids = {item.id for item in self._criteria.criteria}
+        criterion_ids = {
+            item.issue_key for item in self._criterion_issues or ()
+        }
         ruling_ids = {ruling.ruling_id for ruling in self._rulings}
         upheld = []
         for claim in output.claims:
