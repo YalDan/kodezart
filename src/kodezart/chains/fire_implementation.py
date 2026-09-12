@@ -93,6 +93,7 @@ class FireImplementation:
         tracker_spec: TrackerSpec | None = None,
         cache_key: str,
         run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility,
     ) -> WorkflowIterationEvent:
         """Delegate to the quality gate for iterative execution."""
@@ -113,6 +114,7 @@ class FireImplementation:
             tracker_spec=tracker_spec,
             cache_key=cache_key,
             run_identity=run_identity,
+            surface_holder=surface_holder,
             repo_visibility=repo_visibility,
         ):
             writer(event)
@@ -178,6 +180,7 @@ class FireImplementation:
             tracker_spec=spec if isinstance(spec, TrackerSpec) else None,
             cache_key=ctx.cache_key,
             run_identity=ctx.run_identity,
+            surface_holder=ctx.surface_holder,
             repo_visibility=state["repo_visibility"],
         )
 
