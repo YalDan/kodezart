@@ -161,7 +161,9 @@ class MandateInstructed(_MandateJudgment):
         description="The covered source instructs the observed defect."
     )
     finding: MandateFinding = Field(description="The exact mandating instruction.")
-    source_index: int = Field(ge=0, description="Index of the supplied source surface.")
+    source_index: int = Field(
+        ge=0, strict=True, description="Index of the supplied source surface."
+    )
 
 
 class MandateAbsent(_MandateJudgment):
@@ -177,7 +179,9 @@ class MandateUnverifiable(_MandateJudgment):
         description="The instruction claim cannot be settled from the source."
     )
     finding: None = Field(description="An unavailable source supplies no finding.")
-    source_index: int = Field(ge=0, description="Index of the unavailable source.")
+    source_index: int = Field(
+        ge=0, strict=True, description="Index of the unavailable source."
+    )
 
 
 type MandateJudgment = Annotated[
@@ -238,6 +242,14 @@ class InstructedMandateObservation(_MandateCoverage):
     unreadable: tuple[()]
     finding: MandateFinding
     finding_surface: WritableSurface
+
+    @model_validator(mode="after")
+    def _finding_names_covered_source(self) -> Self:
+        if sum(item.surface == self.finding_surface for item in self.covered) != 1:
+            raise ValueError("a mandate finding requires one covered source surface")
+        if self.finding.issue_id != self.finding_surface.ref.key:
+            raise ValueError("the mandate finding names another source identity")
+        return self
 
 
 class AbsentMandateObservation(_MandateCoverage):
