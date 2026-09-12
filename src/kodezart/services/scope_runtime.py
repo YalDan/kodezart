@@ -29,6 +29,7 @@ from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.scope_ready import ScopeReadySet
 from kodezart.types.domain.scope_runtime import (
     ScopeLaneEvent,
+    ScopeLaneProgress,
     ScopeWalkEvent,
     ScopeWalkObservation,
 )
@@ -39,6 +40,7 @@ from kodezart.types.domain.workflow import ExecutionContext
 _REQUEST_METADATA = "scope_lane_request"
 _RUN_METADATA = "scope_lane_run_identity"
 _NATIVE_STATE = TypeAdapter(NativeDeliveryState)
+_NATIVE_PROGRESS: TypeAdapter[ScopeLaneProgress] = TypeAdapter(ScopeLaneProgress)
 
 
 class ScopeWorkflowEngine:
@@ -264,6 +266,11 @@ class ScopeWorkflowEngine:
                         "refusing to mint",
                         ref=scope,
                     )
+            # Probe, checkpoint and work-ref reads can yield to changed approval,
+            # membership or blockers. Admission must still hold at graph launch.
+            launch_ready = await read_scope_ready(ref=scope, tracker=self._tracker)
+            if current not in launch_ready.ready:
+                continue
             dispatched.append(key)
             final: NativeDeliveryState | None = None
             async for namespace, mode, payload in lane.graph.astream(
@@ -278,7 +285,10 @@ class ScopeWorkflowEngine:
                     if not isinstance(payload, AgentEvent):
                         raise TypeError("Native lane emitted a non-AgentEvent")
                     if not isinstance(payload, WorkflowCompleteEvent):
-                        yield ScopeLaneEvent(lane_key=key, event=payload)
+                        yield ScopeLaneEvent(
+                            lane_key=key,
+                            event=_NATIVE_PROGRESS.validate_python(payload),
+                        )
             if final is None or isinstance(final["delivery"], PendingLaneDelivery):
                 raise ScopeReadError(
                     "native lane has no final delivery phase", ref=scope
