@@ -236,4 +236,6 @@ def test_documents_stays_read_side_with_no_write_flag() -> None:
         "name",
         "id",
         "append_only",
+        "outcome_mapping",
+        "columns",
     }

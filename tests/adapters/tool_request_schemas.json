@@ -1,0 +1,313 @@
+{
+  "QueryRequest": {
+    "additionalProperties": false,
+    "description": "Request body for ``POST /api/v1/agent/query``.\n\nSupports one-shot agent queries with optional session resume, branch\ntargeting, and structured output.",
+    "properties": {
+      "allowedTools": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Allowedtools",
+        "type": "array"
+      },
+      "branch": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Branch"
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Outputschema"
+      },
+      "permissionMode": {
+        "default": "plan",
+        "enum": [
+          "plan",
+          "bypassPermissions"
+        ],
+        "title": "Permissionmode",
+        "type": "string"
+      },
+      "prompt": {
+        "minLength": 1,
+        "title": "Prompt",
+        "type": "string"
+      },
+      "repoPath": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Repopath"
+      },
+      "repoUrl": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Repourl"
+      },
+      "sessionId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sessionid"
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "QueryRequest",
+    "type": "object"
+  },
+  "WorkflowRequest": {
+    "$defs": {
+      "BaseInput": {
+        "additionalProperties": false,
+        "description": "One resolved blocker contribution to a base, as it was at computation.",
+        "properties": {
+          "blockerIssueId": {
+            "minLength": 1,
+            "title": "Blockerissueid",
+            "type": "string"
+          },
+          "branch": {
+            "minLength": 1,
+            "title": "Branch",
+            "type": "string"
+          },
+          "sha": {
+            "minLength": 1,
+            "title": "Sha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blockerIssueId",
+          "branch",
+          "sha"
+        ],
+        "title": "BaseInput",
+        "type": "object"
+      },
+      "BaseSpec": {
+        "additionalProperties": false,
+        "description": "The base a lane was dispatched on, plus everything it was computed from.\n\n``base_role`` is ``None`` on the trunk arm and ONLY there: trunk is the\nscope's configured branch, not a ref any issue recorded, so no role\ndescribes it.  It is ``DELIVERABLE`` on the singleton arm and\n``INTEGRATION`` on the combined arm.\n\nTwo ``BaseSpec`` values compare equal exactly when the base they name\nwas computed from the same inputs in the same order.  That equality IS\nthe staleness test \u2014 see :mod:`kodezart.domain.base_staleness`.",
+        "properties": {
+          "baseBranch": {
+            "minLength": 1,
+            "title": "Basebranch",
+            "type": "string"
+          },
+          "baseRole": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/WorkRefRole"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/BaseInput"
+            },
+            "title": "Inputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "inputs",
+          "baseBranch"
+        ],
+        "title": "BaseSpec",
+        "type": "object"
+      },
+      "ScopeKind": {
+        "description": "The four kinds of scope an operation can address.",
+        "enum": [
+          "initiative",
+          "project",
+          "milestone",
+          "issue"
+        ],
+        "title": "ScopeKind",
+        "type": "string"
+      },
+      "ScopeRefRequest": {
+        "additionalProperties": false,
+        "description": "Address a tracker scope without resolving its membership at submission.",
+        "properties": {
+          "key": {
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/ScopeKind"
+          }
+        },
+        "required": [
+          "kind",
+          "key"
+        ],
+        "title": "ScopeRefRequest",
+        "type": "object"
+      },
+      "WorkRefRole": {
+        "description": "What a ref recorded against an issue is FOR.\n\nOne issue carries several refs at once, and the role is the only thing\nthat says which is which.  Every member below is already a real ref\nshape in the repository except ``INTEGRATION``, which is a base\nconstructed from several blockers' deliverable refs.",
+        "enum": [
+          "deliverable",
+          "iteration",
+          "recovery",
+          "best_iteration",
+          "integration"
+        ],
+        "title": "WorkRefRole",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Request body for ``POST /api/v1/agent/workflow``.\n\nTriggers the full iterative workflow pipeline with Edit/Write tools\nenabled by default.\n\n``base_spec`` is the lane's RECORDED base, read from the association\nby whoever dispatched the run.  When it is absent the lane has no\nblockers and was fired directly against a trunk, which is what\n``base_branch`` names.  When it is present ``base_branch`` is not\nconsulted by any scope surface: the recorded base is the baseline and\na trunk default is never substituted for it.\n\n``implied_base`` is the base the lane's blockers imply at dispatch\ntime.  Handing both lets the run refuse a stale baseline instead of\ngrading against a tree that no longer exists.",
+    "properties": {
+      "allowedTools": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Allowedtools",
+        "type": "array"
+      },
+      "baseBranch": {
+        "default": "main",
+        "title": "Basebranch",
+        "type": "string"
+      },
+      "baseSpec": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BaseSpec"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "impliedBase": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BaseSpec"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "issueKey": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Issuekey"
+      },
+      "permissionMode": {
+        "default": "bypassPermissions",
+        "enum": [
+          "plan",
+          "bypassPermissions"
+        ],
+        "title": "Permissionmode",
+        "type": "string"
+      },
+      "prompt": {
+        "minLength": 1,
+        "title": "Prompt",
+        "type": "string"
+      },
+      "repoPath": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Repopath"
+      },
+      "repoUrl": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Repourl"
+      },
+      "scope": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ScopeRefRequest"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "WorkflowRequest",
+    "type": "object"
+  }
+}

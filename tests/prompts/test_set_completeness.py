@@ -15,7 +15,7 @@ import pytest
 from kodezart.adapters.in_repo_prompt_registry import default_sets_root
 from kodezart.core.errors import PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 from tests.prompts.sets import V5_SET
 from tests.prompts.test_prompt_wiring import (
     DEFAULT_SET,
@@ -34,8 +34,8 @@ V5_SET_DIR = default_sets_root() / V5_SET
 
 
 def test_the_census_is_the_enum() -> None:
-    """The shared census and the enum are one number, checked in one place."""
-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+    """The independent role names exactly match the registered enum."""
+    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
 
 
 def test_at_least_the_legacy_set_is_shipped() -> None:
@@ -79,7 +79,15 @@ def test_the_legacy_set_stays_complete_when_the_default_names_another_set(
 
 @pytest.mark.parametrize(
     "missing",
-    [PromptKey.FIX, PromptKey.EVALUATION, PromptKey.KNOWLEDGE_MAP],
+    [
+        PromptKey.FIX,
+        PromptKey.EVALUATION,
+        PromptKey.KNOWLEDGE_MAP,
+        PromptKey.ORGANIZE_ASSESS,
+        PromptKey.ORGANIZE_AUTHOR,
+        PromptKey.ORGANIZE_VERIFY,
+        PromptKey.ORGANIZE_CRITERIA_AUTHOR,
+    ],
 )
 def test_a_set_missing_one_key_raises_the_typed_boot_error(
     missing: PromptKey,

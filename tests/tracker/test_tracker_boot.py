@@ -15,6 +15,7 @@ from kodezart.adapters.linear_mcp_tracker import (
 )
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.composition.tracker import boot_tracker, refuse_foreign_credential
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
     McpCredentialRefusedError,
@@ -28,6 +29,7 @@ from kodezart.core.protocols import (
     McpToolResult,
     TrackerPort,
 )
+from kodezart.core.tracker_settings import TrackerSettings
 from kodezart.services.tracker_boot import (
     OWNED_REF_BUILDERS,
     configured_mappings,
@@ -43,7 +45,6 @@ from kodezart.types.domain.operation import (
     ConfigOwnership,
     DocumentEntry,
     DocumentSystem,
-    Initiative,
     LifecycleStage,
     OperationConfig,
     Principal,
@@ -65,7 +66,9 @@ from tests.fakes import (
     FakeTrackerPort,
     ManagedFakeLinearMcpServer,
 )
+from tests.run_events import RUN_EVENT_STATES
 from tests.tracker.conftest import (
+    AGENT_IDENTITY,
     APPROVER,
     BYSTANDER,
     QUEUE_STATE_LABELS,
@@ -75,6 +78,7 @@ from tests.tracker.conftest import (
     fixture_server,
     linear_over_fake_mcp,
 )
+from tests.tracker.marker_config import MARKER_PREFIXES
 
 EXAMPLE_CONFIG = Path(__file__).resolve().parents[2] / "docs" / "operation.example.toml"
 
@@ -84,6 +88,7 @@ def operation_config() -> OperationConfig:
     return OperationConfig(
         operation_name="fixture",
         workspace="fixture-workspace",
+        run_event_states=dict(RUN_EVENT_STATES),
         principals=[
             Principal(
                 tracker_user=APPROVER,
@@ -102,7 +107,7 @@ def operation_config() -> OperationConfig:
                 handle="@bystander",
             ),
         ],
-        agent_identities=[],
+        agent_identities=[AGENT_IDENTITY],
         teams={
             team_key: TeamEntry(name=team_name, key="ENG")
             for team_key, team_name in TEAM_IDENTIFIERS.items()
@@ -133,7 +138,6 @@ def operation_config() -> OperationConfig:
         },
         knowledge={},
         endpoints={},
-        initiatives=[Initiative(id="init-1")],
     )
 
 
@@ -155,7 +159,16 @@ class TestConfiguredMappings:
         ref at all.  A tracker-side record would, and that is
         ``TestRecordDestinationsResolveAtBoot`` below.
         """
-        config = operation_config()
+        config = operation_config().model_copy(
+            update={
+                "scope_labels": {
+                    "triage": "scope:triage",
+                    "proposed": "scope:proposed",
+                    "approved": "scope:approved",
+                },
+                "issue_labels": {"criterion": "acceptance-condition"},
+            },
+        )
         refs = (*configured_mappings(config), *owned_mappings(config))
 
         assert {ref.kind for ref in refs} == set(MappingKind)
@@ -166,7 +179,7 @@ class TestConfiguredMappings:
     def test_each_principal_contributes_a_user_ref(self) -> None:
         refs = configured_mappings(operation_config())
         users = {ref.identifier for ref in refs if ref.kind is MappingKind.USER}
-        assert users == {APPROVER, BYSTANDER}
+        assert users == {APPROVER, BYSTANDER, AGENT_IDENTITY}
 
     def test_the_ref_order_is_stable_across_calls(self) -> None:
         assert configured_mappings(operation_config()) == configured_mappings(
@@ -373,6 +386,7 @@ class TestBootValidation:
         resolvable = [
             APPROVER,
             BYSTANDER,
+            AGENT_IDENTITY,
             *QUEUE_STATE_LABELS.values(),
             *WORKFLOW_STATE_NAMES.values(),
         ]
@@ -556,7 +570,7 @@ class TestQueueVocabularyPerDeclaredTeam:
         """
         return FakeLinearMcpServer(
             documents=[FakeMcpDocument(id="doc-1", title="checkpoint", content="")],
-            users=[APPROVER, BYSTANDER],
+            users=[APPROVER, BYSTANDER, AGENT_IDENTITY],
             teams=list(self.TWO_TEAMS.values()),
             labels=[],
             team_labels={f"{team}-id": list(names) for team, names in held.items()},
@@ -567,12 +581,15 @@ class TestQueueVocabularyPerDeclaredTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            marker_prefixes=MARKER_PREFIXES,
+            issue_labels={"criterion": "acceptance-condition"},
+            scope_labels={},
+            criteria_stage_label_key=None,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
             team_identifiers=dict(self.TWO_TEAMS),
-            max_retries=0,
-            retry_backoff_factor=1.0,
+            retry=RetryPolicy(attempts=1, initial_delay=1.0),
             ledger=SelfWriteLedger(),
         )
 
@@ -692,12 +709,15 @@ class TestWorkflowStatesResolvePerTeam:
 
     def _tracker(self, server: FakeLinearMcpServer) -> TrackerPort:
         return LinearMcpTracker(
+            marker_prefixes=MARKER_PREFIXES,
+            issue_labels={"criterion": "acceptance-condition"},
+            scope_labels={},
+            criteria_stage_label_key=None,
             caller=server,
             queue_state_labels=QUEUE_STATE_LABELS,
             workflow_state_names=WORKFLOW_STATE_NAMES,
             team_identifiers=dict(self.DECLARED_TEAMS),
-            max_retries=0,
-            retry_backoff_factor=1.0,
+            retry=RetryPolicy(attempts=1, initial_delay=1.0),
             ledger=SelfWriteLedger(),
         )
 
@@ -868,9 +888,9 @@ class TestTheCredentialShapeBootRefuses:
         with pytest.raises(TrackerCredentialShapeError) as caught:
             refuse_foreign_credential(backend=TrackerBackend.LINEAR, token=token)
 
-        assert caught.value.field == "KODEZART_TRACKER_TOKEN"
+        assert caught.value.field == "KODEZART_TRACKER__TOKEN"
         assert caught.value.accepted_shape == ACCEPTED_CREDENTIAL_SHAPE
-        assert "KODEZART_TRACKER_TOKEN" in str(caught.value)
+        assert "KODEZART_TRACKER__TOKEN" in str(caught.value)
         assert ACCEPTED_CREDENTIAL_SHAPE in str(caught.value)
 
     def test_the_refusal_never_carries_the_credential_it_read(self) -> None:
@@ -891,13 +911,12 @@ class TestTheCredentialShapeBootRefuses:
         one.
         """
         config = AppConfig(
-            tracker_token=OAUTH_TOKEN,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={"token": OAUTH_TOKEN, "server_url": "https://tracker.invalid/mcp"},
         )
 
         with pytest.raises(TrackerCredentialShapeError):
             await boot_tracker(
-                config=config,
+                settings=config.tracker,
                 operation=operation_config(),
                 log=get_logger(__name__),
             )
@@ -931,7 +950,7 @@ class _Endpoint:
 
 def _managed_fixture_server() -> ManagedFakeLinearMcpServer:
     """The shared fixture workspace, plus the session lifetime boot drives."""
-    source = fixture_server()
+    source = fixture_server(actor=AGENT_IDENTITY)
     managed = ManagedFakeLinearMcpServer()
     managed.issues = source.issues
     managed.documents = source.documents
@@ -949,12 +968,10 @@ def _caller_over(endpoint: _Endpoint, *, token: str) -> HttpMcpToolCaller:
     return HttpMcpToolCaller(
         url="https://tracker.invalid/mcp",
         server_name="fixture-server",
-        token=token,
+        headers={"Authorization": "Bearer" + " " + token},
         timeout_seconds=5.0,
         call_timeout_seconds=5.0,
         sse_read_timeout_seconds=300.0,
-        auth_header_name="Authorization",
-        auth_scheme="Bearer",
         error_detail_limit=500,
         client_factory=client_over(endpoint.transport),
     )
@@ -1022,7 +1039,7 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
         endpoint = _Endpoint(HTTPStatus.UNAUTHORIZED)
         caller = _CountingCaller(_caller_over(endpoint, token=LONG_LIVED_KEY))
 
-        def factory(*, config: AppConfig, token: str) -> ManagedMcpToolCaller:
+        def factory(*, settings: TrackerSettings, token: str) -> ManagedMcpToolCaller:
             return caller
 
         monkeypatch.setattr(
@@ -1030,13 +1047,15 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
             factory,
         )
         config = AppConfig(
-            tracker_token=LONG_LIVED_KEY,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={
+                "token": LONG_LIVED_KEY,
+                "server_url": "https://tracker.invalid/mcp",
+            },
         )
 
         with pytest.raises(McpCredentialRefusedError) as caught:
             await boot_tracker(
-                config=config,
+                settings=config.tracker,
                 operation=operation_config(),
                 log=get_logger(__name__),
             )
@@ -1057,7 +1076,9 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
         """The paired positive: an accepted credential boots, probe first."""
         server = _managed_fixture_server()
 
-        def factory(*, config: AppConfig, token: str) -> ManagedFakeLinearMcpServer:
+        def factory(
+            *, settings: TrackerSettings, token: str
+        ) -> ManagedFakeLinearMcpServer:
             return server
 
         monkeypatch.setattr(
@@ -1065,12 +1086,14 @@ class TestBootPresentsTheCredentialBeforeTheSessionOpens:
             factory,
         )
         config = AppConfig(
-            tracker_token=LONG_LIVED_KEY,
-            tracker_mcp_server_url="https://tracker.invalid/mcp",
+            tracker={
+                "token": LONG_LIVED_KEY,
+                "server_url": "https://tracker.invalid/mcp",
+            },
         )
 
         dialled = await boot_tracker(
-            config=config,
+            settings=config.tracker,
             operation=operation_config(),
             log=get_logger(__name__),
         )

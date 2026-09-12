@@ -7,6 +7,7 @@ observable: content is never silently dropped and never silently posted.
 import hashlib
 from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 
 from pydantic import ConfigDict, Field, model_validator
 
@@ -34,6 +35,13 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
+class SurfaceDurability(StrEnum):
+    """Whether a reader treats a write as current or as a past observation."""
+
+    DURABLE = "durable"
+    POINT_IN_TIME = "point_in_time"
+
+
 _SEVERITY: dict[GateVerdict, int] = {
     GateVerdict.CLEAN: 0,
     GateVerdict.REDACTED: 1,
@@ -59,7 +67,7 @@ def content_digest(content: str) -> str:
 
 
 class RedactionCategory(StrEnum):
-    """Deny-pattern categories. Each declares a verdict in AppConfig."""
+    """Privacy classes with fixed outbound consequences."""
 
     CROSS_REPO_NAMES = "cross_repo_names"
     TRACKER_URLS = "tracker_urls"
@@ -69,12 +77,28 @@ class RedactionCategory(StrEnum):
     ORG_PRIVATE = "org_private"
 
 
-#: The one category that carries NO pattern list, by construction.  A pattern
-#: describing an organisation contains the string it describes, so it cannot
-#: live in a public repository; AppConfig rejects it as a ``deny_patterns``
-#: key at boot rather than leaving the rule to be remembered.
-PATTERNLESS_CATEGORIES: frozenset[RedactionCategory] = frozenset(
-    {RedactionCategory.ORG_PRIVATE},
+TRACKER_ROSTER_MIN_REFERENCES = 3
+
+
+class DurabilityCategory(StrEnum):
+    """Aggregate claims always block; redacting one would preserve the claim."""
+
+    OBJECT_COUNT = "object_count"
+    IDENTIFIER_ROSTER = "identifier_roster"
+
+
+type ScanCategory = RedactionCategory | DurabilityCategory
+
+
+REDACTION_VERDICTS: Mapping[RedactionCategory, GateVerdict] = MappingProxyType(
+    {
+        RedactionCategory.CROSS_REPO_NAMES: GateVerdict.REDACTED,
+        RedactionCategory.TRACKER_URLS: GateVerdict.REDACTED,
+        RedactionCategory.EMAIL_HANDLES: GateVerdict.REDACTED,
+        RedactionCategory.INFRA_ENDPOINTS: GateVerdict.BLOCKED,
+        RedactionCategory.CREDENTIALS: GateVerdict.BLOCKED,
+        RedactionCategory.ORG_PRIVATE: GateVerdict.REDACTED,
+    }
 )
 
 
@@ -121,6 +145,8 @@ class OutboundDestination(StrEnum):
     ARTIFACT_TICKET_JSON = "artifact_ticket_json"
     ARTIFACT_CRITERIA_JSON = "artifact_criteria_json"
     TRACKER_COMMENT = "tracker_comment"
+    TRACKER_DESCRIPTION = "tracker_description"
+    TRACKER_TITLE = "tracker_title"
 
 
 #: Total over :class:`OutboundDestination`; a test asserts the totality so a
@@ -135,12 +161,41 @@ DESTINATION_SURFACE: Mapping[OutboundDestination, OutboundSurface] = {
     OutboundDestination.ARTIFACT_TICKET_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.ARTIFACT_CRITERIA_JSON: OutboundSurface.REPOSITORY,
     OutboundDestination.TRACKER_COMMENT: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_DESCRIPTION: OutboundSurface.TRACKER,
+    OutboundDestination.TRACKER_TITLE: OutboundSurface.TRACKER,
 }
 
 
 def surface_of(destination: OutboundDestination) -> OutboundSurface:
     """The surface class *destination* writes onto."""
     return DESTINATION_SURFACE[destination]
+
+
+#: Classify real writers in code, alongside their surface classification.
+#: Descriptions and replaceable artifacts are read as current; appended
+#: comments and commit messages describe a particular event.
+DESTINATION_DURABILITY: Mapping[OutboundDestination, SurfaceDurability] = {
+    OutboundDestination.BRANCH_NAME: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_TITLE: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_BODY: SurfaceDurability.DURABLE,
+    OutboundDestination.PR_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.COMMIT_MESSAGE_DIVERGENCE_REPLAY: (
+        SurfaceDurability.POINT_IN_TIME
+    ),
+    OutboundDestination.ARTIFACT_TICKET_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.ARTIFACT_CRITERIA_JSON: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_COMMENT: SurfaceDurability.POINT_IN_TIME,
+    OutboundDestination.TRACKER_DESCRIPTION: SurfaceDurability.DURABLE,
+    OutboundDestination.TRACKER_TITLE: SurfaceDurability.DURABLE,
+}
+
+
+def durability_of(destination: OutboundDestination | None) -> SurfaceDurability:
+    """An unclassified write is durable; every named writer has a mapping."""
+    if destination is None:
+        return SurfaceDurability.DURABLE
+    return DESTINATION_DURABILITY[destination]
 
 
 class ContentClass(StrEnum):
@@ -180,6 +235,7 @@ class ScanFailureKind(StrEnum):
     MALFORMED_VERDICT = "malformed_verdict"
     RATE_LIMITED = "rate_limited"
     TRANSPORT_ERROR = "transport_error"
+    EXECUTION_ERROR = "execution_error"
     EMPTY_RESPONSE = "empty_response"
     SPANS_UNRESOLVABLE = "spans_unresolvable"
     BUDGET_EXHAUSTED = "budget_exhausted"
@@ -197,10 +253,11 @@ class ScanHit(CamelCaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    category: RedactionCategory
+    category: ScanCategory
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)
     rationale: str | None = None
+    matched_text: str | None = None
 
     @property
     def has_span(self) -> bool:
@@ -247,67 +304,6 @@ class GateDecision(CamelCaseModel):
 
     verdict: GateVerdict
     content: str
-    categories: tuple[RedactionCategory, ...] = ()
+    categories: tuple[ScanCategory, ...] = ()
     hits: tuple[ScanHit, ...] = ()
     failure: ScanFailureKind | None = None
-
-
-class ScannerRouting(CamelCaseModel):
-    """When a registered scanner must be consulted.
-
-    Declared BY the scanner and read BY the gate, so the gate routes without
-    knowing which adapter is which.  ``mandatory_destinations`` carries the
-    one rule provenance does not settle on its own: a destination that is
-    always audited whatever class its writer declares — a branch name is
-    generated once per run from the raw task text, so its cost is one call
-    per run and its declared class is beside the point.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    surfaces: frozenset[OutboundSurface]
-    content_classes: frozenset[ContentClass]
-    mandatory_destinations: frozenset[OutboundDestination] = frozenset()
-
-    def applies(
-        self,
-        *,
-        destination: OutboundDestination,
-        content_class: ContentClass,
-    ) -> bool:
-        """Whether this scanner covers *destination* carrying *content_class*."""
-        if surface_of(destination) not in self.surfaces:
-            return False
-        return (
-            content_class in self.content_classes
-            or destination in self.mandatory_destinations
-        )
-
-
-#: The routing a scanner with no cost declares: everything, everywhere. The
-#: deterministic scanners run on every payload — that is what keeps a
-#: credential caught with no network call.
-UNCONDITIONAL_ROUTING: ScannerRouting = ScannerRouting(
-    surfaces=frozenset(OutboundSurface),
-    content_classes=frozenset(ContentClass),
-)
-
-
-#: The routing the JUDGMENT scanner declares.  Every clause is a cost
-#: decision made once, here, rather than at each call site:
-#:
-#: * surfaces — a payload published to the open internet or mirrored by the
-#:   coordination surface.  The repository's own history is out of scope for
-#:   this increment, which is where the affordability comes from.
-#: * classes — ``AUTHORED`` only.  Evaluator-cadence writes are ``DERIVED``
-#:   and cost nothing, by the writer declaring where its bytes came from
-#:   rather than by exemption; that is most of the outbound volume.
-#: * mandatory — the branch name, scanned whatever class its writer
-#:   declares.  It is generated once per run from the raw task text (the
-#:   private-input path), so the cost is one call per run, and an
-#:   ``IDENTIFIER`` writer blocks on any hit, which is right for a git ref.
-JUDGMENT_ROUTING: ScannerRouting = ScannerRouting(
-    surfaces=frozenset({OutboundSurface.PUBLICATION, OutboundSurface.TRACKER}),
-    content_classes=frozenset({ContentClass.AUTHORED}),
-    mandatory_destinations=frozenset({OutboundDestination.BRANCH_NAME}),
-)

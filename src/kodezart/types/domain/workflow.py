@@ -3,22 +3,30 @@
 from typing import NotRequired, Self, TypedDict
 
 from langchain_core.runnables import RunnableConfig
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.accept import AcceptVerdict, FlaggedItem
 from kodezart.types.domain.agent import TicketDraftOutput
+from kodezart.types.domain.amendment import AmendmentReport
 from kodezart.types.domain.branch import BaseSpec
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.criteria import (
     CriteriaArtifact,
     CriteriaValidation,
     CriterionFailure,
+    ExecutionCriterion,
     GeneratedCriterion,
-    ValidatedCriterion,
+    TrackerCriterion,
+    TrackerCriterionSet,
 )
+from kodezart.types.domain.delivery import CheckRedClass
+from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
-from kodezart.types.domain.remediation import RemediationEntry
+from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import AllowedTools, PermissionMode
 from kodezart.types.domain.ticket_review import TicketApproval
 from kodezart.types.domain.trajectory import IterationRecord as IterationRecord
 from kodezart.types.domain.trajectory import LoopTrajectory as LoopTrajectory
@@ -32,6 +40,30 @@ _LANGGRAPH_RESERVED_KEYS: frozenset[str] = frozenset(
         "checkpoint_map",
     }
 )
+
+
+class WorkflowSubmission(CamelCaseModel):
+    """Validated workflow input shared by HTTP and dispatcher producers.
+
+    The producer supplies the recorded base or explicitly constructs a
+    trunk base. Scope absence is explicit so producers cannot lose an
+    addressed scope by relying on a downstream default.
+
+    ``issue_key`` records the dispatched issue independently of prompt
+    text and scope. HTTP submissions may have no tracker identity.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str = Field(min_length=1)
+    issue_key: str | None = None
+    repo_path: str | None
+    repo_url: str | None
+    base_spec: BaseSpec
+    implied_base: BaseSpec | None
+    scope: ScopeRef | None
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +80,7 @@ class WorkflowContext(CamelCaseModel):
     repo_path: str | None = None
     repo_url: str | None = None
     cache_key: str = Field(min_length=1)
+    run_identity: RunIdentity | None = None
     workspace_path: str | None = None
 
     @classmethod
@@ -73,8 +106,8 @@ class ExecutionContext(WorkflowContext):
     """
 
     base_spec: BaseSpec
-    permission_mode: str = Field(min_length=1)
-    allowed_tools: list[str]
+    permission_mode: PermissionMode
+    allowed_tools: AllowedTools
 
     @property
     def base_branch(self) -> str:
@@ -95,13 +128,13 @@ class RemediationRequest(CamelCaseModel):
 
     entry: RemediationEntry
     round_index: int = Field(ge=0)
-    original_ticket: TicketDraftOutput
+    original_spec: FireSpec
     work_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
     pr_url: str | None = None
     total_iterations: int = Field(ge=0)
     trajectory: LoopTrajectory | None = None
-    criteria: list[ValidatedCriterion]
+    criteria: list[ExecutionCriterion]
     failure_evidence: str = Field(min_length=1)
 
 
@@ -119,8 +152,20 @@ class RalphLoopContext(ExecutionContext):
     feature_branch: str = Field(min_length=1)
     ralph_branch: str = Field(min_length=1)
     work_base_ref: str = Field(min_length=1)
-    acceptance_criteria: list[ValidatedCriterion] = Field(min_length=1)
+    acceptance_criteria: list[ExecutionCriterion] = Field(min_length=1)
+    tracker_spec: TrackerSpec | None = None
     repo_visibility: RepoVisibility
+
+    @model_validator(mode="after")
+    def _criteria_match_source(self) -> Self:
+        """A native checkpoint cannot fall back to the authored cached arm."""
+        native = self.tracker_spec is not None
+        if any(
+            isinstance(criterion, TrackerCriterion) != native
+            for criterion in self.acceptance_criteria
+        ):
+            raise ValueError("Loop criteria must match the frozen subject source")
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -161,16 +206,22 @@ class RalphLoopState(TypedDict):
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
     iteration_commit_sha: NotRequired[str | None]
+    amendment_reports: NotRequired[list[AmendmentReport]]
+    amendment_blocked: NotRequired[bool]
 
 
 class WorkflowState(TypedDict):
-    """State for the outer workflow pipeline.
+    """State for the delivery-free fire graph.
 
-    ``feature_tip_sha`` is the canonical feature-branch tip SHA after the
-    last successful consolidation; ``None`` until ``_merge_to_feature_node``
-    runs.  ``review_base_sha`` / ``review_head_sha`` are the exact 40-char
-    SHAs the evaluator's ``ChangesetDigest`` is computed between — set by
-    consolidation nodes, read by ``_review_against_ticket_node``.
+    ``issue_key`` is the producer's tracker identity for this run. It is
+    preserved across remediation and appended before gating a PR body.
+
+    ``feature_branch`` and ``feature_tip_sha`` identify the selected published
+    head. Consolidation records its branch tip; a stalled exit may instead
+    select the published best-iteration ref. The SHA remains ``None`` until
+    a node establishes that head. ``review_base_sha`` / ``review_head_sha`` are
+    the exact 40-character endpoints of the evaluator's ``ChangesetDigest``.
+    Consolidation nodes write them; ``_review_against_ticket_node`` reads them.
 
     ``trajectory`` carries the most recent quality-gate invocation's
     ``LoopTrajectory``; ``None`` until the first gate invocation projects
@@ -192,12 +243,13 @@ class WorkflowState(TypedDict):
     ``base_spec`` on the execution context.
     """
 
+    issue_key: str | None
     feature_branch: str
     ralph_branch: str
     work_base_ref: str
-    ticket: TicketDraftOutput | None
+    fire_spec: FireSpec | None
     acceptance_criteria: list[GeneratedCriterion]
-    criteria_artifact: CriteriaArtifact | None
+    criterion_set: CriteriaArtifact | TrackerCriterionSet | None
     criteria_validation: CriteriaValidation | None
     criteria_regeneration_rounds: int
     criteria_infeasible: bool
@@ -212,13 +264,20 @@ class WorkflowState(TypedDict):
     review_passed: bool
     review_feedback: str | None
     remediation_rounds_used: int
-    remediation_ticket: TicketDraftOutput | None
+    remediation_ticket: TicketDraftOutput | RemediationPlan | None
     remediation_entry: RemediationEntry | None
     best_iteration_sha: str | None
+    repo_url: str | None
+    repo_visibility: RepoVisibility
+    trajectory: LoopTrajectory | None
+
+
+class AuthoredWorkflowState(WorkflowState):
+    """Outer authored delivery state, never passed into the fire graph."""
+
     pr_url: str | None
     pr_number: int | None
     ci_status: CIStatus
     ci_summary: str | None
-    repo_url: str | None
-    repo_visibility: RepoVisibility
-    trajectory: LoopTrajectory | None
+    ci_red_class: NotRequired[CheckRedClass | None]
+    ci_run_absent: NotRequired[bool]

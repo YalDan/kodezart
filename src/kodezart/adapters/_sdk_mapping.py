@@ -13,6 +13,7 @@ from claude_agent_sdk import (
     ConversationResetMessage,
     Message,
     RateLimitEvent,
+    ResultError,
     ResultMessage,
     StreamEvent,
     SystemMessage,
@@ -45,6 +46,7 @@ from kodezart.types.domain.agent import (
     ToolUseEvent,
     UserMessageEvent,
 )
+from kodezart.types.domain.session import SessionFailureKind
 
 #: The subtype the CLI's conversation-reset frame reaches consumers under.
 #: The SDK models the frame as its own message class rather than a system
@@ -193,6 +195,36 @@ def _refuse_unmapped(message: Never) -> NoReturn:
     raise UnmappedAgentMessageError(type(message).__name__)
 
 
+def result_failure(message: ResultMessage | ResultError) -> SessionFailureKind | None:
+    """Translate declared native failure facts, never the accompanying prose."""
+    if isinstance(message, ResultError):
+        stop_reason = message.data.get("stop_reason")
+        is_error = True
+    else:
+        stop_reason = message.stop_reason
+        is_error = message.is_error
+    if stop_reason == "refusal":
+        return SessionFailureKind.REFUSAL
+    if not is_error:
+        return None
+    # https://code.claude.com/docs/en/agent-sdk/agent-loop#handle-the-result
+    match message.subtype:
+        case "error_max_turns" | "error_max_budget_usd":
+            return SessionFailureKind.BUDGET_EXHAUSTED
+        case "error_max_structured_output_retries":
+            return SessionFailureKind.MALFORMED_OUTPUT
+    if message.terminal_reason == "api_error":
+        # https://platform.claude.com/docs/en/api/errors
+        match message.api_error_status:
+            case 429:
+                return SessionFailureKind.RATE_LIMITED
+            case 504:
+                return SessionFailureKind.TIMEOUT
+            case 500 | 529:
+                return SessionFailureKind.TRANSPORT_ERROR
+    return SessionFailureKind.EXECUTION_ERROR
+
+
 def map_message(message: Message) -> list[AgentEvent]:
     """Convert a claude-agent-sdk Message into a list of domain AgentEvent instances.
 
@@ -202,7 +234,9 @@ def map_message(message: Message) -> list[AgentEvent]:
     """
     match message:
         case ResultMessage():
-            return [ResultEvent.model_validate(message, from_attributes=True)]
+            result = ResultEvent.model_validate(message, from_attributes=True)
+            result.failure_kind = result_failure(message)
+            return [result]
         case TaskStartedMessage():
             return [TaskStartedEvent.model_validate(message, from_attributes=True)]
         case TaskProgressMessage():

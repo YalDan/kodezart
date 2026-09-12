@@ -5,12 +5,14 @@ import inspect
 import pytest
 
 from kodezart.domain import outcome as outcome_module
-from kodezart.domain.outcome import classify_outcome
+from kodezart.domain.authored_outcome import (
+    classify_authored_outcome as classify_outcome,
+)
 from kodezart.types.domain.accept import AcceptVerdict
 from kodezart.types.domain.ci import CIStatus
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import WorkflowState
+from kodezart.types.domain.workflow import AuthoredWorkflowState as WorkflowState
 from tests.fakes import make_criteria
 
 
@@ -31,12 +33,13 @@ def _state(
 ) -> WorkflowState:
     """A neutral terminal state; each test sets only its predicate's fields."""
     return WorkflowState(
+        issue_key=None,
         feature_branch="kodezart/x-12345678",
         ralph_branch="kodezart/x-12345678-ralph-abcdef01",
-        ticket=None,
+        fire_spec=None,
         acceptance_criteria=make_criteria("Tests pass"),
         criteria_validation=None,
-        criteria_artifact=None,
+        criterion_set=None,
         criteria_regeneration_rounds=0,
         criteria_infeasible=criteria_infeasible,
         accept_verdict=verdict,
@@ -89,14 +92,14 @@ def _trajectory(
 
 
 def test_wire_values_are_pinned_verbatim() -> None:
-    """The sixteen values are a wire contract — a re-point must break the build.
+    """The original names, values and order survive later vocabulary appends.
 
     The order is the module's stated extension convention: later work
     APPENDS, so ``criteria_infeasible`` sits last rather than first,
     KOD-40's two members sit after it, and KOD-120's queue-assigned pair
-    sits at the end.
+    follows them. Later scope members append after this fire vocabulary.
     """
-    assert [member.value for member in WorkflowOutcome] == [
+    expected = [
         "merge_divergent",
         "fix_consolidation_failed",
         "loop_plateaued",
@@ -114,6 +117,9 @@ def test_wire_values_are_pinned_verbatim() -> None:
         "engine_error",
         "shutdown_abandoned",
     ]
+    assert list(WorkflowOutcome.__members__)[: len(expected)] == expected
+    for name in expected:
+        assert WorkflowOutcome[name].value == name
 
 
 #: The members no state can produce, because the runs they name have no state.
@@ -366,3 +372,16 @@ def test_unclassifiable_state_raises_there_is_no_default_arm() -> None:
     )
     with pytest.raises(ValueError, match="Unclassifiable terminal state"):
         classify_outcome(state)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "handed_off_for_delivery",
+        "ci_failed_environment_prerequisite",
+        "ci_failed_unclassified",
+        "ci_no_run_at_ref",
+    ],
+)
+def test_delivery_outcomes_append_with_exact_wire_values(name):
+    assert WorkflowOutcome[name].value == name

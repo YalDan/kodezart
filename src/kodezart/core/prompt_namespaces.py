@@ -26,10 +26,15 @@ SET_FRAGMENT_NAMES: frozenset[str] = frozenset({"skills_reference"})
 # compares it against what the shipped templates actually reference.
 PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
     {
+        "tracker_criteria",
+        "swept_criteria",
         "task",
         "task_md",
         "task_description",
         "base_ref",
+        "base_sha",
+        "claim",
+        "pinned_rulings",
         "validation_findings",
         "prior_prompt",
         "pending_failures",
@@ -54,9 +59,29 @@ PER_CALL_VARIABLE_NAMES: frozenset[str] = frozenset(
         "changeset_has_commits",
         "content",
         "destination",
+        "inspect_aggregates",
+        "inspect_privacy",
+        "roster_minimum",
         # The row title a scheduled pass's own record must carry: per call
         # because it spells the instant that run began (KOD-290).
         "record_title",
+        "organize_context",
+        "mandate_rubric",
+        "issue_body",
+        "issue_key",
+        "linked_issue_bodies",
+        "refusal_evidence",
+        "defect_classes",
+        "criterion_issue_bodies",
+        "criterion_key",
+        "head_sha",
+        "graded_sha",
+        "check",
+        "written_artifact",
+        "audited_surfaces",
+        "refutation_evidence",
+        "defect_class",
+        "verification_goal",
     }
 )
 
@@ -87,7 +112,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     Bare names for the two scalars, dotted namespaces for the mappings.
     Nothing here is a per-call value and nothing here is a fragment.
 
-    Every binding that can be absent — the eleven collections, the
+    Every binding that can be absent — the collections, the
     private-surface prose, a principal's forge handle, an unadopted
     document id, a gate step's dependency — is three-state: the value, or
     the paired absent marker, never a hole.
@@ -107,8 +132,8 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     A collection a pass addresses SINGLY stays keyed, because a role or a
     position is what the template names: ``principals.approver``,
     ``principals.assignee`` and ``principals.1`` by role and position,
-    ``agent_identities.0`` and ``initiatives.1`` by position, and
-    ``documents``, ``records``, ``knowledge``, ``queue_states``,
+    ``agent_identities.0`` and ``principals.1`` by position, and
+    ``documents``, ``records``, ``knowledge``, ``queue_states``, ``scope_labels``,
     ``workflow_states`` and ``endpoints`` by their configured key.  A role,
     position or key the config does not declare is an unbound placeholder
     and the render refuses, naming it — the refusal at the point of need.
@@ -125,9 +150,49 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     )
     _bind_absentable(
         bindings,
+        "scope_labels",
+        dict(config.scope_labels),
+        absent=not config.scope_labels,
+    )
+    _bind_absentable(
+        bindings,
+        "issue_labels",
+        dict(config.issue_labels),
+        absent=not config.issue_labels,
+    )
+    _bind_absentable(
+        bindings,
+        "organize_mandates",
+        [
+            {
+                "kind": phase.spec.kind.value,
+                "gate_label": phase.gate_label,
+                "terminal_marker": phase.terminal_marker,
+            }
+            for phase in config.resolve_organize_mandates()
+        ],
+        absent=not config.organize_mandates,
+    )
+    _bind_absentable(
+        bindings,
         "workflow_states",
         {stage.value: label for stage, label in config.workflow_states.items()},
         absent=not config.workflow_states,
+    )
+    _bind_absentable(
+        bindings,
+        "marker_prefixes",
+        dict(config.marker_prefixes),
+        absent=not config.marker_prefixes,
+    )
+    _bind_absentable(
+        bindings,
+        "run_event_states",
+        [
+            {"event": name, "effect": effect.value}
+            for name, effect in config.run_event_states.items()
+        ],
+        absent=not config.run_event_states,
     )
     # The roster a pass enumerates. ``repository`` splits three ways per
     # entry, exactly one marker non-``None``: bound to a declared url;
@@ -209,6 +274,9 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
                 "name": entry.name,
                 "id": entry.id,
                 "append_only": entry.append_only,
+                "columns": (
+                    None if entry.columns is None else entry.columns.model_dump()
+                ),
             }
         )
         records_namespace[f"{kind.value}_absent"] = True if entry is None else None
@@ -222,7 +290,7 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
     _bind_absentable(
         bindings,
         "private_surface",
-        config.private_surface,
+        None if config.private_surface is None else config.private_surface.description,
         absent=config.private_surface is None,
     )
     _bind_absentable(
@@ -230,22 +298,6 @@ def operation_bindings(config: OperationConfig) -> dict[str, object]:
         "endpoints",
         dict(config.endpoints),
         absent=not config.endpoints,
-    )
-    # ``target_date`` is absent on a real initiative more often than not.
-    _bind_absentable(
-        bindings,
-        "initiatives",
-        {
-            str(index): {
-                "id": item.id,
-                "target_date": (
-                    None if item.target_date is None else item.target_date.isoformat()
-                ),
-                "target_date_absent": True if item.target_date is None else None,
-            }
-            for index, item in enumerate(config.initiatives)
-        },
-        absent=not config.initiatives,
     )
     # ``handle`` is the identifier a MENTION is recognised by and
     # ``tracker_user`` the display identity the tracker names the principal
@@ -367,5 +419,7 @@ def bindings_for(config: OperationConfig | None) -> Mapping[str, object]:
         assert_namespaces_disjoint(())
         return {}
     bindings = operation_bindings(config)
-    assert_namespaces_disjoint(sorted(bindings))
+    # Check declared roots too: a new configuration field must not collide
+    # even before its projection into operation_bindings is implemented.
+    assert_namespaces_disjoint(sorted(set(type(config).model_fields) | set(bindings)))
     return bindings

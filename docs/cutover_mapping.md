@@ -14,11 +14,11 @@ live with the cutover work itself.
 | Deciding which items a pass touches | `PromptKey.FIRE_PREP_PASS` template, resolved through `PromptProvider` |
 | Grooming open work into actionable shape | `PromptKey.GROOMING_PASS` template, resolved through `PromptProvider` |
 | Who may approve | `OperationConfig.principals` — the APPROVER role, never a name |
-| Queue and lifecycle vocabulary | `OperationConfig.queue_states` / `workflow_states` |
+| Queue, scope admission and lifecycle vocabulary | `OperationConfig.queue_states` / `scope_labels` / `workflow_states` |
 | Which repositories a pass may act on, and how they are verified | `OperationConfig.repos` |
 | What counts as a mention of the operation | `OperationConfig.agent_identities` |
 | Whose word creates a reply obligation | `OperationConfig.principals` |
-| Which initiatives receive a status update | `OperationConfig.initiatives` |
+| Which initiatives receive a status update | Native membership read within the declared team/scope boundary |
 | Where the scan-window marker lives | `OperationConfig.records[<kind>]` — the most recent record row |
 | Reference material a pass reads | `OperationConfig.knowledge` |
 | Where escalations go | `OperationConfig.endpoints` |
@@ -82,15 +82,27 @@ registries.
 | queue_states.approved | queue_states |
 | queue_states.done | queue_states |
 | queue_states.decision | queue_states |
+| scope_labels | scope_labels |
+| issue_labels.criterion | issue_labels |
+| organize_mandates | organize_mandates |
+| scope_labels.triage | scope_labels |
+| scope_labels.proposed | scope_labels |
+| scope_labels.approved | scope_labels |
 | workflow_states.in_progress | workflow_states |
 | workflow_states.in_review | workflow_states |
-| workflow_states.done | workflow_states |
+| run_event_states | run_event_states |
+| marker_prefixes.repository | marker_prefixes |
 | repos | repos |
 | documents.constitution.id | documents |
 | records.fire_prep.id | records |
 | records.fire_prep.name | records |
 | records.grooming.name | records |
 | records.grooming.id | records |
+| records.fire | records |
+| records.fire.name | records |
+| records.fire.id | records |
+| records.fire.system | records |
+| records.fire.columns.what_happened | records |
 | knowledge.constitution | knowledge |
 | knowledge.run_logs | knowledge |
 | knowledge.memories | knowledge |
@@ -99,9 +111,6 @@ registries.
 | endpoints.host_runner | endpoints |
 | endpoints.cloudflare_docs_mcp | endpoints |
 | endpoints.notion_connector | endpoints |
-| initiatives.0.id | initiatives |
-| initiatives.0.target_date | initiatives |
-| initiatives.1.id | initiatives |
 | private_surface | private_surface |
 
 ## What this lane does not claim
@@ -114,3 +123,12 @@ registries.
   the next pass reads (KOD-245); no separate checkpoint document carries it,
   in any prompt set (KOD-306). `documents` stays a read-side registry.
 - **Cutover execution.** Only the mapping.
+
+## Native OperationConfig consumers
+
+These fields have native typed consumers rather than template placeholders. The field census remains total across both tables.
+
+| Field | Consumer |
+| --- | --- |
+| organize_scopes | composition/organize.py::build_organize_tick |
+| workflow_states.done | adapters/linear_mcp_tracker.py::set_workflow_state |

@@ -21,19 +21,48 @@ operation_name = "example-operation"
 # The tracker workspace the operation acts within. A slug, not a URL.
 workspace = "example-workspace"
 
+# Optional pre-approval organize phase table. A populated table declares
+# groom, ticket and criteria exactly once, using qualified scope_labels
+# and issue_labels references. See docs/configuration.md for its five fields.
+# Empty declares no table and does not schedule an organize pass.
+organize_mandates = []
+# Explicit scope-to-repository bindings for the native Organize owner.
+# Each row names scope = { kind = "issue", key = "native-parent-key" }
+# and repo_url matching one declared [[repos]] URL; no cross-product is inferred.
+organize_scopes = []
+
 # Identities the agent posts under, in the order the pass templates address
 # them: the mention handle first, the account's plain name second. Must not
-# collide with a principal.
+# collide with a principal. The tracker credential must be attributed to one
+# of these identities; boot refuses otherwise.
 agent_identities = ["@example-agent", "example-agent"]
 
-# Prose describing the CLASS of thing this operation treats as private, read
-# by the judgment half of the outbound gate. A CLASS, never a list of
-# instances: an instance list stops at what the operator remembered to
-# enumerate, and writing the instances down here would publish the very
-# strings the gate exists to withhold. Omitting the field is legal and means
-# the operator has supplied no description; enabling
-# KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED without one aborts boot.
-private_surface = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+# Semantic prose stays available to the judgment scanner. Host/workspace facts
+# are deployment data; these are synthetic examples only. A private host blocks
+# references to that entire host; workspaces select only named native slugs.
+[private_surface]
+description = "Anything identifying the people, customers or commercial arrangements behind this operation: personal and customer names, private workspace and document addresses, revenue and pricing figures, and unreleased capabilities described by what they do rather than by their public name."
+hosts = []
+[private_surface.workspaces]
+"linear.app" = ["example-private-workspace"]
+
+# Stable tracker identities. Preserve the existing prefixes when adopting
+# a tracker with recorded work: changing one addresses a different marker.
+# Every used purpose needs an entry; an absent purpose is refused at use.
+[marker_prefixes]
+ruling = "kodezart-ruling"
+claim = "kodezart-claim"
+work_ref = "kodezart-workref"
+base_spec = "kodezart-basespec"
+repository = "kodezart-repo"
+issue_identity = "kodezart-issue"
+run_state = "run-state"
+# One idempotent terminal outcome comment per queued job.
+run_outcome = "run-outcome"
+decision = "decision"
+# Record-shaped issues carry history and are never scope fire candidates.
+tracker = "tracker"
+escalation = "escalation"
 
 # Authority is enforced by ROLE, never by name in code or templates.
 # When principals are declared, EXACTLY ONE carries `approver` and AT MOST
@@ -118,6 +147,21 @@ approved = "queue:approved"
 done = "queue:done"
 decision = "queue:decision"
 
+# Issue labels use semantic keys and configurable tracker names. An empty
+# mapping loads; criterion reads require the criterion entry at the point of use.
+[issue_labels]
+criterion = "criterion"
+# Escalations add this classification without replacing queue approval.
+decision = "decision"
+
+# Scope admission is separate from the issue queue. Names are configurable;
+# an omitted or empty mapping is valid, and a populated mapping must include
+# all three semantic members. Additional keys remain available to templates.
+[scope_labels]
+triage = "scope:triage"
+proposed = "scope:proposed"
+approved = "scope:approved"
+
 # Lifecycle states, validated exactly parallel to queue_states.
 [workflow_states]
 in_progress = "In Progress"
@@ -131,10 +175,18 @@ done = "Done"
 [[repos]]
 url = "https://example.invalid/example-org/example-repo"
 trunk = "main"
+# Optional environment facts: only explicit false establishes an unmet
+# prerequisite; omitted keys are unknown. Never derive these from CI logs.
+# runner_environment = { repository_history = false, network = true }
+# Explicit exemption from blocking close-out when declared CI has no run:
+# forge_exempt = false
 
 [[repos.checks]]
 name = "install"
 command = "make install"
+# Optional exact forge check name and its declared prerequisites:
+# forge_check = "install"
+# requires = ["network"]
 
 [[repos.checks]]
 name = "typecheck"
@@ -214,7 +266,7 @@ id = "example-checkpoint-document-id"
 container = "primary"
 
 # Every `system = "knowledge"` entry below requires the deployment to grant
-# the knowledge server to the scheduled passes (KODEZART_KNOWLEDGE_SESSION_GRANTS
+# the knowledge server to the scheduled passes (KODEZART_KNOWLEDGE__SESSION_GRANTS
 # includes "scheduled_pass") — a destination no pass can reach is refused at
 # boot, naming each such entry. Tracker-side entries need no grant.
 # A knowledge-store document is not this operation's to create, so its id is
@@ -252,6 +304,33 @@ name = "Example Grooming Log"
 id = "example-grooming-log-destination-id"
 append_only = true
 
+# A declared knowledge fire destination additionally requires an explicit
+# outcome select mapping. Source-qualified keys preserve workflow semantics:
+# [records.fire.outcome_mapping]
+# property = "Outcome"
+# [records.fire.outcome_mapping.options]
+# "workflow.pr_opened" = "PR opened"
+# "run.failed" = "Failed"
+# Declare every outcome this destination accepts, using its actual options.
+# No generic runner-completed -> PR-created equivalence is implied.
+# Missing mappings/options or conflicting observed matches refuse the write.
+# [records.fire.columns]
+# repo = "Repo"
+# pr_url = "PR"
+# base_branch = "baseBranch"
+# started = "Started"
+# ended = "Ended"
+# duration = "Duration min"
+# duration_unit = "minutes"
+# iterations = "Iterations"
+# what_happened = "What happened"
+# [records.fire.columns.repo_options]
+# "https://forge.example/owner/repo" = "owner/repo"
+# Property names and repository URL -> select option mappings are explicit.
+# The runner fills known facts only. It preserves session-authored narrative.
+# Tracked ticket_fire sessions granted knowledge receive their own Record
+# clause with this destination, narrative property, and original run identity.
+
 # Reference material held in the knowledge store, addressed by key. Every
 # value here belongs to the knowledge system by construction, which is what
 # a template naming it must say.
@@ -276,13 +355,27 @@ host_runner = "localhost:8000"
 cloudflare_docs_mcp = "https://example.invalid/docs-mcp"
 notion_connector = "example-notion-connector-id"
 
-# Initiatives the operation is steering toward. `target_date` is OPTIONAL and
-# omitting it is the ordinary case: most real initiatives carry none, and a
-# config that had to invent one would make its passes report a distance to a
-# commitment the tracker does not hold.
-[[initiatives]]
-id = "example-initiative"
-target_date = 2026-12-31
+# Initiative membership and target dates are read from the tracker at run time.
+# A copied [[initiatives]] roster is rejected; team scope is the declared boundary.
 
-[[initiatives]]
-id = "example-initiative-without-a-target-date"
+# Required before a tracker deployment starts. These rows classify events;
+# they do not grant a state writer or override tracker criterion rollup.
+[run_event_states]
+first_push = "NO_TRANSITION"
+pr_opened = "in_review"
+gate_green = "NO_TRANSITION"
+gate_red = "NO_TRANSITION"
+evaluator_accepted = "DERIVED"
+lane_plateaued = "in_review"
+issue_crossed_off = "NO_TRANSITION"
+criterion_refuted = "DERIVED"
+escalation_raised = "NO_TRANSITION"
+lane_dispatched = "in_progress"
+claim_lost = "in_progress"
+checks_green = "in_review"
+landed_and_verified = "DERIVED"
+criteria_halt = "in_progress"
+audit_refuted = "DERIVED"
+run_alarm_raised = "NO_TRANSITION"
+run_alarm_cleared = "NO_TRANSITION"
+node_session_started = "NO_TRANSITION"

@@ -1,0 +1,160 @@
+"""Compose and check a scope's pinned lane heads in one disposable tree."""
+
+import asyncio
+from collections.abc import Sequence
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from kodezart.core.owned_tasks import finish_owned as _finish_owned
+from kodezart.core.owned_tasks import settle
+from kodezart.core.protocols import CheckChainRunner, GitService
+from kodezart.domain import check_chain
+from kodezart.domain.errors import CheckChainExecutionError, MergeConflictError
+from kodezart.services.union_identity import require_union_object_identity
+from kodezart.types.domain.operation import RepoEntry, check_chain_failures
+from kodezart.types.domain.union import (
+    UnionCompositionResult,
+    UnionLaneHead,
+    UnionMergeConflict,
+    UnionRemediationEntry,
+    UnionScratchObservation,
+)
+
+
+class UnionComposition:
+    """A scope-level consumer of GitService and CheckChainRunner.
+
+    The caller supplies the planner's ordered current-head snapshot and a
+    selected immutable base. No forge writer or branch publisher is held.
+    """
+
+    def __init__(
+        self,
+        *,
+        git: GitService,
+        runner: CheckChainRunner,
+        author_name: str,
+        author_email: str,
+    ) -> None:
+        self._git = git
+        self._runner = runner
+        self._author_name = author_name
+        self._author_email = author_email
+
+    async def verify(
+        self,
+        *,
+        scope_key: str,
+        repo_path: str,
+        repo: RepoEntry,
+        base_sha: str,
+        lane_heads: Sequence[UnionLaneHead],
+    ) -> UnionCompositionResult:
+        """Return the measured scratch result; release its tree on every exit."""
+        with TemporaryDirectory(prefix="kodezart-union-") as directory:
+            worktree = str(Path(directory) / "tree")
+            snapshot = UnionScratchObservation(
+                scope_key=scope_key,
+                repository_url=repo.url,
+                base_sha=base_sha,
+                lane_heads=tuple(lane_heads),
+                scratch_path=worktree,
+                scratch_sha=base_sha,
+            )
+            failures = check_chain_failures(repo.checks)
+            if failures:
+                raise CheckChainExecutionError(
+                    cwd=worktree,
+                    step_name=None,
+                    reason="; ".join(failures),
+                )
+            await require_union_object_identity(
+                git=self._git, repository=repo_path, scope_key=scope_key
+            )
+            created = False
+            try:
+                _, cancelled = await _finish_owned(
+                    asyncio.create_task(
+                        self._git.create_worktree(
+                            repo_path,
+                            base_sha,
+                            worktree,
+                            branch_name=None,
+                            create_branch=False,
+                        )
+                    )
+                )
+                created = True
+                if cancelled:
+                    raise asyncio.CancelledError
+                for head in snapshot.lane_heads:
+                    try:
+                        await settle(
+                            self._git.merge_scratch_head(
+                                cwd=worktree,
+                                head_sha=head.head_sha,
+                                author_name=self._author_name,
+                                author_email=self._author_email,
+                            )
+                        )
+                    except MergeConflictError as exc:
+                        if not exc.paths:
+                            raise
+                        conflict = UnionMergeConflict(
+                            lane_key=head.lane_key,
+                            paths=exc.paths,
+                        )
+                        result = UnionCompositionResult(
+                            **snapshot.model_dump(exclude={"scratch_sha"}),
+                            scratch_sha=await self._scratch_sha(worktree),
+                            checks=None,
+                            merge_conflict=conflict,
+                            remediation=UnionRemediationEntry(
+                                root_step_names=(),
+                                cascade_step_names=(),
+                                merge_conflict=conflict,
+                            ),
+                        )
+                        await require_union_object_identity(
+                            git=self._git, repository=repo_path, scope_key=scope_key
+                        )
+                        return result
+                if not repo.checks:
+                    raise CheckChainExecutionError(
+                        cwd=worktree,
+                        step_name=None,
+                        reason="no check chain is declared",
+                    )
+                await require_union_object_identity(
+                    git=self._git, repository=repo_path, scope_key=scope_key
+                )
+                checks = await self._runner.run_chain(cwd=worktree, steps=repo.checks)
+                classification = check_chain.classify_check_failures(
+                    repo.checks,
+                    checks.failed_step_names,
+                )
+                remediation = (
+                    UnionRemediationEntry(
+                        root_step_names=classification.roots,
+                        cascade_step_names=classification.cascades,
+                    )
+                    if classification.roots
+                    else None
+                )
+                scratch_sha = await self._scratch_sha(worktree)
+                await require_union_object_identity(
+                    git=self._git, repository=repo_path, scope_key=scope_key
+                )
+                return UnionCompositionResult(
+                    **snapshot.model_dump(exclude={"scratch_sha"}),
+                    scratch_sha=scratch_sha,
+                    checks=checks,
+                    remediation=remediation,
+                )
+            finally:
+                if created or self._git.is_repo(worktree):
+                    await settle(self._git.remove_worktree(repo_path, worktree))
+
+    async def _scratch_sha(self, worktree: str) -> str:
+        sha = await settle(self._git.current_sha(worktree))
+        return sha

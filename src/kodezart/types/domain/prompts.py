@@ -28,6 +28,8 @@ class PromptKey(StrEnum):
     ACCEPTANCE_CRITERIA = "acceptance_criteria"
     CRITERIA_VALIDATION = "criteria_validation"
     IMPLEMENTATION = "implementation"
+    NATIVE_WRITER_CONTRACT = "native_writer_contract"
+    AMENDMENT_JUDGE = "amendment_judge"
     EVALUATION = "evaluation"
     ITERATION_FEEDBACK = "iteration_feedback"
     POST_MERGE_REVIEW = "post_merge_review"
@@ -38,11 +40,21 @@ class PromptKey(StrEnum):
     FIRE_PREP_PASS = "fire_prep_pass"
     GROOMING_PASS = "grooming_pass"
     CONTENT_AUDIT = "content_audit"
+    ORGANIZE_ASSESS = "organize_assess"
+    ORGANIZE_AUTHOR = "organize_author"
+    ORGANIZE_VERIFY = "organize_verify"
+    WRITE_BACK_VERIFY = "write_back_verify"
+    AUDIT_CLAIM = "audit_claim"
+    AUDIT_OVERCLAIM = "audit_overclaim"
+    AUDIT_MANDATE = "audit_mandate"
+    AUDIT_DETECTION_REMOVAL = "audit_detection_removal"
+    ORGANIZE_CRITERIA_AUTHOR = "organize_criteria_author"
     #: What lives where.  A prelude composed into a session that is granted
     #: the knowledge server, and into no other — a key rather than set-level
     #: fragment metadata, so it enters this census and the set-completeness
     #: rule covers it like every other role.
     KNOWLEDGE_MAP = "knowledge_map"
+    FIRE_RECORD = "fire_record"
 
 
 class OrchestrationPrimitive(StrEnum):

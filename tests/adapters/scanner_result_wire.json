@@ -1,0 +1,57 @@
+[
+  {
+    "changes": {},
+    "public": {
+      "type": "result",
+      "subtype": "success",
+      "durationMs": 1,
+      "durationApiMs": 1,
+      "isError": false,
+      "numTurns": 1,
+      "sessionId": "audit",
+      "structuredOutput": {
+        "findings": []
+      }
+    },
+    "json": "{\"type\":\"result\",\"subtype\":\"success\",\"durationMs\":1,\"durationApiMs\":1,\"isError\":false,\"numTurns\":1,\"sessionId\":\"audit\",\"stopReason\":null,\"totalCostUsd\":null,\"usage\":null,\"result\":null,\"branch\":null,\"commitSha\":null,\"structuredOutput\":{\"findings\":[]}}"
+  },
+  {
+    "changes": {
+      "is_error": true,
+      "api_error_status": 429,
+      "terminal_reason": "api_error"
+    },
+    "public": {
+      "type": "result",
+      "subtype": "success",
+      "durationMs": 1,
+      "durationApiMs": 1,
+      "isError": true,
+      "numTurns": 1,
+      "sessionId": "audit",
+      "structuredOutput": {
+        "findings": []
+      }
+    },
+    "json": "{\"type\":\"result\",\"subtype\":\"success\",\"durationMs\":1,\"durationApiMs\":1,\"isError\":true,\"numTurns\":1,\"sessionId\":\"audit\",\"stopReason\":null,\"totalCostUsd\":null,\"usage\":null,\"result\":null,\"branch\":null,\"commitSha\":null,\"structuredOutput\":{\"findings\":[]}}"
+  },
+  {
+    "changes": {
+      "stop_reason": "refusal"
+    },
+    "public": {
+      "type": "result",
+      "subtype": "success",
+      "durationMs": 1,
+      "durationApiMs": 1,
+      "isError": false,
+      "numTurns": 1,
+      "sessionId": "audit",
+      "stopReason": "refusal",
+      "structuredOutput": {
+        "findings": []
+      }
+    },
+    "json": "{\"type\":\"result\",\"subtype\":\"success\",\"durationMs\":1,\"durationApiMs\":1,\"isError\":false,\"numTurns\":1,\"sessionId\":\"audit\",\"stopReason\":\"refusal\",\"totalCostUsd\":null,\"usage\":null,\"result\":null,\"branch\":null,\"commitSha\":null,\"structuredOutput\":{\"findings\":[]}}"
+  }
+]

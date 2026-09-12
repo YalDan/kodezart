@@ -20,7 +20,8 @@ from kodezart.types.domain.agent import (
     WorkflowTicketEvent,
     WorkflowTicketReviewEvent,
 )
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -146,10 +147,11 @@ class _ScriptedReviewExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -347,8 +349,8 @@ async def test_configurable_values_flow_to_executor() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_websearch_in_allowed_tools() -> None:
-    """Every executor call must have WebSearch and WebFetch in allowed_tools."""
+async def test_ticket_sessions_request_the_authoring_tool_bundle() -> None:
+    """Both ticket roles select the bundle whose native expansion includes web tools."""
     executor = FakeAgentExecutor(events=[])
     loop = _make_loop(executor=executor)
 
@@ -356,10 +358,7 @@ async def test_websearch_in_allowed_tools() -> None:
 
     assert len(executor.calls) >= 2
     for call in executor.calls:
-        allowed = call["allowed_tools"]
-        assert isinstance(allowed, list)
-        assert "WebSearch" in allowed
-        assert "WebFetch" in allowed
+        assert call["allowed_tools"] is ToolPreset.AUTHORING
 
 
 # ---------------------------------------------------------------------------
@@ -511,10 +510,11 @@ async def test_no_structured_output_from_creator_raises() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -606,10 +606,11 @@ async def test_no_structured_output_from_reviewer_raises() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -745,10 +746,11 @@ async def test_workspace_released_on_node_error() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -1202,10 +1204,11 @@ class _RejectedThenDraftingExecutor(_ScriptedReviewExecutor):
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

@@ -1,9 +1,11 @@
 """Shared async test fixtures — no mocking, full chain exercised."""
 
+import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 
 import pytest
+import structlog
 from httpx import ASGITransport, AsyncClient
 
 from kodezart.adapters.git_branch_merger import GitBranchMerger
@@ -30,6 +32,25 @@ for _ambient in [name for name in os.environ if name.startswith("KODEZART_")]:
 AppConfig.model_config["env_file"] = None
 
 
+@pytest.fixture(autouse=True)
+def _restore_logging_configuration() -> Iterator[None]:
+    """A boot test must not leave handlers bound to its closed capture stream."""
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    levels = {
+        name: logging.getLogger(name).level
+        for name in ("", "uvicorn.access", "uvicorn.error")
+    }
+    configuration = structlog.get_config()
+    try:
+        yield
+    finally:
+        root.handlers = handlers
+        for name, level in levels.items():
+            logging.getLogger(name).setLevel(level)
+        structlog.configure(**configuration)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _git_test_identity() -> None:
     """Provide a git identity to subprocess git commands invoked by tests.
@@ -44,7 +65,7 @@ def _git_test_identity() -> None:
 
 
 _GATED_MARKERS: dict[str, str] = {
-    "live": "live tests need Claude CLI (run with: pytest -m live)",
+    "live": "live tests need external credentials or CLI (run with: pytest -m live)",
     "postgres": (
         "postgres tests need a database at KODEZART_TEST_POSTGRES_URL "
         "(run with: pytest -m postgres)"

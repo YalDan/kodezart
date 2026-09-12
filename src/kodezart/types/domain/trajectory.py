@@ -18,7 +18,7 @@ from kodezart.types.domain.criteria import CriterionId
 class IterationRecord(CamelCaseModel):
     """One iteration's contribution to the loop's progress memory.
 
-    ``failing_criterion_ids`` carries minted ``CriterionId`` values, not
+    ``failing_criterion_ids`` carries exact ``CriterionId`` values, not
     the evaluator's echo of a criterion's text: a plateau is a claim that
     the SAME criteria keep failing, and text a model re-renders each
     iteration cannot carry that claim.  ``commit_sha`` is that

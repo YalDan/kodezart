@@ -4,10 +4,7 @@ import uuid
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
-from kodezart.core.config import AppConfig
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
@@ -21,6 +18,7 @@ from kodezart.types.domain.gating import (
     RepoVisibility,
     WriterShape,
 )
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.skills import SkillsMode, SkillsSelection
 from tests.fakes import (
     FakeAgentExecutor,
@@ -36,10 +34,12 @@ from tests.fakes import (
     FakeVisibilityResolver,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.outbound import LiteralJudgment, make_admission
+from tests.workflow_factory import make_authored_workflow
 
 
 def make_engine(
@@ -50,7 +50,8 @@ def make_engine(
     ci_monitor: FakeCIMonitor | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
     executor: FakeAgentExecutor | None = None,
-) -> RalphWorkflowEngine:
+    ticket_generator: FakeTicketGenerator | None = None,
+) -> AuthoredDeliveryCoordinator:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -58,14 +59,17 @@ def make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
-        ticket_generator=FakeTicketGenerator(),
+        ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",
@@ -88,7 +92,7 @@ def make_engine(
 
 
 async def run_engine(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     *,
     repo_url: str | None = "https://github.com/owner/repo",
     repo_path: str | None = None,
@@ -97,11 +101,12 @@ async def run_engine(
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the thing",
             repo_path=repo_path,
             repo_url=repo_url,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -234,11 +239,7 @@ async def test_writer_matrix_over_every_visibility(
     visibility: RepoVisibility,
 ) -> None:
     """AC-6: the full visibility x writer matrix runs clean unconfigured."""
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission()
     engine = make_engine(
         gate=gate,
         visibility_resolver=FakeVisibilityResolver(visibility),
@@ -251,13 +252,8 @@ async def test_writer_matrix_over_every_visibility(
 
 async def test_blocked_write_fails_loudly_and_posts_nothing() -> None:
     """BLOCKED raises the typed error; the forge client is never called."""
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(
-                patterns={RedactionCategory.INFRA_ENDPOINTS: [r"test-branch"]},
-            )
-        ],
-        verdicts=AppConfig().deny_pattern_verdicts,
+    gate = make_admission(
+        LiteralJudgment({RedactionCategory.INFRA_ENDPOINTS: ["test-branch"]})
     )
     pr_creator = FakePRCreator()
     engine = make_engine(

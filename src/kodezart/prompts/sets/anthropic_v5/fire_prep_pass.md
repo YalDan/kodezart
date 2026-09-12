@@ -9,7 +9,7 @@ on:
 {{/each}}
 {{#if recorded_routing}}A team above with no bound repository routes per issue: when you stage a fire on such
 a team, decide which declared repository the work belongs to and record that decision on
-the issue as a marker comment — `<!-- kodezart-repo url="..." -->`, the url exactly as
+the issue as a marker comment — `<!-- {{marker_prefixes.repository}} url="..." -->`, the url exactly as
 declared above. Dispatch fires only what carries a marker: an approved issue without one
 is refused by name until this pass records it, so a staged fire with no recorded
 repository is not staged.

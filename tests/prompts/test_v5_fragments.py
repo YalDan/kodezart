@@ -36,6 +36,8 @@ UTILITY_KEYS = frozenset(
         PromptKey.COMMIT_MESSAGE.value,
         PromptKey.PR_DESCRIPTION.value,
         PromptKey.KNOWLEDGE_MAP.value,
+        PromptKey.FIRE_RECORD.value,
+        PromptKey.NATIVE_WRITER_CONTRACT.value,
     },
 )
 

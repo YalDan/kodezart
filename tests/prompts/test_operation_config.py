@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.core.config import AppConfig
 from kodezart.core.errors import (
@@ -40,7 +38,8 @@ from kodezart.types.domain.operation import (
     RunKind,
 )
 from kodezart.types.domain.prompts import PromptKey
-from tests.prompt_census import PROMPT_FUNCTION_COUNT
+from tests.outbound import make_admission
+from tests.prompt_census import PROMPT_FUNCTION_NAMES
 from tests.prompts.sets import PER_RUN
 from tests.prompts.test_prompt_wiring import load_registry
 
@@ -120,7 +119,7 @@ def markdown_rows(heading: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
+def test_all_fields_are_present_with_the_stated_types() -> None:
     """Field-by-field census: exact equality, never a subset check.
 
     Grew by ``records`` under KOD-112 R3 fix 6 (the write-side destination
@@ -137,21 +136,28 @@ def test_all_fourteen_fields_are_present_with_the_stated_types() -> None:
         "agent_identities",
         "teams",
         "queue_states",
+        "scope_labels",
+        "issue_labels",
+        "organize_mandates",
+        "organize_scopes",
         "workflow_states",
+        "run_event_states",
+        "marker_prefixes",
         "repos",
         "documents",
         "records",
         "knowledge",
         "endpoints",
-        "initiatives",
         "private_surface",
     }
     config = example_config()
     assert isinstance(config.operation_name, str)
     assert isinstance(config.workspace, str)
     assert isinstance(config.queue_states, dict)
+    assert isinstance(config.scope_labels, dict)
+    assert config.organize_mandates == ()
+    assert isinstance(config.issue_labels, dict)
     assert set(config.workflow_states) == set(LifecycleStage)
-    assert config.initiatives[0].target_date == date(2026, 12, 31)
     assert config.repos[0].checks
     assert config.records[RunKind.FIRE_PREP.value].append_only is True
 
@@ -323,6 +329,7 @@ def test_no_label_or_status_literal_lives_in_source() -> None:
     src = REPO_ROOT / "src" / "kodezart"
     labels = {
         *example_config().queue_states.values(),
+        *example_config().scope_labels.values(),
         *example_config().workflow_states.values(),
     }
     for path in src.rglob("*.py"):
@@ -529,7 +536,7 @@ def test_pass_templates_resolve_through_the_port_and_render(
 
 def test_claude_opus_completeness_passes_at_the_full_census() -> None:
     """KOD-63's completeness rule obliges the default set to supply both."""
-    assert len(PromptKey) == PROMPT_FUNCTION_COUNT
+    assert {key.value for key in PromptKey} == PROMPT_FUNCTION_NAMES
     members = {path.stem for path in SET_DIR.glob("*.md")}
     assert members == {key.value for key in PromptKey}
 
@@ -540,17 +547,12 @@ def test_claude_opus_completeness_passes_at_the_full_census() -> None:
 
 
 @pytest.mark.parametrize("key", PASS_KEYS)
-async def test_ported_templates_pass_the_deny_pattern_engine(key: PromptKey) -> None:
+async def test_ported_templates_contain_no_resolved_org_values(key: PromptKey) -> None:
     """Zero resolved org-shaped values in repository content."""
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(patterns=config.deny_patterns),
-            RegexContentScanner(patterns=ORG_SHAPED_PATTERNS),
-        ],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission()
     body = (SET_DIR / f"{key.value}.md").read_text(encoding="utf-8")
+    for patterns in ORG_SHAPED_PATTERNS.values():
+        assert not any(re.search(pattern, body) for pattern in patterns)
     decision = await gate.gate(
         content=body,
         visibility=RepoVisibility.PUBLIC,
@@ -631,18 +633,31 @@ def test_placeholder_mapping_is_total_in_both_directions() -> None:
 
     # Direction 2 — read off the MODEL, never off the table's own rows, so
     # the mapping can no longer be checked against what it was derived from.
-    assert set(mapped.values()) == set(OperationConfig.model_fields)
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    assert native == {
+        "organize_scopes": "composition/organize.py::build_organize_tick",
+        "workflow_states.done": "adapters/linear_mcp_tracker.py::set_workflow_state",
+    }
+    assert set(mapped).isdisjoint(native)
+    assert set(mapped.values()) | {name.split(".")[0] for name in native} == set(
+        OperationConfig.model_fields
+    )
 
 
 def test_every_operation_config_field_is_reachable_from_a_pass_template() -> None:
     """Direction 2 again, straight from the templates to the model.
 
-    R2 added four fields — principals, agent_identities, repos, initiatives —
+    The principals, agent_identities and repos fields were introduced
     on the reasoning that the passes consume them.  A field no template can
     reach is a field the port did not actually port.
     """
     reachable = {name.split(".")[0] for name in template_placeholders()}
-    unreachable = set(OperationConfig.model_fields) - reachable
+    native = dict(markdown_rows("## Native OperationConfig consumers"))
+    unreachable = (
+        set(OperationConfig.model_fields)
+        - reachable
+        - {name.split(".")[0] for name in native}
+    )
     assert unreachable == set(), f"no pass template reaches {sorted(unreachable)}"
 
 
@@ -685,24 +700,26 @@ def _to_toml(raw: dict[str, object]) -> str:
     lines: list[str] = []
     for key, value in raw.items():
         if isinstance(value, str | int | float | bool):
-            lines.append(f"{key} = {_scalar(value)}")
+            lines.append(f"{_scalar(key)} = {_scalar(value)}")
         elif isinstance(value, list) and all(isinstance(v, str) for v in value):
-            lines.append(f"{key} = [{', '.join(_scalar(v) for v in value)}]")
+            lines.append(f"{_scalar(key)} = [{', '.join(_scalar(v) for v in value)}]")
     for key, value in raw.items():
         if isinstance(value, dict):
             for sub_key, sub_value in value.items():
                 if isinstance(sub_value, dict):
-                    lines.append(f"\n[{key}.{sub_key}]")
-                    lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_value.items())
+                    lines.append(f"\n[{_scalar(key)}.{_scalar(sub_key)}]")
+                    lines.extend(
+                        f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_value.items()
+                    )
             scalars = {k: v for k, v in value.items() if not isinstance(v, dict)}
             if scalars:
-                lines.append(f"\n[{key}]")
-                lines.extend(f"{k} = {_scalar(v)}" for k, v in scalars.items())
+                lines.append(f"\n[{_scalar(key)}]")
+                lines.extend(f"{_scalar(k)} = {_scalar(v)}" for k, v in scalars.items())
         elif isinstance(value, list) and value and isinstance(value[0], dict):
             for item in value:
-                lines.append(f"\n[[{key}]]")
+                lines.append(f"\n[[{_scalar(key)}]]")
                 lines.extend(
-                    f"{k} = {_scalar(v)}"
+                    f"{_scalar(k)} = {_scalar(v)}"
                     for k, v in item.items()
                     if not _is_table_array(v)
                 )
@@ -711,8 +728,10 @@ def _to_toml(raw: dict[str, object]) -> str:
                         continue
                     sub_items: list[dict[str, object]] = sub_value
                     for sub_item in sub_items:
-                        lines.append(f"\n[[{key}.{sub_key}]]")
-                        lines.extend(f"{k} = {_scalar(v)}" for k, v in sub_item.items())
+                        lines.append(f"\n[[{_scalar(key)}.{_scalar(sub_key)}]]")
+                        lines.extend(
+                            f"{_scalar(k)} = {_scalar(v)}" for k, v in sub_item.items()
+                        )
     return "\n".join(lines) + "\n"
 
 

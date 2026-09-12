@@ -9,6 +9,24 @@ concerns.
 
 ## [Unreleased]
 
+### Removed
+
+- The criterion class. `criterionClass` is gone from every criterion on the
+  wire — `workflow_criteria.criteria[]` now carries `id` and `text`, while
+  `.kodezart/criteria.json` entries also retain their `feasibility` evidence.
+  The acceptance-criteria prompt no longer asks a generator to classify what it
+  emits. Nothing reads the old key: a payload carrying it is refused, and a
+  persisted artifact carrying it is not this version's input.
+
+### Changed
+
+- The accept gate grades every criterion alike: any graded criterion that does
+  not pass rejects the run, where a failed `soft_signal` used to ship it with a
+  flag. `workflow_iteration.verdict` keeps its three states — `ship_with_flags`
+  is now reached by a criterion the feasibility sweep could not grade, and the
+  `## Shipped with flags` section of a pull-request body carries those ungraded
+  criteria and the evaluator's `sherlockFlags`, never a failed criterion.
+
 ## [0.2.0] - 2026-09-07
 
 v0.2 turns kodezart from a request-driven service into one that runs on its

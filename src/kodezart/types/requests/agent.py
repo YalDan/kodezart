@@ -6,6 +6,9 @@ from pydantic import Field, model_validator
 
 from kodezart.types.base import CamelCaseModel
 from kodezart.types.domain.branch import BaseSpec
+from kodezart.types.domain.scope import ScopeKind
+
+HttpPermissionMode = Literal["plan", "bypassPermissions"]
 
 
 class RepoSourceRequest(CamelCaseModel):
@@ -37,7 +40,7 @@ class QueryRequest(RepoSourceRequest):
     """
 
     branch: str | None = None
-    permission_mode: Literal["plan", "bypassPermissions"] = "plan"
+    permission_mode: HttpPermissionMode = "plan"
     session_id: str | None = None
     allowed_tools: list[str] = Field(
         default_factory=lambda: ["Read", "Glob", "Grep", "Bash"],
@@ -50,6 +53,13 @@ class QueryRequest(RepoSourceRequest):
             msg = "branch can only be used with repoUrl"
             raise ValueError(msg)
         return self
+
+
+class ScopeRefRequest(CamelCaseModel):
+    """Address a tracker scope without resolving its membership at submission."""
+
+    kind: ScopeKind
+    key: str = Field(min_length=1)
 
 
 class WorkflowRequest(RepoSourceRequest):
@@ -71,9 +81,11 @@ class WorkflowRequest(RepoSourceRequest):
     """
 
     base_branch: str = "main"
+    issue_key: str | None = None
+    scope: ScopeRefRequest | None = None
     base_spec: BaseSpec | None = None
     implied_base: BaseSpec | None = None
-    permission_mode: Literal["plan", "bypassPermissions"] = "bypassPermissions"
+    permission_mode: HttpPermissionMode = "bypassPermissions"
     allowed_tools: list[str] = Field(
         default_factory=lambda: [
             "Read",
@@ -84,3 +96,10 @@ class WorkflowRequest(RepoSourceRequest):
             "Write",
         ],
     )
+
+    @model_validator(mode="after")
+    def _check_trunk_base(self) -> Self:
+        if self.base_spec is None and not self.base_branch:
+            msg = "baseBranch must not be empty when baseSpec is absent"
+            raise ValueError(msg)
+        return self

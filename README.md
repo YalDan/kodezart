@@ -144,6 +144,9 @@ written down here to go stale.
   first.
 - [docs/migration-v0.1-to-v0.2.md](docs/migration-v0.1-to-v0.2.md) — the
   upgrade guide for a v0.1.x operator or API client.
+- [docs/migration-v0.2-to-v0.3.md](docs/migration-v0.2-to-v0.3.md) — the
+  upgrade guide for a v0.2.x operator: the settings renames, the names that
+  stay flat and the ones that are gone.
 
 ## Configuration
 
@@ -156,7 +159,7 @@ so no count is written down here to go stale.
 Every entry in `.env.example` carries its own shipped default, so copying the
 file changes no behaviour. Entries that are **commented out** are deliberately
 unset: for an optional field an empty assignment binds the empty string, which
-is a different value from absence — `KODEZART_MODEL=` pins an empty model id
+is a different value from absence — `KODEZART_AGENT__MODEL=` pins an empty model id
 rather than leaving the account default in place, and `KODEZART_OPERATION_CONFIG=`
 is a path of `""` that fails startup. Uncomment a line only when you are
 supplying a real value.
@@ -205,7 +208,7 @@ defaults moved together and they roll back together. Setting only the prompt set
 still restores the corpus — the resolution table logs 100% `claude-opus` — but
 the application will not finish starting until the mode goes back too.
 
-`KODEZART_MODEL` is a deliberately separate axis. The set decides which words
+`KODEZART_AGENT__MODEL` is a deliberately separate axis. The set decides which words
 are sent; the model decides which engine receives them. Prompt resolution never
 reads the model knob. When the running engine is not among the set's declared
 `engines`, boot emits an informational `prompt_set_engine_mismatch` note and
@@ -215,7 +218,7 @@ proceeds unchanged.
 
 Skills are **host-provisioned at user scope** — kodezart neither vendors nor
 installs them. It only selects among what the host already provides under
-`KODEZART_CLAUDE_HOME_DIR` (`~/.claude/skills` plus plugin bundles).
+`KODEZART_AGENT__HOME_DIR` (`~/.claude/skills` plus plugin bundles).
 
 An allowlist entry names a skill the way a session addresses it. A bare skill
 is its directory name (`<claude home>/skills/<name>/SKILL.md` → `<name>`); a
@@ -225,13 +228,13 @@ installed and where each bundle lives. The plugin cache is never walked
 directly: cache directories outlive uninstallation, so a name found there
 could pass the boot pre-flight and then be silently filtered at session time.
 
-`KODEZART_SKILLS_MODE` is three-state, with no "unset" inhabitant:
+`KODEZART_AGENT__SKILLS__MODE` is three-state, with no "unset" inhabitant:
 
 | Mode | Effect |
 | --- | --- |
 | `none` | Suppress every skill. **Shipped default.** |
 | `all` | Load every discovered skill. |
-| `explicit` | Load exactly `KODEZART_SKILLS_ALLOWLIST`. |
+| `explicit` | Load exactly `KODEZART_AGENT__SKILLS__ALLOWLIST`. |
 
 The default is suppress-all for two reasons. First, leaving the knob unset
 would hand the SDK its own defaults rather than a decision kodezart made.
@@ -248,7 +251,7 @@ of them at once. The SDK gives no session-time availability signal — unknown
 names are forwarded verbatim and silently filtered — so boot is the only place
 the gap can surface.
 
-`KODEZART_SETTING_SOURCES` is passed explicitly on every session (default:
+`KODEZART_AGENT__SETTING_SOURCES` is passed explicitly on every session (default:
 all three of `user`, `project`, `local`), so turning the skills knob on never
 silently narrows which settings get loaded.
 
@@ -276,56 +279,85 @@ never silently posted:
 
 | Verdict | Meaning |
 | --- | --- |
-| `clean` | No deny-pattern hit. Written as-is. |
+| `clean` | All applicable checks completed without a finding. Written as-is. |
 | `redacted` | Each matched span replaced by `[REDACTED:<category>]`. |
 | `blocked` | The write fails loudly with `OutboundContentBlockedError`. Nothing is posted. |
 
-`KODEZART_DENY_PATTERNS` maps a category to its regex list;
-`KODEZART_DENY_PATTERN_VERDICTS` maps a category to the verdict a hit yields.
-A payload takes the **maximum** severity over all its hits. Identifier-shaped
-writers (a git ref cannot carry a placeholder) block on any hit regardless of
-the category's declared verdict.
+The fixed privacy policy has six rows:
 
-Pattern sets ship **empty except the credential category**, so an unconfigured
-deployment behaves exactly as it did before the gate existed, apart from the
-two new events.
+| Category | Prose consequence |
+| --- | --- |
+| `cross_repo_names` | `redacted` |
+| `tracker_urls` | `redacted` |
+| `email_handles` | `redacted` |
+| `infra_endpoints` | `blocked` |
+| `credentials` | `blocked` |
+| `org_private` | `redacted` |
 
-#### The judgment half
+A payload takes the maximum severity over all findings. Identifier-shaped writers
+block on any finding; a git ref cannot carry a placeholder. Unlocated findings
+also block because no safe redaction span exists.
 
-The gate runs an **ordered list** of scanners and the patterns are only the
-first of them. A credential is arithmetic — `gh[posu]_` either matches or it
-does not — and stays deterministic so a token is caught with no network call.
-Whether a stranger would learn something from a payload that this operation
-did not choose to publish is not arithmetic: the set of private things is
-open-ended, a deny pattern naming an organisation *contains* the string it
-protects, and the same string can be unremarkable on one surface and a
-disclosure on another. `org_private` is therefore **rejected as a
-`KODEZART_DENY_PATTERNS` key** at boot, and answered by an audit session
-instead — a different session from the writer whose output it grades, with no
-shared context, no tools, and a neutral working directory.
+Credential shapes remain deterministic. Reference privacy uses
+`OperationConfig.private_surface.hosts` for entire private hosts and
+`private_surface.workspaces` for exact native workspace slugs by host.
+A public workspace on the same host remains distinct. Hostnames normalize
+case, IDNA and a trailing dot; workspace slugs are decoded and compared
+case-insensitively by the owning adapter. Linear workspace URLs are supported;
+configuring a workspace on a host with no native parser refuses at boot.
+The text boundary decodes Markdown character references and punctuation escapes
+once, classifies explicit URL authorities including scheme-relative links, and
+redacts the complete original span while preserving neighboring text.
+Opaque document URLs carry no inferred workspace; declare an entire private
+host when appropriate, or use the semantic privacy description.
 
-`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` has three states and none of them
-is silent:
+The configurable regex gate and its seven settings are removed. The fixed
+composition checks credential shapes locally, classifies native references,
+then invokes the existing authored-text judgment when applicable. See the
+[configuration migration](docs/configuration.md#removed-implementation-settings)
+for retired inputs. Typed generated pre-render and terminal-writer admission
+remain unfinished.
+
+#### Authored judgment
+
+Credentials are detected before a model or network call. Organization privacy
+still needs an independent semantic judgment over its configured description.
+The session has no shared writer context, no tools, and a neutral working
+directory. No organization-specific regex or injected scanner list exists.
+
+Authored tracker aggregates are inspected on every durable PUBLIC/UNKNOWN write,
+including PR text and ticket/criteria artifact text. Worded counts with no issue
+references still qualify. A roster starts at the fixed three-reference policy;
+ordinary test/file/commit counts and a single public reference do not qualify.
+`object_count` and `identifier_roster` refuse the whole write. Their located spans
+and original text identify a repair; unlocated or malformed findings never permit
+publication. Point-in-time comments allow aggregates, subject to privacy rules.
+
+`KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` controls only organization-privacy
+judgment:
 
 | Knob | `OperationConfig.private_surface` | Result |
 | --- | --- | --- |
-| `false` (default) | anything | The deterministic scanners run alone. |
-| `true` | present | The audit scanner is registered **after** the patterns. |
+| `false` (default) | anything | Local checks and mandatory authored aggregate judgment run. |
+| `true` | present | The same fresh audit also judges organization privacy. |
 | `true` | absent or empty | Startup aborts with `ContentScannerBootError`. |
 
-The mechanism ships and the policy is operator configuration. `private_surface`
-is prose describing the **class** of thing this operation treats as private —
-never a list of instances, which would stop at what the operator remembered to
-enumerate and would publish those instances by writing them down. Every way of
+`private_surface.description` remains prose describing the **class** of things
+treated as private; host/workspace facts supplement that judgment. An old
+`private_surface = "..."` string migrates to the description without changing
+its bytes. Unlisted authored prose still reaches the enabled judgment scanner. Every way of
 having no answer (`timeout`, `refusal`, `malformed_verdict`, `rate_limited`,
 `transport_error`, `empty_response`, `spans_unresolvable`, `budget_exhausted`,
 `not_configured`) resolves to `blocked` and is named on the event: "did not
 answer" and "said it is clean" stay two distinct observable states.
 
-Cost routing is deterministic and made once: the audit runs only on authored
-prose bound for a publication or tracker surface, plus the branch name. A
-criterion tick, a sha or a state transition classifies as structured and takes
-the cheap path by classification rather than by exemption.
+Organization-privacy judgment retains its publication/tracker authored routing
+and branch-name rule. Mandatory aggregate judgment also reaches durable authored
+repository artifacts. PRIVATE destinations retain the explicit no-scanner fast
+path. Credential refusal happens locally before any audit session. The only
+current DERIVED writers are point-in-time lifecycle comments. Typed generated
+durable-writer adoption remains unfinished; this increment does not infer native
+tracker ownership from authored criterion IDs.
 
 ### Operation config
 
@@ -355,6 +387,110 @@ empty and an empty board boots; a consumer that needs an absent member — a
 role, a queue key, the checkpoint document — refuses at the point of need with
 a typed error naming what is missing and what stops working, never as a boot
 failure. Structural validation applies to what IS present.
+
+Tracker carriers take their identity prefixes from `marker_prefixes`.
+Declare `claim`, `work_ref`, `base_spec` and `repository` for the corresponding
+tracker operations. When upgrading an existing operation, copy the example's
+values for these keys to keep addressing its stored markers. Additional
+purposes such as `run_state`, `decision`, `ruling` and `escalation` use the same mapping;
+missing purposes are refused when read or written.
+
+Fire-time ruling records declare a distinct `ruling` purpose. Its configured
+prefix, explicit lane and deterministic `RulingId` occurrence address one
+pinned question. The question key derives from the exact owning issue and
+question; changing the answer retains that key. `Ruling` records explicitly
+carry one of four classes, the answer, any rejected alternative, repository
+evidence and required `machine` or `principal` authorship. The formatter
+includes every field in one readable JSON block and the parser refuses damaged
+or mismatched identity. The `decision` purpose remains the native escalation
+reply carrier. The actual ruling node and verified, leased publication remain
+separate consumers.
+
+`RulingRecordReader` enumerates the current configured ruling comments through
+`TrackerPort.list_comments`, preserving each native comment key and decoded
+record. Successful absence is an empty tuple; malformed records, duplicate
+identities, foreign ownership and incomplete reads refuse. A fresh reader
+observes replay edits through the existing marker upsert primitive. This is
+read-back capability and conformance, not a production ruling writer.
+
+Declare `issue_identity` to use keyed issue upsert. The Linear adapter records
+the scope kind, scope key and deliverable key in a hidden first description
+line in the initial create request. A retry reads that persisted identity,
+including after a lost create response; matching issues receive guarded
+description edits and title updates. Team and priority apply at creation.
+Ordinary description updates preserve the carrier, and `read_issue_identity`
+returns its decoded value. Descriptions otherwise retain the backend's raw
+representation. Lookup includes archived issues and fully reads every listed
+issue because Linear's listing descriptions can be truncated. Callers must
+serialize concurrent creation of the same key; this lookup cannot provide an
+atomic uniqueness constraint. Duplicate recorded identities refuse any write.
+
+`issue_labels` maps semantic issue-label keys to tracker label names. Declare
+`criterion` for criterion reads; boot adopts or creates these labels using the
+same team namespaces as queue labels. `read_criteria` returns the currently
+labelled direct sub-issues, with their own keys, full bodies and workflow
+states. The parent description supplies no criterion identity or membership.
+An empty set is a successful read; incomplete or failed reads raise an error.
+
+`execution_approved(issue_key=...)` resolves the configured `scope_labels`
+approval member from current label presence. It reads the addressed issue and
+its parent issues, then that issue's own project and initiative ancestry.
+Issue approval covers descendants across projects; project approval follows
+actual project membership. Every call reads again, so reparenting and removal
+of an ancestor's label affect the next answer without copying labels onto
+children. Missing labels, malformed identities or unreadable ancestry refuse
+instead of appearing unapproved. A reported project without its canonical key
+also refuses; omitted or null project fields retain the native unassigned form.
+An absent scope mapping remains legal at boot
+and refuses when this capability is called. This reader neither writes labels
+nor supplies a provenance carrier; the actual per-dispatch caller remains a
+separate integration.
+
+A milestone-scoped `ScopeRef` narrows current membership while each member
+resolves project approval through the same method. There is no milestone label
+level or extra mapping. Approval needs no milestone display URL; a member that
+reports a milestone without its owning project refuses.
+
+`container_metadata` returns the native ref, name, description, optional URL
+and parent ref. Linear milestone metadata has `url=None`; its project URL is
+never substituted. Project and initiative metadata still require their native
+URLs, and issue refs use `read_issue` instead of container metadata.
+
+`read_fire_spec` captures the subject's body and version once, with its
+criterion sub-issue keys, and raises `EmptyFireCriteriaError` if that query
+finds none. A criterion without one nonempty Check field raises
+`InvalidFireCriterionError`; unknown backend workflow states retain the
+typed read failure. Declared states are decoded without deciding their
+eligibility for a fire. The same captured subject must carry the configured
+CRITERIA phase's terminal marker from `organize_mandates`, and live
+`execution_approved` ancestry must supply human approval. Missing facts raise
+`FireSpecEntryError`; absent phase or label configuration raises
+`OperationMemberAbsentError` at this read. Other phase markers, queue labels,
+and body text cannot substitute. Approval may inherit, but phase completion
+belongs to the addressed subject. Each call reads current facts, including
+revocation, and never reruns ORGANIZE admission. Legal criterion-state policy
+and the complete scoped workflow remain separate implementation work.
+
+`set_issue_classification` adds a configured semantic issue classification
+without replacing approval or unrelated labels; an identical replay writes
+nothing. `LaneEscalationWriter` requires `issue_labels.decision` and
+`marker_prefixes.escalation`. It gates the complete occurrence comment, then
+awaits its keyed comment and decision classification before returning. A
+failed write propagates to the raising caller; a retry completes the same
+occurrence. This service is the shared raise-site writer; individual organizer,
+audit and evaluator consumers still own when they raise and how they stop.
+
+`read_escalation_resolution(issue_key, lane_key, escalation_key)` reads the
+current escalation and its addressed decision. Both marker prefixes come
+from `marker_prefixes` (`escalation` and `decision`). Linear requires the
+exact first-line decision marker on a direct reply to the escalation;
+labels, prose and replies to another comment do not answer it. A resolved
+value carries the decision comment reference; an unanswered readable
+escalation returns unresolved. Missing or ambiguous records, unreadable
+reply links and incomplete pages raise `EscalationReadError`. Resolution
+reads every comment page and does not parse historical escalation bodies
+as JSON, cache answers, write comments or change labels. The supervisor
+still owns consuming this read in its alarm computation.
 
 Structural validation collects **every** failure into one typed error. It is
 structural only — resolving principals, teams and state mappings against the
@@ -399,10 +535,11 @@ founder's own boards and codebases), and shaped by that setup's rulings:
 - **One record row per run, and it is also the window.** Each run kind
   (`fire_prep`, `grooming`, `fire`) declares one `[records.<kind>]`
   destination. The session's own row IS the record — the runner verifies
-  one exists and backfills a bare structural line only when the session
-  skipped it — and the newest row's start time is the next pass's
+  the row and fills the declared structured Fire Log properties, preserving
+  session prose. Scheduled passes retain their structural line contract,
+  and the newest row's start time is the next pass's
   sweep-window boundary. There is no separate checkpoint document.
-- **Per-key engines.** `KODEZART_SESSION_MODELS` (env, JSON) pins named
+- **Per-key engines.** `KODEZART_AGENT__SESSION_MODELS` (env, JSON) pins named
   prompt keys' sessions to an engine — e.g. every fire-path and utility
   key to the workhorse while the two judgment passes ride the account
   default. Empty pins nothing; an unknown key is refused at boot naming
@@ -440,7 +577,7 @@ key can be narrowed two ways and you want **both**:
    access your own user holds;
 2. limit it to the **one team** the operation names under `[teams]`.
 
-Put the value in `KODEZART_TRACKER_TOKEN` in the service's environment and
+Put the value in `KODEZART_TRACKER__TOKEN` in the service's environment and
 nowhere else: the operation config is `extra="forbid"`, so a token key in that
 file fails the load rather than sitting in a repository.
 
@@ -473,9 +610,9 @@ correct destination for this service. It is not reachable today: those tokens
 **expire after 24 hours**, and this service has no refresh mechanism, no
 callback route and no token storage — so adopting it now buys correct identity
 and a service that stops overnight. Use the scoped personal key, know what it
-costs, and read the open identity question on the tracker: it is the `decision`
-escalation recorded on KOD-123, which that issue's cancellation explicitly did
-not close.
+costs, and keep the identity question explicit: who provisions an attributable
+machine identity, and by what act? That decision remains open on the tracker;
+canceling the earlier implementation investigation did not resolve it.
 
 **The forge token is separate.** `KODEZART_GITHUB_TOKEN` is a fine-grained PAT
 and its required permissions are listed under
@@ -554,11 +691,49 @@ id = "<the document id>"
 
 Do the same for the run-record destinations under `[records.<kind>]`, one per
 run kind you want recorded — `fire_prep`, `grooming` or `fire`; any other key
-is refused at load. A record declared `append_only` is never rewritten, only
-added to.
+is refused at load. A record declared `append_only` is retained; scheduled
+records are only added to.
 
 *Observable result:* a `[documents.checkpoint]` block and one
 `[records.<kind>]` block per recorded run kind, each naming its `system`.
+
+A knowledge Fire Log requires an explicit outcome select mapping. Each key
+names its observed source, for example `"workflow.pr_opened" = "PR opened"`
+or `"run.failed" = "Failed"` under `[records.fire.outcome_mapping.options]`;
+`[records.fire.outcome_mapping]` declares the destination `property` name.
+These are example options, not an assumed destination vocabulary. A completed
+runner does not imply a PR: declare workflow outcomes individually when that
+is the distinction the destination records. Unmapped outcomes, conflicting
+matches, wrong column types, and absent destination options refuse with
+`mapping_invalid` before writing. The sink rereads the live select options
+at this boundary. A session-created row with the exact run identity is filled
+in place; its narrative is preserved. Duplicate identity rows refuse with
+`identity_conflict` instead of selecting one arbitrarily.
+
+Declare `[records.fire.columns]` to bind `repo`, `pr_url`, `base_branch`,
+`started`, `ended`, `duration`, `iterations`, and `what_happened` to their
+actual destination properties. `duration_unit` is `seconds` or `minutes`;
+`repo_options` maps observed repository URLs to the destination's select names.
+The watcher carries facts from workflow events and computes duration from the
+same submission and terminal recording timestamps used by Started and Ended.
+Unavailable PR, repository, branch, or iteration facts stay unwritten; an
+observed zero iterations is a number, while an unknown count is absent.
+The runner preserves `what_happened` for the session's account of its work.
+These properties are checked against the live schema before writing.
+
+Tracked fire sessions granted the knowledge server receive the `fire_record`
+prompt-set clause. The queue passes the original issue identity and submission
+time through ticket creation, execution, evaluation, and remediation, so each
+session appends its honest account to the same row the terminal runner fills.
+Identity-less HTTP execution keeps its existing behavior; it has no tracked
+Fire Log producer and receives no new Record contract. Scheduled sessions use
+their existing pass-specific Record clauses.
+
+Run titles retain the full observed start timestamp in UTC, including fractional
+seconds when present. Whole-second timestamps keep their prior spelling. This
+separates rapid repeated fires of the same issue. Historical rows that discarded
+fractional identity are not automatically migrated: the missing precision cannot
+be recovered from their title.
 
 **5. Write the operation config.** Copy
 [`docs/operation.example.toml`](docs/operation.example.toml) — it is annotated
@@ -596,11 +771,11 @@ not, so configuring them "to be safe" is how a first setup breaks itself.
   can create one there.
   To turn it on with Notion, use the self-hosted server over stdio — the
   hosted `mcp.notion.com` endpoint is OAuth-only and refuses a static `ntn_`
-  integration token — and set `KODEZART_KNOWLEDGE_SESSION_GRANTS` to the
+  integration token — and set `KODEZART_KNOWLEDGE__SESSION_GRANTS` to the
   session kinds that read it. The ready-to-use block is in `.env.example`, and
   `docs/configuration.md` carries the recipe and the tracker-instead-of-Notion
   alternative.
-- **`private_surface` is required only if you turn the judgment scanner on.**
+- **`private_surface` prose is required only for organization-privacy judgment.**
   `KODEZART_AGENTIC_CONTENT_SCANNER_ENABLED` ships disabled, and leaving it
   disabled needs no prose. Enabling it without a `private_surface` description
   aborts boot rather than degrading — the intended trade, not a bug to work
@@ -629,18 +804,29 @@ it could not resolve. Nothing runs until you fix it.
 | What you see | State | What to change |
 | --- | --- | --- |
 | `tracker_mappings_reconciled`, then `pass_scheduler_started` | A | Nothing. Go to step 8. |
-| `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER_TOKEN` (step 1). |
+| `tracker_not_configured` with `tracker_token_present: false` | B | Set `KODEZART_TRACKER__TOKEN` (step 1). |
 | `tracker_not_configured` with `operation_config_present: false` | B | Set `KODEZART_OPERATION_CONFIG` (step 5). |
 | `prompt_passes_not_wired` | B | No operation config (`operation_config_present: false`), or one whose roster is empty — `absent` names the collections (teams, repos) every pass template enumerates. Declare at least one team and one repository and the prep and grooming passes register. |
 | `scheduled_passes_not_wired` | B | The event carries one boolean per premise — `tracker_present`, `operation_config_present`, `delivery_probe_present`. Supply whichever reports `false`; when only the probe does, it is `KODEZART_GITHUB_TOKEN` that is missing. |
 | `OperationConfigError` listing several failures | C | Structural validation: a missing required key, a malformed entry, a broken internal cross-reference, or two approvers. Fix **every** listed failure — the list is exhaustive by construction. |
 | `TrackerBootValidationError` naming entries | C | A principal, team or state mapping the operation does *not* own did not resolve in the live workspace. Correct the id, or widen the credential's team restriction from step 1 to cover that team. |
 | `TrackerEnsureConflictError` | C | A value the operation *owns* exists with a conflicting definition, or two declared entries claim one backend value. Reconcile the workspace or the config by hand; boot will not alter either for you. |
-| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER_TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
+| `TrackerCredentialShapeError` naming a field and a shape | C | `KODEZART_TRACKER__TOKEN` does not hold the long-lived key shape the backend accepts. Mint the personal key from step 1 and set that instead; nothing here refreshes a token that expires. |
 | `McpCredentialRefusedError` before any session log line | C | The key is the right shape and the server would not take it: revoked, mistyped, or minted in another workspace. Mint a fresh one per step 1. |
 
 *Observable result:* one of the three states, identified by name, with no line
 in the startup log left unaccounted for.
+
+**Native claim capability:** Linear MCP currently refuses claim acquisition and
+renewal with `UnsupportedClaimError`. Its comment API has no conditional
+ownership/version update, and delayed renewal can otherwise displace a newer
+holder. Claim-dependent dispatch therefore refuses before enqueueing a fire.
+Existing claim reads and releases remain available for cleanup; changing lease
+timing cannot enable safe native claims. Authored HTTP execution and the
+read-only tracker paths retain their existing contracts.
+
+The following fire progression describes a claim-capable adapter; it is not
+currently a successful Linear MCP smoke test.
 
 **8. Smoke test — the one act that is yours.** The loop watches for issues
 carrying the approval label. **Applying that label is the single human act the
@@ -686,7 +872,7 @@ be able to reach the tracker. Both passes register whenever the operation
 config declares at least one team and one repository (an empty roster logs
 `prompt_passes_not_wired` naming what is absent). What this process attaches to
 a session is the knowledge server it was granted
-(`KODEZART_KNOWLEDGE_SESSION_GRANTS`) and nothing else: it registers no tracker
+(`KODEZART_KNOWLEDGE__SESSION_GRANTS`) and nothing else: it registers no tracker
 MCP server on a session. That registration is host configuration, made where a
 session started in `KODEZART_SCHEDULED_PASS_WORKING_DIR` can see it, and
 nothing here performs or verifies it — do not read a machine-local MCP
@@ -701,7 +887,16 @@ make check        # lint + type-check + test (same as CI)
 make format       # auto-format with ruff
 ```
 
+CI installs with `uv sync --locked --all-groups`, and the verification targets
+use `uv run --locked` so stale dependency metadata fails without rewriting
+`uv.lock`. CI and Docker pin uv to `0.11.6`. For intentional dependency changes,
+use `uv add` / `uv lock` or `make install`, then review and commit the lock change.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer guide.
+
+The callable [delivery coordinator boundary](docs/delivery.md) opens lane PRs
+and watches green or undeclared-CI outcomes. Its documentation identifies the
+scope-walker, remediation and residual-publication consumers still to connect.
 
 ## For AI Agents
 
@@ -743,7 +938,7 @@ Stream the response and watch for `result` / error events; treat the eventual PR
 
 **Inspect the prompt templates before deploying.** kodezart ships prompt templates as data sets under `src/kodezart/prompts/sets/<set-name>/` — one `<function-key>.md` per step plus a `set.toml` manifest. Every workflow run sends those templates (with your ticket interpolated) to Claude. Read them at least once so you know what the agent is being instructed to do on your repositories — particularly the drafter / reviewer prompts and the Ralph executor.
 
-**GitHub token for PR monitoring.** Set `KODEZART_GITHUB_TOKEN` to a PAT — classic with `repo` scope, or fine-grained with **Contents: read/write** + **Pull requests: read/write** + **Metadata: read** + **Actions: read** — if you want kodezart to clone private repositories and monitor the PRs it opens (the post-merge fix loop polls PR check runs to detect CI failures and react). Without a token, public-repo workflows still run, but private clones and CI monitoring are skipped.
+**GitHub token for PR monitoring.** Set `KODEZART_GITHUB_TOKEN` to a PAT — classic with `repo` scope, or fine-grained with **Contents: read/write** + **Pull requests: read/write** + **Metadata: read** + **Checks: read** + **Actions: read/write** — if you want kodezart to clone private repositories, monitor the PRs it opens, and request a fresh Actions attempt when classifying a red check set. Actions write access is required for rerun requests; check and workflow observations require read access. Without a token, public-repo workflows still run, but private clones and CI monitoring are skipped.
 
 **Token budget — this is a heavy pipeline.** Every workflow run spins up multiple Claude sessions: ticket drafter, reviewer, Ralph executor (up to `KODEZART_MAX_ITERATIONS` times), and the post-merge fix loop. The throughput is high but the token cost is significant; running kodezart continuously for a few hours **will burn through any plan's usage limits**. To dial intensity down for sustained runs, lower `KODEZART_MAX_ITERATIONS` and `KODEZART_MAX_REVIEWS`, or author a lighter prompt set under `src/kodezart/prompts/sets/` and point `KODEZART_PROMPT_SET` (or a per-step `KODEZART_PROMPT_SET_OVERRIDES` entry) at it for tickets that don't need the full setup context.
 
@@ -780,3 +975,8 @@ Security issues go through [private vulnerability reporting](https://github.com/
 ## License
 
 [MIT](LICENSE)
+
+Knowledge configuration now uses nested variables such as
+`KODEZART_KNOWLEDGE__SESSION_GRANTS`.
+See [the migration table](docs/configuration.md#knowledge-environment-migration);
+old flat knowledge variables are rejected instead of silently disabling grants.

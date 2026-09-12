@@ -1,7 +1,8 @@
 """FastAPI application factory and lifespan."""
 
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+import asyncio
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,11 +10,12 @@ from fastapi import FastAPI
 from kodezart.adapters.claude_client_executor import ClaudeClientExecutor
 from kodezart.adapters.toml_operation_config import load_operation_config
 from kodezart.api.v1.router import v1_router
+from kodezart.chains.criteria import TrackerCriteria
 from kodezart.composition.engine import build_workflow_engine
 from kodezart.composition.forge import build_forge_client
 from kodezart.composition.gating import build_outbound_gate
 from kodezart.composition.jobs import build_job_queue, build_job_service
-from kodezart.composition.knowledge import boot_knowledge_grant
+from kodezart.composition.knowledge import boot_knowledge_grant, fire_record_template
 from kodezart.composition.passes import build_dispatch_runtime, verify_pass_preflight
 from kodezart.composition.preflight import boot_skills
 from kodezart.composition.prompts import boot_prompts
@@ -25,6 +27,7 @@ from kodezart.composition.workspace import build_git_stack
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.logging import BoundLogger, configure_logging, get_logger
+from kodezart.core.owned_tasks import finish_owned
 from kodezart.core.protocols import (
     ManagedMcpToolCaller,
     TrackerPort,
@@ -41,39 +44,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``app.state`` for handler access.
     """
     config: AppConfig = app.state.config
-    configure_logging(log_level=config.log_level, pretty=config.log_pretty)
+    configure_logging(log_level=config.logging.level, pretty=config.logging.pretty)
     log: BoundLogger = get_logger(__name__)
 
-    github_api = build_forge_client(config=config)
-    declared = (
-        load_operation_config(Path(config.operation_config))
-        if config.operation_config is not None
-        else None
-    )
-    # Reconciliation comes FIRST, because everything below binds to the
-    # config it produces (KOD-57 R9). A document the operation owns has no
-    # id until boot adopts one, so a registry bound to the declared copy
-    # would carry a placeholder into every rendered pass prompt. Scheduling
-    # does not check adoption — the prompt passes are wired on the
-    # operation's presence alone — and a reference the bound copy cannot
-    # resolve is caught by their boot render (KOD-160).
-    dialled = await boot_tracker(config=config, operation=declared, log=log)
-    operation = declared if dialled is None else dialled.operation
-    tracker: TrackerPort | None = None if dialled is None else dialled.tracker
-    mcp_caller: ManagedMcpToolCaller | None = (
-        None if dialled is None else dialled.caller
-    )
-    app.state.tracker = tracker
-    app.state.operation_config = operation
+    def observed_release[**P, T](
+        resource: str, callback: Callable[P, Awaitable[T]]
+    ) -> Callable[P, Awaitable[T]]:
+        async def release(*args: P.args, **kwargs: P.kwargs) -> T:
+            try:
+                return await callback(*args, **kwargs)
+            except BaseException as exc:
+                await log.aerror(
+                    "application_cleanup_failed",
+                    resource=resource,
+                    error_kind=type(exc).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+                raise
 
-    prompts = await boot_prompts(config=config, operation=operation, log=log)
-    # Every refusal the scheduled passes can raise is decided HERE, before
-    # anything stateful is constructed. Each one is configuration plus one
-    # tracker round trip, and each used to fire from inside the dispatch
-    # wiring — below a started job queue, which no refusal stopped. What is
-    # already open at this point is the tracker's transport, so a refusal
-    # closes it on the way out rather than leaving a live session behind.
+        return release
+
+    cleanup = AsyncExitStack()
+    failure: BaseException | None = None
     try:
+        github_api = build_forge_client(config=config)
+        if github_api is not None:
+            cleanup.push_async_callback(observed_release("forge", github_api.close))
+        declared = (
+            load_operation_config(Path(config.operation_config))
+            if config.operation_config is not None
+            else None
+        )
+        # Reconciliation comes FIRST, because everything below binds to the
+        # config it produces (KOD-57 R9). A document the operation owns has no
+        # id until boot adopts one, so a registry bound to the declared copy
+        # would carry a placeholder into every rendered pass prompt. Scheduling
+        # does not check adoption — the prompt passes are wired on the
+        # operation's presence alone — and a reference the bound copy cannot
+        # resolve is caught by their boot render (KOD-160).
+        dialled = await boot_tracker(
+            settings=config.tracker, operation=declared, log=log
+        )
+        operation = declared if dialled is None else dialled.operation
+        tracker: TrackerPort | None = None if dialled is None else dialled.tracker
+        mcp_caller: ManagedMcpToolCaller | None = (
+            None if dialled is None else dialled.caller
+        )
+        if mcp_caller is not None:
+            cleanup.push_async_callback(observed_release("tracker", mcp_caller.close))
+        app.state.tracker = tracker
+        app.state.operation_config = operation
+
+        prompts = await boot_prompts(config=config, operation=operation, log=log)
         await verify_pass_preflight(
             config=config,
             operation=operation,
@@ -81,67 +104,68 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             github_api=github_api,
             prompts=prompts,
         )
-    except BaseException:
-        if mcp_caller is not None:
-            await mcp_caller.close()
-        if github_api is not None:
-            await github_api.close()
-        raise
-
-    # The run recorder rides the same refusal window as the preflight: a
-    # knowledge-side record with no server to dial refuses HERE, with the
-    # tracker transport still the only thing to close (KOD-170).
-    try:
         built_recorder = await build_run_recorder(
-            config=config,
+            knowledge=config.knowledge,
+            tracker_server_name=config.tracker.server_name,
             operation=operation,
             tracker_caller=mcp_caller,
             log=log,
         )
         if built_recorder.knowledge_caller is not None:
+            cleanup.push_async_callback(
+                observed_release("knowledge", built_recorder.knowledge_caller.close)
+            )
             await built_recorder.knowledge_caller.open()
-    except BaseException:
-        if mcp_caller is not None:
-            await mcp_caller.close()
-        if github_api is not None:
-            await github_api.close()
-        raise
 
-    skills = await boot_skills(config=config, prompts=prompts, log=log)
-    app.state.skills = skills
+        skills = await boot_skills(settings=config.agent, prompts=prompts, log=log)
+        app.state.skills = skills
 
-    executor = ClaudeClientExecutor(
-        model=config.model,
-        setting_sources=config.setting_sources,
-        knowledge_grant=await boot_knowledge_grant(
+        executor = ClaudeClientExecutor(
+            model=config.agent.model,
+            setting_sources=config.agent.setting_sources,
+            knowledge_grant=await boot_knowledge_grant(
+                knowledge=config.knowledge,
+                prompts=prompts,
+                log=log,
+            ),
+            output_style=config.agent.output_style,
+            fire_record=fire_record_template(
+                knowledge=config.knowledge, operation=operation, prompts=prompts
+            ),
+        )
+        gate = await build_outbound_gate(
             config=config,
+            operation=operation,
+            executor=executor,
             prompts=prompts,
+            skills=skills,
             log=log,
-        ),
-        output_style=config.claude_output_style,
-    )
-    gate = await build_outbound_gate(
-        config=config,
-        operation=operation,
-        executor=executor,
-        prompts=prompts,
-        skills=skills,
-        log=log,
-    )
-    stack = build_git_stack(config=config, prompts=prompts, gate=gate)
+        )
+        stack = build_git_stack(
+            settings=config.git,
+            github_token=config.github_token,
+            prompts=prompts,
+            gate=gate,
+        )
 
-    agent_service = AgentService(
-        executor=executor,
-        workspace=stack.workspace,
-        persister=stack.persister,
-        git_base_url=config.git_base_url,
-    )
-    app.state.agent_service = agent_service
+        agent_service = AgentService(
+            executor=executor,
+            workspace=stack.workspace,
+            persister=stack.persister,
+            git_base_url=config.git.base_url,
+        )
+        app.state.agent_service = agent_service
 
-    async with make_checkpointer(config.checkpoint_url) as checkpointer:
+        checkpointer_context = make_checkpointer(config.checkpoint_url)
+        checkpointer = await checkpointer_context.__aenter__()
+        cleanup.push_async_exit(
+            observed_release("checkpointer", checkpointer_context.__aexit__)
+        )
         app.state.checkpointer = checkpointer
         workflow_engine = build_workflow_engine(
             config=config,
+            operation=operation,
+            repositories=operation.repos if operation is not None else (),
             agent_service=agent_service,
             git=stack.git,
             cache=stack.cache,
@@ -154,14 +178,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             gate=gate,
             github_api=github_api,
             checkpointer=checkpointer,
+            criteria=(
+                TrackerCriteria(tracker=dialled.tracker)
+                if dialled is not None
+                else None
+            ),
+            scope_tracker=dialled.tracker if dialled is not None else None,
         )
         app.state.workflow_engine = workflow_engine
 
+        # Queue shutdown must precede watcher drain, though dispatch constructs
+        # the watchers later. This exit stack reserves their dependency order.
+        watchers = await cleanup.enter_async_context(AsyncExitStack())
         job_queue = build_job_queue(
-            config=config,
+            settings=config.queue,
             workflow_engine=workflow_engine,
         )
         app.state.job_queue = job_queue
+        cleanup.push_async_callback(observed_release("queue", job_queue.stop))
         await job_queue.start()
 
         app.state.job_service = build_job_service(
@@ -180,48 +214,53 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             git=stack.git,
             cache=stack.cache,
             prompts=prompts,
+            workspace=stack.workspace,
             runner=agent_service,
             skills=skills,
             recorder=built_recorder.recorder,
             log=log,
         )
         app.state.pass_scheduler = dispatch.scheduler
+        if dispatch.lifecycle is not None:
+            watchers.push_async_callback(
+                observed_release(
+                    "lifecycle_records", dispatch.lifecycle.record_unfinished
+                )
+            )
+            watchers.push_async_callback(
+                observed_release("lifecycle_drain", dispatch.lifecycle.drain)
+            )
+        cleanup.push_async_callback(
+            observed_release("scheduler", dispatch.scheduler.stop)
+        )
         await dispatch.scheduler.start()
 
         await log.ainfo(
             "application_starting",
-            project=config.project_name,
-            debug=config.debug,
+            project=config.http.project_name,
+            debug=config.http.debug,
         )
         yield
-        # The order is the shutdown: no further pass may claim, the queue
-        # then ends the stream of every job it still holds, and the watches
-        # reading those streams are drained on that end — which is where
-        # each of them hands its claim back. Draining before the tracker's
-        # transport closes is what makes the release land at all, and an
-        # instance that skipped it locked its own replacement out of the
-        # issue for the rest of the lease (KOD-152).
-        await dispatch.scheduler.stop()
-        await job_queue.stop()
-        if dispatch.lifecycle is not None:
-            await dispatch.lifecycle.drain()
-            # After the stop, so no run finishes underneath the sweep; after
-            # the drain, so nothing records beside it — a watch ending on the
-            # stopped stream verifies the log and then writes, exactly as the
-            # sweep does, and two of those interleaved over one run are two
-            # rows.  Every fire the drained watches left without a row gets
-            # one here — the measured boot ran three and logged one (KOD-178).
-            await dispatch.lifecycle.record_unfinished()
-        # The drained watches' fire records and the sweep's write through
-        # this session, so it closes after both and before the tracker
-        # transport.
-        if built_recorder.knowledge_caller is not None:
-            await built_recorder.knowledge_caller.close()
-        if mcp_caller is not None:
-            await mcp_caller.close()
-        if github_api is not None:
-            await github_api.close()
-        await log.ainfo("application_shutdown")
+    except BaseException as exc:
+        failure = exc
+
+    async def unwind() -> BaseException | None:
+        try:
+            async with cleanup:
+                if failure is not None:
+                    raise failure
+        except BaseException as exc:
+            return exc
+        return None
+
+    # The exit stack unwinds with the active failure in the owned task.
+    # Returning errors keeps cancellation from discarding cleanup failures.
+    cleanup_error, cancelled = await finish_owned(asyncio.create_task(unwind()))
+    if cancelled:
+        raise asyncio.CancelledError from cleanup_error
+    if cleanup_error is not None:
+        raise cleanup_error from cleanup_error.__context__
+    await log.ainfo("application_shutdown")
 
 
 def create_app() -> FastAPI:
@@ -232,14 +271,14 @@ def create_app() -> FastAPI:
     """
     config = AppConfig.from_env()
     application = FastAPI(
-        title=config.project_name,
-        debug=config.debug,
+        title=config.http.project_name,
+        debug=config.http.debug,
         lifespan=lifespan,
-        docs_url="/docs" if config.debug else None,
-        redoc_url="/redoc" if config.debug else None,
+        docs_url="/docs" if config.http.debug else None,
+        redoc_url="/redoc" if config.http.debug else None,
     )
     application.state.config = config
-    application.include_router(v1_router, prefix=config.api_v1_prefix)
+    application.include_router(v1_router, prefix=config.http.api_v1_prefix)
     return application
 
 

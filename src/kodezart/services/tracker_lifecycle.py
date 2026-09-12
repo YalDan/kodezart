@@ -8,14 +8,14 @@ every one is resolved through the mapping.
 
 The semantic APPROVED state deliberately persists across claim, dequeue
 and pull request: demoting approval is a human act this process never
-performs.  The terminal transition is the verified-merge write, which
-moves the workflow state to the stage the configuration binds ``DONE``
-to, and the queue state to its terminal member.
+performs. A verified merge retires the legacy queue entry. A parent's
+finished state is a read over its criterion subtree; the merge event
+grants no authority to mark either parent or criterion completed.
 
 **The pull-request arm also records the delivery — when there is one.**  A
 ``DELIVERABLE`` work ref is what a dependent lane's base resolves through,
-and until KOD-149 nothing in the process wrote one: every issue with a
-blocker failed base resolution, because the ref the resolver walks the
+and before this writer existed nothing in the process wrote one: every
+issue with a blocker failed base resolution, because the ref the resolver walks the
 chain looking for was never recorded by anything.  The open pull request
 is the moment the branch and its pushed tip both exist, so this is where
 it is written — for the pull request that DELIVERS.  The stall exit opens
@@ -23,13 +23,19 @@ one too, over a branch its own acceptance gate rejected, and the event
 says which it is.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.outbound_write import gated_write
+from kodezart.core.owned_tasks import settle
 from kodezart.core.protocols import OutboundContentGate, TrackerPort
+from kodezart.domain.comment_markers import (
+    compose_comment_marker,
+    configured_marker_prefix,
+)
 from kodezart.domain.errors import DuplicateWorkRefError
+from kodezart.services.run_surface_lease import RunSurfaceLease
 from kodezart.types.domain.agent import RaiseSite
 from kodezart.types.domain.branch import WorkRef, WorkRefRole
 from kodezart.types.domain.gating import (
@@ -40,6 +46,8 @@ from kodezart.types.domain.gating import (
 )
 from kodezart.types.domain.operation import LifecycleStage, QueueState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.surface import SurfaceKind, WritableSurface
 
 
 def _now() -> datetime:
@@ -62,7 +70,7 @@ class TrackerLifecycleWriter:
     operation declares a board that mirrors publicly beside a board that
     syncs to a private surface, and the write-backs onto an issue belong to
     the surface its own board mirrors to.  Absent or unresolved is public —
-    over-scrubbing is the arm that costs nothing but a redaction (KOD-157).
+    over-scrubbing is the arm that costs nothing but a redaction.
     """
 
     def __init__(
@@ -70,10 +78,15 @@ class TrackerLifecycleWriter:
         *,
         tracker: TrackerPort,
         gate: OutboundContentGate,
+        marker_prefixes: Mapping[str, str],
+        surface_lease_seconds: float,
         clock: Callable[[], datetime] = _now,
     ) -> None:
+        configured_marker_prefix(marker_prefixes, purpose="run_outcome")
         self._tracker: TrackerPort = tracker
         self._gate: OutboundContentGate = gate
+        self._marker_prefixes = dict(marker_prefixes)
+        self._surface_lease_seconds = surface_lease_seconds
         self._clock: Callable[[], datetime] = clock
         self._log: BoundLogger = get_logger(__name__)
 
@@ -131,16 +144,12 @@ class TrackerLifecycleWriter:
         await self._log.ainfo("lifecycle_in_review", issue_key=issue_key)
 
     async def on_verified_merge(self, *, issue_key: str) -> None:
-        """The terminal transition: workflow DONE stage, queue state terminal."""
-        await self._tracker.set_workflow_state(
-            issue_key=issue_key,
-            stage=LifecycleStage.DONE,
-        )
+        """Retire the queue entry without asserting criterion completion."""
         await self._tracker.set_queue_state(
             issue_key=issue_key,
             state=QueueState.DONE,
         )
-        await self._log.ainfo("lifecycle_done", issue_key=issue_key)
+        await self._log.ainfo("lifecycle_queue_finished", issue_key=issue_key)
 
     async def on_run_failed(
         self,
@@ -154,18 +163,18 @@ class TrackerLifecycleWriter:
     ) -> None:
         """The run ended with no terminal outcome: undo, then say so.
 
+        Ruled 2026-08-26: option (a), restore the prior state and comment.
         The vocabulary this operation declares has no failure state — only
         in-progress, in-review and done — so the issue goes back to the
         state the pass found it in, and a comment carries the rest.  The
         in-progress stage with nothing running is the lie the criterion
-        exists to prevent, and a comment alone does not remove it
-        (KOD-146, ruled 2026-08-26: option (a)).
+        exists to prevent, and a comment alone does not remove it.
 
         Order matches the success path: the state lands before the comment
         reports it, so no reader sees the note beside a stale state.  The
         claim is released by the watcher after every stream end the process
         survives, this arm included, so the next pass is free to re-fire as
-        soon as it ticks rather than waiting a lease out (KOD-152).
+        soon as it ticks rather than waiting a lease out.
         """
         await self._tracker.restore_workflow_state(
             issue_key=issue_key,
@@ -222,16 +231,42 @@ class TrackerLifecycleWriter:
         # DERIVED: the body is a job id and a WorkflowOutcome member, both
         # readable off the job-status surface. A process that never held the
         # session recomputes this note exactly.
-        body = await gated_write(
-            gate=self._gate,
-            log=self._log,
-            content=f"job {job_id} reached outcome {outcome.value}",
-            visibility=visibility,
-            shape=WriterShape.PROSE,
-            destination=OutboundDestination.TRACKER_COMMENT,
-            content_class=ContentClass.DERIVED,
+        marker = compose_comment_marker(
+            prefixes=self._marker_prefixes,
+            purpose="run_outcome",
+            lane=issue_key,
+            occurrence_key=job_id,
         )
-        await self._tracker.post_comment(issue_key=issue_key, body=body)
+        surfaces = frozenset(
+            {
+                WritableSurface(
+                    kind=SurfaceKind.MARKER_COMMENT,
+                    ref=ScopeRef(kind=ScopeKind.ISSUE, key=issue_key),
+                    marker=marker,
+                )
+            }
+        )
+        async with RunSurfaceLease(
+            tracker=self._tracker,
+            job_id=job_id,
+            surfaces=surfaces,
+            lease_seconds=self._surface_lease_seconds,
+        ) as lease:
+            body = await gated_write(
+                gate=self._gate,
+                log=self._log,
+                content=f"job {job_id} reached outcome {outcome.value}",
+                visibility=visibility,
+                shape=WriterShape.PROSE,
+                destination=OutboundDestination.TRACKER_COMMENT,
+                content_class=ContentClass.DERIVED,
+            )
+            await lease.renew()
+            await settle(
+                self._tracker.upsert_comment(
+                    target=issue_key, marker=marker, body=body, holder=job_id
+                )
+            )
         await self._log.ainfo(
             "lifecycle_outcome_comment",
             issue_key=issue_key,

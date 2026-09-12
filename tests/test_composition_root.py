@@ -15,11 +15,9 @@ root may define its framework hook and its factory, and nothing else.
 A builder belongs in `kodezart.composition`, where it is unit-testable
 without importing the application.
 
-The lifespan's SHUTDOWN is asserted here too, in the two halves it has:
-its order, read off the hook's own syntax tree, and its outcome, driven
-over the shipped queue, watcher, recorder and a Fire Log double in that
-same order — because "every fire leaves a row" is a property of the
-sequence rather than of any component in it (KOD-178).
+The actual lifespan's shutdown order, failure cleanup and fire records
+are exercised in test_lifespan_cleanup. The component cases here retain
+the queue, watcher and recorder's individual shutdown behavior.
 """
 
 import ast
@@ -54,6 +52,7 @@ from kodezart.types.domain.agent import (
     AssistantTextEvent,
     WorkflowCompleteEvent,
 )
+from kodezart.types.domain.branch import trunk_base
 from kodezart.types.domain.dispatch import PassSignal
 from kodezart.types.domain.operation import (
     DocumentSystem,
@@ -63,8 +62,9 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.tracker import TrackerIssue
-from kodezart.types.requests.agent import WorkflowRequest
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     FakeFireReport,
     FakeTrackerPort,
@@ -107,59 +107,6 @@ def test_the_guard_reads_a_real_module() -> None:
     defined = _top_level_definitions()
 
     assert set(defined) == PERMITTED
-
-
-def _dotted(node: ast.expr) -> str:
-    """The dotted name of an attribute chain, or "" for anything else."""
-    parts: list[str] = []
-    current = node
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if not isinstance(current, ast.Name):
-        return ""
-    parts.append(current.id)
-    return ".".join(reversed(parts))
-
-
-def _lifespan_calls() -> list[str]:
-    """Every dotted call the lifespan makes, in source order."""
-    tree = ast.parse(ROOT.read_text(encoding="utf-8"))
-    (hook,) = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan"
-    ]
-    calls = [
-        node
-        for node in ast.walk(hook)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    ]
-    # ``ast.walk`` is breadth-first; the question here is ORDER, so the
-    # nodes are put back into the order they were written in.
-    calls.sort(key=lambda node: (node.lineno, node.col_offset))
-    return [_dotted(node.func) for node in calls]
-
-
-def test_the_shutdown_records_unfinished_fires_over_a_quiescent_registry() -> None:
-    """KOD-178 — the sweep's placement IS its correctness.
-
-    After the queue's stop, because that is when nothing can finish
-    underneath it: a fire completing between a registry read and the stop
-    would be swept as failed and its own true row verified away (ruled
-    2026-09-02). After the drain, because that is when nothing records
-    beside it: a watch ending on the stopped stream verifies the log and
-    then writes, exactly as the sweep does, and the two interleaved over
-    one run are two rows. And before the knowledge session closes, because
-    that session is what the rows are written through.
-    """
-    calls = _lifespan_calls()
-    sweep = calls.index("dispatch.lifecycle.record_unfinished")
-
-    assert sweep > calls.index("dispatch.scheduler.stop")
-    assert sweep > calls.index("job_queue.stop")
-    assert sweep > calls.index("dispatch.lifecycle.drain")
-    assert sweep < calls.index("built_recorder.knowledge_caller.close")
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +363,12 @@ async def _shutdown(
     watch = LifecycleWatcher(
         queue=queue,
         registry=queue,
-        writer=TrackerLifecycleWriter(tracker=tracker, gate=PassThroughGate()),
+        writer=TrackerLifecycleWriter(
+            marker_prefixes={"run_outcome": "fixture-outcome"},
+            surface_lease_seconds=900,
+            tracker=tracker,
+            gate=PassThroughGate(),
+        ),
         heartbeat=ClaimHeartbeat(
             tracker=tracker,
             holder=HOLDER,
@@ -434,7 +386,16 @@ async def _shutdown(
         for key in (FINISHED, KILLED, NEVER_RAN):
             record = await queue.submit(
                 lane=LANE,
-                request=WorkflowRequest(prompt=key, repo_url=REPO_URL),
+                request=WorkflowSubmission(
+                    prompt=key,
+                    repo_path=None,
+                    repo_url=REPO_URL,
+                    base_spec=trunk_base("main"),
+                    implied_base=None,
+                    scope=None,
+                    permission_mode=PermissionMode.UNATTENDED,
+                    allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
+                ),
             )
             watch.follow(
                 issue_key=key,
@@ -588,14 +549,21 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
 
     def _config(self) -> AppConfig:
         return AppConfig(
-            tracker_mcp_sse_read_timeout_seconds=self.TRACKER_BOUND,
-            knowledge_mcp_sse_read_timeout_seconds=self.KNOWLEDGE_BOUND,
-            knowledge_mcp_server_url="https://knowledge.invalid/mcp",
-            knowledge_mcp_token=SecretStr("ntn_" + "K" * 44),
+            tracker={"sse_read_timeout_seconds": self.TRACKER_BOUND},
+            knowledge={
+                "connection": {
+                    "transport": "http",
+                    "sse_read_timeout_seconds": self.KNOWLEDGE_BOUND,
+                    "server_url": "https://knowledge.invalid/mcp",
+                    "credential": SecretStr("ntn_" + "K" * 44),
+                }
+            },
         )
 
     def test_the_tracker_composition_passes_its_field(self) -> None:
-        caller = make_mcp_tool_caller(config=self._config(), token=self.FIXTURE_TOKEN)
+        caller = make_mcp_tool_caller(
+            settings=self._config().tracker, token=self.FIXTURE_TOKEN
+        )
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._server._sse_read_timeout_seconds == self.TRACKER_BOUND
@@ -606,7 +574,7 @@ class TestBothTransportsReadOnTheirOwnConfiguredBound:
         One number for both would make a knowledge server that streams
         slowly a reason to loosen the tracker's bound.
         """
-        caller = _knowledge_caller(self._config(), ["records.fire_prep"])
+        caller = _knowledge_caller(self._config().knowledge, ["records.fire_prep"])
 
         assert isinstance(caller, HttpMcpToolCaller)
         assert caller._server._sse_read_timeout_seconds == self.KNOWLEDGE_BOUND
@@ -643,16 +611,17 @@ def test_the_declared_output_style_reaches_the_executor_through_composition() ->
     to end: the sessions run under the CLI's default and the board says
     they run under the declared one.
     """
-    assert _executor_keywords()["output_style"] == "config.claude_output_style"
+    assert _executor_keywords()["output_style"] == "config.agent.output_style"
 
 
 def test_the_executor_keywords_are_read_off_a_real_call() -> None:
     """Non-vacuity: an empty parse would let the rule above pass over nothing."""
-    assert _executor_keywords()["model"] == "config.model"
+    assert _executor_keywords()["model"] == "config.agent.model"
 
 
 #: The graphs composition builds, each of which takes the floor resolver as
 #: a required argument and none of which can say whether it got the real one.
+#: Authored delivery reuses the fire graph owner's floor for its outer nodes.
 FLOORED_GRAPHS = ("RalphLoop", "TicketGenerationLoop", "RalphWorkflowEngine")
 
 

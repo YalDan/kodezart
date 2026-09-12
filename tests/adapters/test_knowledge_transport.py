@@ -39,7 +39,11 @@ def _http_grant(**overrides: object) -> KnowledgeGrant:
         "knowledge_map": _MAP,
     }
     fields.update(overrides)
-    return KnowledgeGrant.model_validate(fields)
+    grant_fields = {
+        name: fields.pop(name) for name in ("granted", "server_name", "knowledge_map")
+    }
+    fields.setdefault("transport", KnowledgeTransport.HTTP)
+    return KnowledgeGrant.model_validate({**grant_fields, "connection": fields})
 
 
 def _stdio_grant(**overrides: object) -> KnowledgeGrant:
@@ -55,7 +59,11 @@ def _stdio_grant(**overrides: object) -> KnowledgeGrant:
         "knowledge_map": _MAP,
     }
     fields.update(overrides)
-    return KnowledgeGrant.model_validate(fields)
+    grant_fields = {
+        name: fields.pop(name) for name in ("granted", "server_name", "knowledge_map")
+    }
+    fields.setdefault("transport", KnowledgeTransport.HTTP)
+    return KnowledgeGrant.model_validate({**grant_fields, "connection": fields})
 
 
 # ---------------------------------------------------------------------------
@@ -97,18 +105,14 @@ def test_a_session_outside_a_stdio_grant_still_gets_nothing_and_the_guard() -> N
 
 def test_a_stdio_grant_without_a_credential_refuses() -> None:
     """The unauthenticated spawn is refused exactly as the dial is."""
-    grant = _stdio_grant(credential=None)
-
-    with pytest.raises(ValueError, match="carries no credential"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="credential"):
+        _stdio_grant(credential=None)
 
 
 def test_a_stdio_credential_without_its_delivery_entry_refuses() -> None:
     """A credential with nowhere to land is half a shape, not a default."""
-    grant = _stdio_grant(credential_env=None)
-
-    with pytest.raises(ValueError, match="CREDENTIAL_ENV"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="credential_env"):
+        _stdio_grant(credential_env=None)
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
@@ -181,18 +185,14 @@ def test_a_non_authorization_header_with_no_scheme_prefix_is_expressible() -> No
 
 def test_both_credentials_into_one_header_refuses_naming_the_collision() -> None:
     """The gateway owns its header; a pass-through must name a different one."""
-    grant = _http_grant(gateway_credential=_GATEWAY_CREDENTIAL)
-
-    with pytest.raises(ValueError, match="gateway credential owns"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="collides"):
+        _http_grant(gateway_credential=_GATEWAY_CREDENTIAL)
 
 
 def test_a_credential_with_no_header_to_ride_in_refuses() -> None:
     """Half a shape: the value exists and its presentation does not."""
-    grant = _http_grant(auth_header=None, auth_scheme=None)
-
-    with pytest.raises(ValueError, match="AUTH_HEADER"):
-        map_knowledge_mcp(grant, SessionType.TICKET_FIRE)
+    with pytest.raises(ValueError, match="auth_header"):
+        _http_grant(auth_header=None, auth_scheme=None)
 
 
 @pytest.mark.parametrize("module", EXECUTOR_MODULES)
@@ -236,14 +236,17 @@ async def test_a_stdio_route_round_trips_from_the_environment_to_the_sdk(
     """AC-2 end to end: env vars to AppConfig to grant to SDK options."""
     from kodezart.core.config import AppConfig
 
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TRANSPORT", "stdio")
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_COMMAND", _COMMAND)
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_ARGS", '["--stdio"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_CREDENTIAL_ENV", "KNOWLEDGE_TOKEN")
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "stdio")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__COMMAND", _COMMAND)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__ARGS", '["--stdio"]')
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL_ENV", "KNOWLEDGE_TOKEN"
+    )
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", _CREDENTIAL)
 
-    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    grant = AppConfig().knowledge.grant(knowledge_map=_MAP)
     session = await recorded_session(
         module,
         grant=grant,
@@ -269,14 +272,19 @@ async def test_a_self_hosted_http_route_round_trips_from_the_environment(
     """AC-2 end to end for the http arm, against a self-hosted endpoint."""
     from kodezart.core.config import AppConfig
 
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_SESSION_GRANTS", '["ticket_fire"]')
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_SERVER_URL", _SELF_HOSTED_URL)
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_GATEWAY_TOKEN", _GATEWAY_CREDENTIAL)
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_HEADER", "X-Upstream-Token")
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_AUTH_SCHEME", "null")
-    monkeypatch.setenv("KODEZART_KNOWLEDGE_MCP_TOKEN", _CREDENTIAL)
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__TRANSPORT", "http")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__SESSION_GRANTS", '["ticket_fire"]')
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__SERVER_URL", _SELF_HOSTED_URL)
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__GATEWAY_CREDENTIAL", _GATEWAY_CREDENTIAL
+    )
+    monkeypatch.setenv(
+        "KODEZART_KNOWLEDGE__CONNECTION__AUTH_HEADER", "X-Upstream-Token"
+    )
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__AUTH_SCHEME", "null")
+    monkeypatch.setenv("KODEZART_KNOWLEDGE__CONNECTION__CREDENTIAL", _CREDENTIAL)
 
-    grant = AppConfig().knowledge_grant(knowledge_map=_MAP)
+    grant = AppConfig().knowledge.grant(knowledge_map=_MAP)
     session = await recorded_session(
         module,
         grant=grant,

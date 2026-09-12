@@ -34,7 +34,6 @@ from kodezart.types.domain.criteria import (
     CostMeasurement,
     CriteriaArtifact,
     CriteriaValidationOutput,
-    CriterionClass,
     CriterionFinding,
     CriterionFlag,
     CriterionVerdict,
@@ -48,11 +47,7 @@ from kodezart.types.domain.criteria import (
 
 
 def _criterion(id_: str, text: str) -> GeneratedCriterion:
-    return GeneratedCriterion(
-        id=id_,
-        text=text,
-        criterion_class=CriterionClass.hard_gate,
-    )
+    return GeneratedCriterion(id=id_, text=text)
 
 
 def _feasible(id_: str, **evidence: object) -> CriterionFinding:
@@ -576,8 +571,8 @@ def test_satisfied_at_base_alongside_a_repair_demand_raises() -> None:
     assert excinfo.value.criterion_id == "AC-4"
 
 
-def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> None:
-    """The flag's whole consequence: it leaves the hard-gate partition.
+def test_a_flagged_criterion_keeps_its_text_and_consumes_no_round() -> None:
+    """The flag is recorded and nothing else follows from it.
 
     The text is byte-identical either side of the sweep and no
     regeneration round is consumed — the defect is discriminating power,
@@ -585,13 +580,9 @@ def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> No
     """
     criteria = mint_criteria(
         [
-            DraftedCriterion(
-                text="`AppConfig` exposes a `max_iterations` field.",
-                criterion_class=CriterionClass.hard_gate,
-            ),
+            DraftedCriterion(text="`AppConfig` exposes a `max_iterations` field."),
             DraftedCriterion(
                 text="The new module is importable from `kodezart.domain`.",
-                criterion_class=CriterionClass.hard_gate,
             ),
         ]
     )
@@ -617,18 +608,16 @@ def test_a_flagged_criterion_is_forced_to_soft_signal_and_keeps_its_text() -> No
     assert demands_regeneration(validation) is False
 
     flagged, untouched = artifact.criteria
-    assert flagged.criterion_class is CriterionClass.soft_signal
     assert flagged.text == criteria[0].text
-    assert untouched.criterion_class is CriterionClass.hard_gate
+    assert untouched.text == criteria[1].text
 
 
-def test_pinned_literals_downgrade_the_same_way() -> None:
-    """Same mechanism, second observation class — one downgrade rule."""
+def test_pinned_literals_flag_the_same_way() -> None:
+    """Same mechanism, second observation class — one flagging rule."""
     criteria = mint_criteria(
         [
             DraftedCriterion(
                 text="`src/kodezart/domain/criteria.py` contains 4 public functions.",
-                criterion_class=CriterionClass.hard_gate,
             )
         ]
     )
@@ -641,8 +630,9 @@ def test_pinned_literals_downgrade_the_same_way() -> None:
     artifact = build_artifact(criteria, validation)
 
     assert validation.verdicts[0].verdict is CriterionVerdict.feasible
+    assert validation.verdicts[0].flags == [CriterionFlag.literal_pinning]
     assert regeneration_targets(validation) == ()
-    assert artifact.criteria[0].criterion_class is CriterionClass.soft_signal
+    assert artifact.criteria[0].text == criteria[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -772,7 +762,6 @@ def test_a_measured_affordable_cost_leaves_the_criterion_text_untouched() -> Non
         [
             DraftedCriterion(
                 text="The suite's slowest module completes inside the gate.",
-                criterion_class=CriterionClass.hard_gate,
             )
         ]
     )
@@ -847,14 +836,12 @@ def _fault_line_pair() -> tuple[
         [
             DraftedCriterion(
                 text="The exported symbol `Foo` is importable from `app.api`.",
-                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text=(
                     "A round-trip through the  persistence layer preserves "
                     'the record\\\'s "id" field verbatim.'
                 ),
-                criterion_class=CriterionClass.hard_gate,
             ),
         ]
     )
@@ -935,15 +922,12 @@ def test_jointly_unsatisfiable_set_names_the_minimal_conflicting_subset() -> Non
         [
             DraftedCriterion(
                 text="`handler.py` exports exactly one public function.",
-                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="`handler.py` exports both `read` and `write` publicly.",
-                criterion_class=CriterionClass.hard_gate,
             ),
             DraftedCriterion(
                 text="`handler.py` carries a module docstring.",
-                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -988,12 +972,7 @@ def test_two_disjoint_conflicts_are_both_carried_and_both_regenerated() -> None:
     its ids never reached the regenerator, so a set unsatisfiable in two
     ways came back amended in one.
     """
-    criteria = mint_criteria(
-        [
-            DraftedCriterion(text=f"c{n}", criterion_class=CriterionClass.hard_gate)
-            for n in range(1, 7)
-        ]
-    )
+    criteria = mint_criteria([DraftedCriterion(text=f"c{n}") for n in range(1, 7)])
     output = CriteriaValidationOutput(
         findings=[_feasible(f"AC-{n}") for n in range(1, 7)],
         contradictions=[
@@ -1121,10 +1100,9 @@ def test_unknown_finding_id_is_fail_closed_and_named() -> None:
 def test_ids_are_minted_in_emission_order() -> None:
     criteria = mint_criteria(
         [
-            DraftedCriterion(text="a", criterion_class=CriterionClass.hard_gate),
+            DraftedCriterion(text="a"),
             DraftedCriterion(
                 text="b",
-                criterion_class=CriterionClass.soft_signal,
             ),
         ]
     )
@@ -1189,24 +1167,6 @@ def test_the_evidence_fields_reach_both_surfaces_a_human_reads() -> None:
     assert feasibility["costMeasurement"]["observed"] == "9h of runner time"
 
 
-def test_criterion_class_round_trips_under_its_camel_case_alias() -> None:
-    """KOD-53/AC-14 — the field crosses the wire under the ruled alias.
-
-    The alias is the assertion: `criterion_class` is two words, so an
-    artifact written by a model without the camelCase generator carries
-    `"criterion_class"` and fails here.  It is what a reader of the
-    persisted artifact addresses the field by.
-    """
-    criteria, output = _fault_line_pair()
-    artifact = build_artifact(criteria, sweep(criteria, output))
-    encoded = artifact.model_dump_json(by_alias=True)
-
-    assert '"criterionClass":"hard_gate"' in encoded.replace(", ", ",")
-    assert '"criterion_class"' not in encoded
-    restored = CriteriaArtifact.model_validate_json(encoded)
-    assert restored.criteria[0].criterion_class is CriterionClass.hard_gate
-
-
 @pytest.mark.parametrize(
     ("record", "payload"),
     [
@@ -1226,37 +1186,27 @@ def test_criterion_class_round_trips_under_its_camel_case_alias() -> None:
     ],
     ids=["drafted", "generated", "validated"],
 )
-def test_a_payload_without_the_criterion_class_fails_validation(
+@pytest.mark.parametrize("removed_key", ["criterionClass", "criterion_class"])
+@pytest.mark.parametrize("removed_value", ["hard_gate", "soft_signal"])
+def test_a_payload_carrying_the_removed_criterion_class_is_refused(
     record: type[BaseModel],
     payload: dict[str, object],
+    removed_key: str,
+    removed_value: str,
 ) -> None:
-    """KOD-53/AC-14, KOD-69 R3 — *populated* as a schema fact, not an aspiration.
+    """No record tolerates the retired key — reading past it is a shim.
 
-    Every record carrying the field declares it with no default, so a
-    payload omitting it raises at the model boundary rather than
-    surfacing a silent default three surfaces downstream.  Asserted here
-    because a later default would otherwise pass the whole suite.
+    Every record that carried ``criterionClass`` refuses it now rather
+    than ignoring it, so a producer still emitting the classification is
+    told at the boundary instead of having it silently dropped three
+    surfaces later.  The same payload without the key validates, which is
+    what makes the refusal about the key and not about the record.
     """
+    assert record.model_validate(payload)
+
     with pytest.raises(ValidationError) as excinfo:
-        record.model_validate(payload)
-    missing = [error for error in excinfo.value.errors() if error["type"] == "missing"]
-    assert [error["loc"] for error in missing] == [("criterionClass",)]
-
-
-def test_artifact_accepts_soft_signal_classification() -> None:
-    criteria = mint_criteria(
-        [
-            DraftedCriterion(
-                text="grep finds no new `# noqa` on changed lines",
-                criterion_class=CriterionClass.soft_signal,
-            ),
-        ]
-    )
-    output = CriteriaValidationOutput(
-        findings=[_feasible("AC-1")],
-    )
-    artifact = build_artifact(criteria, sweep(criteria, output))
-    restored = CriteriaArtifact.model_validate_json(
-        artifact.model_dump_json(by_alias=True),
-    )
-    assert restored.criteria[0].criterion_class is CriterionClass.soft_signal
+        record.model_validate({**payload, removed_key: removed_value})
+    extra = [
+        error for error in excinfo.value.errors() if error["type"] == "extra_forbidden"
+    ]
+    assert [error["loc"] for error in extra] == [(removed_key,)]

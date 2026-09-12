@@ -26,21 +26,18 @@ from collections.abc import Sequence
 
 import pytest
 
-from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
-from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.core.config import AppConfig
+from kodezart.adapters.outbound_admission import OutboundAdmission
 from kodezart.types.domain.gating import (
-    JUDGMENT_ROUTING,
     ContentClass,
     GateVerdict,
     OutboundDestination,
     RedactionCategory,
     RepoVisibility,
     ScanHit,
-    ScannerRouting,
     ScanResult,
     WriterShape,
 )
+from tests.outbound import make_admission
 
 #: The synthetic operation the whole corpus is written against.
 FIXTURE_WORKSPACE = "quarry-works"
@@ -67,11 +64,6 @@ class RecordedAuditScanner:
         self._leaks = leaks_by_destination
         self.calls: list[str] = []
 
-    @property
-    def routing(self) -> ScannerRouting:
-        """The judgment routing, so the corpus exercises the real one."""
-        return JUDGMENT_ROUTING
-
     async def scan(
         self,
         *,
@@ -96,25 +88,14 @@ class RecordedAuditScanner:
 
 def judgment_gate(
     leaks_by_destination: dict[OutboundDestination, Sequence[str]],
-) -> PatternOutboundContentGate:
+) -> OutboundAdmission:
     """The shipped ordered list: deterministic first, judgment second."""
-    config = AppConfig()
-    return PatternOutboundContentGate(
-        scanners=[
-            RegexContentScanner(patterns=config.deny_patterns),
-            RecordedAuditScanner(leaks_by_destination),
-        ],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    return make_admission(RecordedAuditScanner(leaks_by_destination))
 
 
-def deterministic_gate() -> PatternOutboundContentGate:
+def deterministic_gate() -> OutboundAdmission:
     """The gate exactly as it shipped before the judgment half existed."""
-    config = AppConfig()
-    return PatternOutboundContentGate(
-        scanners=[RegexContentScanner(patterns=config.deny_patterns)],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    return make_admission()
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +363,7 @@ async def test_c4_a_span_less_finding_blocks_rather_than_redacting() -> None:
                 ),
             )
 
-    config = AppConfig()
-    gate = PatternOutboundContentGate(
-        scanners=[ImplicationScanner({})],
-        verdicts=config.deny_pattern_verdicts,
-    )
+    gate = make_admission(ImplicationScanner({}))
     decision = await gate.gate(
         content="Once the next layer lands the whole thing runs itself.",
         visibility=RepoVisibility.PUBLIC,

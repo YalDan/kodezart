@@ -1,6 +1,6 @@
 """Keeping a claim live for exactly as long as the work it guards runs.
 
-Measured 2026-08-25 (KOD-147): a claim marker written with the configured
+Measured 2026-08-25: a claim marker written with the configured
 fifteen-minute lease guarded a fire that was still running ninety-one
 minutes later, and nothing renewed it.  Outliving the lease is the normal
 case rather than the exception, and the only thing that stopped a second
@@ -20,7 +20,7 @@ The interval is the lease times a configured FRACTION of it, so no
 deployment can be configured to renew more slowly than the lease it is
 renewing — the failure this whole module exists to remove.
 
-**The other end of the claim's life is here too** (KOD-152).  Renewal stops
+**The other end of the claim's life is here too**.  Renewal stops
 when the work stops, and the claim it was renewing is handed back in the
 same act, under the holder identity it was renewing with.  A lease left to
 run out is a RECOVERY and not a handover: it costs the issue the rest of
@@ -41,7 +41,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 
-from kodezart.core.errors import McpCredentialRefusedError
+from kodezart.core.errors import TrackerAccessDeniedError
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import TrackerPort
 
@@ -121,7 +121,7 @@ class ClaimHeartbeat:
                 )
             except asyncio.CancelledError:
                 raise
-            except McpCredentialRefusedError as exc:
+            except TrackerAccessDeniedError as exc:
                 # A third arm, and it is neither of the two above.  A write
                 # that FAILED is survivable by design — the interval is a
                 # fraction of the lease so several may fail — and a renewal
@@ -129,12 +129,11 @@ class ClaimHeartbeat:
                 # the credential: no later renewal can succeed, and every
                 # interval from now on would repeat this line forever.  It
                 # is said once, loudly, and the lease is left to lapse,
-                # which is the recovery this module rests on (KOD-171).
+                # which is the recovery this module rests on.
                 await self._log.aerror(
                     "claim_renewal_credential_refused",
                     issue_key=issue_key,
                     holder=self._holder,
-                    server_name=exc.server_name,
                     error=str(exc),
                 )
                 return

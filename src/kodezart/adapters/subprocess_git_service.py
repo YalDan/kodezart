@@ -61,7 +61,7 @@ class SubprocessGitService:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         effective_url = self._auth.authenticated_url(url) if self._auth else url
         await self._run(
-            ["git", "clone", "--bare", effective_url, target],
+            ["git", "clone", "--bare", "--origin", self._remote, effective_url, target],
             cwd=str(Path(target).parent),
             env=self._auth.subprocess_env() if self._auth else None,
         )
@@ -139,6 +139,11 @@ class SubprocessGitService:
         output = await self._run_output(["git", "status", "--porcelain"], cwd=cwd)
         return len(output) > 0
 
+    async def has_replace_refs(self, cwd: str) -> bool:
+        """Read replacement refs from Git's active replacement namespace."""
+        output = await self._run_output(["git", "replace", "--list"], cwd=cwd)
+        return bool(output)
+
     async def is_path_ignored(self, cwd: str, path: str) -> bool:
         """Return True iff *path* is excluded by the repository's ignore rules.
 
@@ -200,6 +205,50 @@ class SubprocessGitService:
                 f"merge of {source_branch} could not be completed",
                 source_branch=source_branch,
                 paths=_conflicting_paths(str(exc)),
+            ) from exc
+
+    async def merge_scratch_head(
+        self, *, cwd: str, head_sha: str, author_name: str, author_email: str
+    ) -> None:
+        """Compose a commit without updating any named branch.
+
+        Sibling heads require a real merge; the existing fast-forward-only
+        consolidation operation deliberately retains its separate contract.
+        """
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", head_sha) is None:
+            raise ValueError("scratch merge requires a full immutable commit SHA")
+        attached, _ = await self._run_with_exit_codes(
+            ["git", "symbolic-ref", "--quiet", "HEAD"],
+            cwd=cwd,
+            allowed=frozenset({0, 1}),
+        )
+        if attached == 0:
+            raise ValueError("scratch merge requires detached HEAD")
+        try:
+            await self._run(
+                [
+                    "git",
+                    "merge",
+                    "--no-ff",
+                    "--no-edit",
+                    "--no-gpg-sign",
+                    "--",
+                    head_sha,
+                ],
+                cwd=cwd,
+                env=self._author_env(author_name, author_email),
+            )
+        except RuntimeError as exc:
+            unmerged = await self._run_output(
+                ["git", "diff", "--name-only", "--diff-filter=U"],
+                cwd=cwd,
+            )
+            if not unmerged:
+                raise
+            raise MergeConflictError(
+                f"scratch merge of {head_sha} could not be completed",
+                source_branch=head_sha,
+                paths=tuple(unmerged.splitlines()),
             ) from exc
 
     async def current_sha(self, cwd: str) -> str:

@@ -3,7 +3,7 @@
 One recorder for the process, because the record registry is one
 configuration surface: the pass scheduler and the lifecycle watcher both
 report into it, and which backing system serves which kind is read off
-the declared entries rather than decided per producer (KOD-170).
+the declared entries rather than decided per producer.
 
 The sinks are built from what the deployment can actually dial: the
 tracker sink rides the SAME transport the tracker adapter holds, and the
@@ -22,8 +22,8 @@ from kodezart.adapters.http_mcp_tool_caller import HttpMcpToolCaller
 from kodezart.adapters.linear_record_sink import LinearRecordSink
 from kodezart.adapters.notion_record_sink import NotionRecordSink
 from kodezart.adapters.stdio_mcp_tool_caller import StdioMcpToolCaller
-from kodezart.core.config import AppConfig
 from kodezart.core.errors import PassKnowledgeCapabilityError
+from kodezart.core.knowledge_settings import KnowledgeSettings
 from kodezart.core.logging import BoundLogger
 from kodezart.core.protocols import McpToolCaller, RunRecordSink
 from kodezart.services.run_recorder import RunRecorder
@@ -34,7 +34,7 @@ from kodezart.types.domain.operation import (
 )
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.run_records import RunOutcome, RunRecord
-from kodezart.types.domain.session import KnowledgeTransport
+from kodezart.types.domain.session import HttpKnowledge, StdioKnowledge
 
 #: Which record kind each scheduled prompt pass reports as.  The dispatch
 #: scans carry no kind: their outcome is the fire they start, and the fire
@@ -87,7 +87,8 @@ def run_report(
 
 async def build_run_recorder(
     *,
-    config: AppConfig,
+    knowledge: KnowledgeSettings,
+    tracker_server_name: str,
     operation: OperationConfig | None,
     tracker_caller: McpToolCaller | None,
     log: BoundLogger,
@@ -118,7 +119,7 @@ async def build_run_recorder(
         else:
             sinks[DocumentSystem.TRACKER] = LinearRecordSink(
                 caller=tracker_caller,
-                server_name=config.tracker_mcp_server_name,
+                server_name=tracker_server_name,
             )
     if DocumentSystem.KNOWLEDGE in declared:
         knowledge_destinations = [
@@ -126,10 +127,10 @@ async def build_run_recorder(
             for key, entry in sorted(records.items())
             if entry.system is DocumentSystem.KNOWLEDGE
         ]
-        knowledge_caller = _knowledge_caller(config, knowledge_destinations)
+        knowledge_caller = _knowledge_caller(knowledge, knowledge_destinations)
         sinks[DocumentSystem.KNOWLEDGE] = NotionRecordSink(
             caller=knowledge_caller,
-            server_name=config.knowledge_mcp_server_name,
+            server_name=knowledge.server_name,
         )
     return BuiltRecorder(
         recorder=RunRecorder(records=records, sinks=sinks),
@@ -138,63 +139,33 @@ async def build_run_recorder(
 
 
 def _knowledge_caller(
-    config: AppConfig,
+    knowledge: KnowledgeSettings,
     destinations: list[str],
 ) -> StdioMcpToolCaller | HttpMcpToolCaller:
-    """The programmatic client for the deployment's knowledge server.
-
-    The same server definition granted sessions ride, dialled by this
-    process for the deterministic record path.  Each transport names the
-    field it cannot proceed without.
-    """
-    if config.knowledge_mcp_transport is KnowledgeTransport.STDIO:
-        command = config.knowledge_mcp_command
-        if command is None:
-            raise PassKnowledgeCapabilityError(
-                "knowledge-side records are declared and the stdio "
-                "knowledge transport names no server command; declare "
-                "KODEZART_KNOWLEDGE_MCP_COMMAND or move the records",
-                destinations=destinations,
-            )
-        env = dict(config.knowledge_mcp_env)
-        credential_env = config.knowledge_mcp_credential_env
-        token = config.knowledge_mcp_token
-        if credential_env is not None and token is not None:
-            env[credential_env] = token.get_secret_value()
+    """Build the recorder from the same typed connection SDK sessions receive."""
+    connection = knowledge.connection
+    if isinstance(connection, StdioKnowledge):
         return StdioMcpToolCaller(
-            command=command,
-            args=tuple(config.knowledge_mcp_args),
-            env=env,
-            server_name=config.knowledge_mcp_server_name,
-            call_timeout_seconds=config.knowledge_mcp_call_timeout_seconds,
-            error_detail_limit=config.knowledge_mcp_error_detail_limit,
-            stderr_tail_limit=config.knowledge_mcp_stderr_tail_limit,
+            command=connection.command,
+            args=connection.args,
+            env=connection.environment(),
+            server_name=knowledge.server_name,
+            call_timeout_seconds=knowledge.call_timeout_seconds,
+            error_detail_limit=knowledge.error_detail_limit,
+            stderr_tail_limit=connection.stderr_tail_limit,
         )
-    url = config.knowledge_mcp_server_url
-    if url is None:
+    if not isinstance(connection, HttpKnowledge) or not connection.authenticated:
         raise PassKnowledgeCapabilityError(
-            "knowledge-side records are declared and the http knowledge "
-            "transport names no server url; declare "
-            "KODEZART_KNOWLEDGE_MCP_SERVER_URL or move the records",
-            destinations=destinations,
-        )
-    gateway = config.knowledge_mcp_gateway_token
-    token = config.knowledge_mcp_token if gateway is None else gateway
-    if token is None or config.knowledge_mcp_auth_scheme is None:
-        raise PassKnowledgeCapabilityError(
-            "knowledge-side records are declared and the http knowledge "
-            "transport carries no credential and scheme to present; "
-            "declare them or move the records",
+            "knowledge-side records require knowledge.connection with an "
+            "authenticated HTTP endpoint or installed stdio server",
             destinations=destinations,
         )
     return HttpMcpToolCaller(
-        url=url,
-        server_name=config.knowledge_mcp_server_name,
-        token=token.get_secret_value(),
-        timeout_seconds=config.knowledge_mcp_timeout_seconds,
-        call_timeout_seconds=config.knowledge_mcp_call_timeout_seconds,
-        sse_read_timeout_seconds=config.knowledge_mcp_sse_read_timeout_seconds,
-        auth_header_name=config.knowledge_mcp_auth_header,
-        auth_scheme=config.knowledge_mcp_auth_scheme,
-        error_detail_limit=config.knowledge_mcp_error_detail_limit,
+        url=connection.server_url,
+        server_name=knowledge.server_name,
+        headers=connection.headers(),
+        timeout_seconds=connection.timeout_seconds,
+        call_timeout_seconds=knowledge.call_timeout_seconds,
+        sse_read_timeout_seconds=connection.sse_read_timeout_seconds,
+        error_detail_limit=knowledge.error_detail_limit,
     )

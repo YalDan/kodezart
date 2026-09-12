@@ -8,8 +8,14 @@ import structlog
 
 from kodezart.adapters.github_api import GitHubAPIClient
 from kodezart.composition.forge import build_forge_client
+from kodezart.core.backoff import RetryPolicy
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import ForgeAPIError, RateLimitError, TransientAPIError
+from kodezart.types.domain.check_observation import (
+    AbsentChecks,
+    IncompleteChecks,
+    ObservedChecks,
+)
 from kodezart.types.domain.gating import RepoVisibility
 
 _FAKE_PAT = "test-token"
@@ -33,6 +39,7 @@ def _make_client(
     timeout_seconds: float = 5.0,
     max_retries: int = 1,
     retry_backoff_factor: float = 0.01,
+    retry: RetryPolicy | None = None,
 ) -> GitHubAPIClient:
     """Create a GitHubAPIClient with a mock transport for testing."""
     mock_http = httpx.AsyncClient(
@@ -50,8 +57,10 @@ def _make_client(
         ci_ref_not_found_grace_polls=ci_ref_not_found_grace_polls,
         ci_check_runs_max_pages=ci_check_runs_max_pages,
         timeout_seconds=timeout_seconds,
-        max_retries=max_retries,
-        retry_backoff_factor=retry_backoff_factor,
+        retry=retry
+        or RetryPolicy(
+            attempts=max_retries + 1, initial_delay=retry_backoff_factor, jitter=0.1
+        ),
         client=mock_http,
     )
 
@@ -79,6 +88,7 @@ def _completed_run(conclusion: str = "success") -> httpx.Response:
             "total_count": 1,
             "check_runs": [
                 {
+                    "head_sha": "a" * 40,
                     "id": 1,
                     "name": "ci/test",
                     "status": "completed",
@@ -97,6 +107,7 @@ def _in_progress_run() -> httpx.Response:
             "total_count": 1,
             "check_runs": [
                 {
+                    "head_sha": "a" * 40,
                     "id": 1,
                     "name": "ci/test",
                     "status": "in_progress",
@@ -543,11 +554,15 @@ class TestVendorFailureTranslation:
             ci_grace_poll_interval_seconds=0.0,
         )
         with structlog.testing.capture_logs() as logs:
-            passed, summary = await client.wait_for_checks(
+            observed = await client.wait_for_checks(
                 repo_url=self.REPO_URL, ref="abc123"
             )
+            passed = (
+                observed.checks_passed if isinstance(observed, ObservedChecks) else None
+            )
+            summary = observed.summary
 
-        assert passed is None
+        assert isinstance(observed, AbsentChecks) and passed is None
         assert summary == "No CI checks appeared for this ref after 2 polls."
         assert runs_calls == 2
         assert [e["event"] for e in logs].count("ci_workflows_probe_failed") == 1
@@ -571,9 +586,11 @@ async def test_wait_for_checks_workflows_active_runs_delayed() -> None:
         return _completed_run()
 
     client = _make_client(handler)
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
     assert passed is True
     assert runs_call_count == 2
     await client.close()
@@ -591,12 +608,14 @@ async def test_wait_for_checks_all_success() -> None:
                 "total_count": 2,
                 "check_runs": [
                     {
+                        "head_sha": "a" * 40,
                         "id": 1,
                         "name": "ci/test",
                         "status": "completed",
                         "conclusion": "success",
                     },
                     {
+                        "head_sha": "a" * 40,
                         "id": 2,
                         "name": "ci/lint",
                         "status": "completed",
@@ -607,9 +626,11 @@ async def test_wait_for_checks_all_success() -> None:
         )
 
     client = _make_client(handler)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is True
     assert "passed" in summary.lower()
     await client.close()
@@ -627,12 +648,14 @@ async def test_wait_for_checks_failure() -> None:
                 "total_count": 2,
                 "check_runs": [
                     {
+                        "head_sha": "a" * 40,
                         "id": 1,
                         "name": "ci/test",
                         "status": "completed",
                         "conclusion": "failure",
                     },
                     {
+                        "head_sha": "a" * 40,
                         "id": 2,
                         "name": "ci/lint",
                         "status": "completed",
@@ -643,9 +666,11 @@ async def test_wait_for_checks_failure() -> None:
         )
 
     client = _make_client(handler)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is False
     assert "ci/test" in summary
     await client.close()
@@ -665,16 +690,18 @@ async def test_wait_for_checks_in_progress_then_success() -> None:
         return _completed_run()
 
     client = _make_client(handler)
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
     assert passed is True
     assert call_count == 2
     await client.close()
 
 
 async def test_wait_for_checks_timeout() -> None:
-    """wait_for_checks returns (False, ...) when max attempts exhausted."""
+    """Exhaustion returns incomplete evidence without a completed red verdict."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if "actions/workflows" in str(request.url):
@@ -685,10 +712,11 @@ async def test_wait_for_checks_timeout() -> None:
         handler,
         ci_poll_max_attempts=2,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is False
+    summary = observed.summary
+    assert isinstance(observed, IncompleteChecks)
     assert summary == "CI checks still running after 2 polls."
     await client.close()
 
@@ -711,10 +739,12 @@ async def test_wait_for_checks_no_checks_configured() -> None:
         return _empty_runs()
 
     client = _make_client(handler, ci_no_workflows_grace_polls=2)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert "no ci checks" in summary.lower()
     assert summary == "No CI checks configured: repository has no active workflows."
     assert workflows_calls == 1
@@ -734,12 +764,14 @@ async def test_wait_for_checks_neutral_and_skipped() -> None:
                 "total_count": 2,
                 "check_runs": [
                     {
+                        "head_sha": "a" * 40,
                         "id": 1,
                         "name": "ci/optional",
                         "status": "completed",
                         "conclusion": "neutral",
                     },
                     {
+                        "head_sha": "a" * 40,
                         "id": 2,
                         "name": "ci/skippable",
                         "status": "completed",
@@ -750,9 +782,11 @@ async def test_wait_for_checks_neutral_and_skipped() -> None:
         )
 
     client = _make_client(handler)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is True
     assert "passed" in summary.lower()
     await client.close()
@@ -822,10 +856,12 @@ async def test_no_active_workflows_concludes_on_first_empty_poll() -> None:
         return _empty_runs()
 
     client = _make_client(handler, ci_no_workflows_grace_polls=1)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert summary == "No CI checks configured: repository has no active workflows."
     assert runs_calls == 1
     await client.close()
@@ -849,10 +885,12 @@ async def test_active_workflows_use_the_standard_grace_window() -> None:
         ci_no_checks_grace_polls=4,
         ci_no_workflows_grace_polls=1,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert summary == "No CI checks appeared for this ref after 4 polls."
     assert runs_calls == 4
     assert workflows_calls == 1
@@ -873,10 +911,12 @@ async def test_grace_sleeps_strictly_between_polls(sleeps: list[float]) -> None:
         ci_grace_poll_interval_seconds=10.0,
         ci_no_checks_grace_polls=4,
     )
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert sleeps == [10.0, 10.0, 10.0]
     await client.close()
 
@@ -903,10 +943,12 @@ async def test_grace_cadence_is_clamped_to_the_poll_interval(
         ci_grace_poll_interval_seconds=30.0,
         ci_no_checks_grace_polls=3,
     )
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert sleeps == [15.0, 15.0]
     await client.close()
 
@@ -927,10 +969,12 @@ async def test_probe_failure_403_falls_back_to_standard_grace() -> None:
         ci_no_checks_grace_polls=3,
         ci_no_workflows_grace_polls=1,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert summary == "No CI checks appeared for this ref after 3 polls."
     assert runs_calls == 3
     await client.close()
@@ -964,7 +1008,8 @@ async def test_probe_rate_limit_falls_back_to_standard_grace() -> None:
             repo_url="https://github.com/owner/repo", ref="abc123"
         )
 
-    assert result == (None, "No CI checks appeared for this ref after 3 polls.")
+    assert isinstance(result, AbsentChecks)
+    assert result.summary == "No CI checks appeared for this ref after 3 polls."
     assert runs_calls == 3
     probe_failed = [e for e in logs if e["event"] == "ci_workflows_probe_failed"]
     assert len(probe_failed) == 1
@@ -989,10 +1034,12 @@ async def test_probe_failure_5xx_falls_back_to_standard_grace() -> None:
         ci_no_checks_grace_polls=3,
         ci_no_workflows_grace_polls=1,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert summary == "No CI checks appeared for this ref after 3 polls."
     assert runs_calls == 3
     await client.close()
@@ -1012,9 +1059,11 @@ async def test_runs_appearing_during_grace_are_evaluated_normally() -> None:
         return _completed_run()
 
     client = _make_client(handler, ci_no_workflows_grace_polls=3)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is True
     assert summary == "All CI checks passed."
     assert runs_calls == 2
@@ -1033,9 +1082,11 @@ async def test_probe_never_fires_when_first_poll_observes_a_run() -> None:
         return _completed_run()
 
     client = _make_client(handler)
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
     assert passed is True
     assert workflows_calls == 0
     await client.close()
@@ -1063,10 +1114,12 @@ async def test_probe_total_count_beyond_page_classifies_as_active() -> None:
         ci_no_checks_grace_polls=2,
         ci_no_workflows_grace_polls=1,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert passed is None
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
+    assert isinstance(observed, AbsentChecks) and passed is None
     assert summary == "No CI checks appeared for this ref after 2 polls."
     assert runs_calls == 2
     await client.close()
@@ -1088,9 +1141,11 @@ async def test_empty_page_after_runs_observed_is_pending_not_no_ci() -> None:
         return _completed_run()
 
     client = _make_client(handler, ci_no_checks_grace_polls=1)
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is True
     assert summary == "All CI checks passed."
     assert runs_calls == 3
@@ -1119,7 +1174,8 @@ async def test_grace_polls_do_not_consume_the_poll_budget() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (False, "CI checks still running after 1 polls.")
+    assert isinstance(result, IncompleteChecks)
+    assert result.summary == "CI checks still running after 1 polls."
     assert runs_calls == 3
     await client.close()
 
@@ -1136,9 +1192,11 @@ async def test_one_poll_issues_exactly_one_check_runs_request() -> None:
         return _completed_run()
 
     client = _make_client(handler)
-    passed, _summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    _summary = observed.summary
     assert passed is True
     assert runs_calls == 1
     await client.close()
@@ -1164,9 +1222,13 @@ async def test_single_404_is_tolerated_and_polling_continues() -> None:
 
     client = _make_client(handler)
     with structlog.testing.capture_logs() as logs:
-        passed, summary = await client.wait_for_checks(
+        observed = await client.wait_for_checks(
             repo_url="https://github.com/owner/repo", ref="abc123"
         )
+        passed = (
+            observed.checks_passed if isinstance(observed, ObservedChecks) else None
+        )
+        summary = observed.summary
     assert passed is True
     assert summary == "All CI checks passed."
     assert runs_calls == 3
@@ -1239,7 +1301,8 @@ async def test_404s_interleaved_with_empty_pages_still_terminate() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (None, "No CI checks appeared for this ref after 3 polls.")
+    assert isinstance(result, AbsentChecks)
+    assert result.summary == "No CI checks appeared for this ref after 3 polls."
     assert runs_calls == 6
     await client.close()
 
@@ -1262,9 +1325,11 @@ async def test_404_consumes_no_poll_budget() -> None:
         ci_ref_not_found_grace_polls=3,
         ci_poll_max_attempts=1,
     )
-    passed, summary = await client.wait_for_checks(
+    observed = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
+    passed = observed.checks_passed if isinstance(observed, ObservedChecks) else None
+    summary = observed.summary
     assert passed is True
     assert summary == "All CI checks passed."
     assert runs_calls == 2
@@ -1425,6 +1490,7 @@ class TestOpenDeliveryProbe:
 def _run(index: int, *, conclusion: str = "success") -> dict[str, object]:
     """One completed check run, named so a failure is identifiable."""
     return {
+        "head_sha": "a" * 40,
         "id": index,
         "name": f"ci/test-{index}",
         "status": "completed",
@@ -1463,7 +1529,8 @@ async def test_a_failure_on_the_second_page_still_fails_the_ref() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (False, "CI failed: ci/test-101")
+    assert isinstance(result, ObservedChecks) and result.checks_passed is False
+    assert result.summary == "CI failed: ci/test-101"
     await client.close()
 
 
@@ -1484,7 +1551,8 @@ async def test_a_count_the_api_never_enumerates_is_pending_not_a_pass() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (False, "CI checks still running after 2 polls.")
+    assert isinstance(result, IncompleteChecks)
+    assert result.summary == "CI checks still running after 2 polls."
     await client.close()
 
 
@@ -1503,7 +1571,8 @@ async def test_one_complete_page_costs_exactly_one_request() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (True, "All CI checks passed.")
+    assert isinstance(result, ObservedChecks) and result.checks_passed is True
+    assert result.summary == "All CI checks passed."
     assert runs_calls == 1
     await client.close()
 
@@ -1535,7 +1604,8 @@ async def test_the_page_walk_stops_at_the_configured_cap() -> None:
     )
     # Pending, so the poll budget runs out — never a TransientAPIError and
     # never a verdict drawn from the pages that did arrive.
-    assert result == (False, "CI checks still running after 1 polls.")
+    assert isinstance(result, IncompleteChecks)
+    assert result.summary == "CI checks still running after 1 polls."
     assert runs_calls == cap
     await client.close()
 
@@ -1567,7 +1637,8 @@ async def test_one_poll_spends_one_attempt_however_many_pages_it_reads() -> None
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (False, f"CI checks still running after {attempts} polls.")
+    assert isinstance(result, IncompleteChecks)
+    assert result.summary == f"CI checks still running after {attempts} polls."
     assert runs_calls == cap * attempts
     await client.close()
 
@@ -1589,7 +1660,8 @@ async def test_the_walk_stops_early_on_a_page_that_carries_no_runs() -> None:
     result = await client.wait_for_checks(
         repo_url="https://github.com/owner/repo", ref="abc123"
     )
-    assert result == (False, "CI checks still running after 1 polls.")
+    assert isinstance(result, IncompleteChecks)
+    assert result.summary == "CI checks still running after 1 polls."
     assert runs_calls == 2
     await client.close()
 

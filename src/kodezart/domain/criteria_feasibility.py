@@ -31,17 +31,17 @@ refused.  Its defect is discriminating power, not feasibility, and that
 is what :class:`CriterionFlag` records — from evidence only its own class
 supplies, never from ``smallest_repair``, so an observation cannot be
 produced by re-labelling a repair.  Flagged criteria consume no
-regeneration round and reach no halt; their consequence is the forced
-``soft_signal`` downgrade in :mod:`kodezart.domain.criteria`.
+regeneration round and reach no halt; the flag is recorded on the
+criterion's persisted feasibility and read there by a human.
 """
 
 from collections.abc import Sequence
+from typing import Protocol
 
 from kodezart.domain.errors import UngroundedVerdictError
 from kodezart.domain.fan_in import fan_in_breach
 from kodezart.types.domain.criteria import (
     ConjunctionVerdict,
-    Contradiction,
     CostClaim,
     CostMeasurement,
     CriteriaValidation,
@@ -58,7 +58,23 @@ from kodezart.types.domain.criteria import (
 )
 
 
-def _observed_flags(finding: CriterionFinding) -> list[CriterionFlag]:
+class FindingRef(Protocol):
+    """The addressed identity the shared permutation check needs."""
+
+    @property
+    def criterion_id(self) -> str: ...
+
+
+class ContradictionRefs(Protocol):
+    """Only identity membership is relevant to conjunction minimization."""
+
+    @property
+    def criterion_ids(self) -> Sequence[str]: ...
+
+
+def _observed_flags(
+    finding: CriterionFinding,
+) -> list[CriterionFlag]:
     """The two observations that are not feasibility faults.
 
     Restated from the evidence its own class supplies — a demonstration
@@ -106,7 +122,9 @@ def _ungradeable(finding: CriterionFinding) -> bool:
     return ungradeable_class or bool(finding.undeclared_switch_arms)
 
 
-def classify_finding(finding: CriterionFinding) -> DerivedFeasibility:
+def classify_finding(
+    finding: CriterionFinding,
+) -> DerivedFeasibility:
     """Derive one criterion's verdict from its evidence alone.
 
     Never reads the stated ``verdict``: the repair the finding names, the
@@ -206,7 +224,9 @@ def _classify_no_repair(
     )
 
 
-def _grounded(finding: CriterionFinding) -> DerivedFeasibility:
+def grounded_finding(
+    finding: CriterionFinding,
+) -> DerivedFeasibility:
     """The derivation, checked against the statement it sits beside."""
     derived = classify_finding(finding)
     if derived.verdict is not finding.verdict:
@@ -238,9 +258,9 @@ def _feasibility(
     )
 
 
-def minimal_conflicting_subsets(
-    contradictions: Sequence[Contradiction],
-) -> tuple[Contradiction, ...]:
+def minimal_conflicting_subsets[T: ContradictionRefs](
+    contradictions: Sequence[T],
+) -> tuple[T, ...]:
     """Every reported contradiction that contains no other reported one.
 
     Minimality is per conflict, not across the report: two disjoint
@@ -268,18 +288,30 @@ def reconcile(
     two rounds of a hallucinated one end a run over criteria that were
     never asked about.
 
-    This is one of the two fan-in channels KOD-91 deliverable 4 covers,
-    and it is the CHECK the node's bounded re-dispatch runs between
+    This is the fan-in CHECK the node's bounded re-dispatch runs between
     sessions: the error it raises is the shared one, built at the single
     site in :mod:`kodezart.domain.fan_in`.  A pure fold cannot re-run a
     session, so the bound lives in the node and the refusal lives here.
     """
-    dispatched = [c.id for c in criteria]
+    return reconcile_findings(
+        dispatched=[criterion.id for criterion in criteria],
+        findings=output.findings,
+        contradictions=output.contradictions,
+    )
+
+
+def reconcile_findings[T: FindingRef](
+    *,
+    dispatched: Sequence[str],
+    findings: Sequence[T],
+    contradictions: Sequence[ContradictionRefs],
+) -> tuple[T, ...]:
+    """Preserve dispatch order while refusing incomplete or foreign answers."""
     dispatched_set = set(dispatched)
-    seen: dict[str, CriterionFinding] = {}
+    seen: dict[str, T] = {}
     duplicates: list[str] = []
     unknown: list[str] = []
-    for finding in output.findings:
+    for finding in findings:
         if finding.criterion_id not in dispatched_set:
             unknown.append(finding.criterion_id)
             continue
@@ -287,7 +319,7 @@ def reconcile(
             duplicates.append(finding.criterion_id)
             continue
         seen[finding.criterion_id] = finding
-    for contradiction in output.contradictions:
+    for contradiction in contradictions:
         for id_ in contradiction.criterion_ids:
             if id_ not in dispatched_set and id_ not in unknown:
                 unknown.append(id_)
@@ -310,7 +342,9 @@ def sweep(
     findings = reconcile(criteria, output)
     conflicts = minimal_conflicting_subsets(output.contradictions)
     return CriteriaValidation(
-        verdicts=[_feasibility(finding, _grounded(finding)) for finding in findings],
+        verdicts=[
+            _feasibility(finding, grounded_finding(finding)) for finding in findings
+        ],
         conjunction=ConjunctionVerdict(
             satisfiable=not conflicts,
             contradictions=list(conflicts),

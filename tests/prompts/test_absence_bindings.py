@@ -25,12 +25,13 @@ COLLECTION_FIELDS = (
     "agent_identities",
     "teams",
     "queue_states",
+    "scope_labels",
+    "issue_labels",
     "workflow_states",
     "repos",
     "documents",
     "knowledge",
     "endpoints",
-    "initiatives",
 )
 
 

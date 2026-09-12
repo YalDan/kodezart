@@ -1,4 +1,4 @@
-"""Tests for RalphWorkflowEngine (outer pipeline) with fakes."""
+"""Tests for AuthoredDeliveryCoordinator (outer pipeline) with fakes."""
 
 import asyncio
 import re
@@ -13,13 +13,15 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 
-from kodezart.chains import ralph_workflow as ralph_workflow_module
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains import authored_checks
+from kodezart.chains import authored_publication as authored_publication_module
+from kodezart.chains import fire_consolidation as fire_consolidation_module
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.checkpointer import make_checkpointer
 from kodezart.core.config import AppConfig
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.errors import NoStructuredOutputError, RateLimitedSoftFailureError
-from kodezart.core.protocols import AgentExecutor, TicketGenerator
+from kodezart.core.protocols import AgentExecutor, OutboundContentGate, TicketGenerator
 from kodezart.core.retry import DelayFloor
 from kodezart.domain.accept_gate import accept_verdict
 from kodezart.domain.errors import (
@@ -66,7 +68,8 @@ from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.persist import ArtifactPersistStatus
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.remediation import RemediationEntry
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import PermissionMode, SessionType
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.subagents import (
     NO_SUBAGENTS,
@@ -75,7 +78,7 @@ from kodezart.types.domain.subagents import (
     SessionPolicy,
 )
 from kodezart.types.domain.trajectory import IterationRecord, LoopTrajectory
-from kodezart.types.domain.workflow import WorkflowState
+from kodezart.types.domain.workflow import AuthoredWorkflowState as WorkflowState
 from tests.chains.test_dispatch_definitions import (
     chain_source,
     dispatch_block,
@@ -103,11 +106,12 @@ from tests.fakes import (
     floor_under_a_rate_limit,
     make_dispatched_criteria,
     make_failing_evaluation,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_passing_evaluation_over,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 def _engine_kwargs() -> dict[str, object]:
@@ -136,13 +140,17 @@ def _make_engine(
     retry_initial_interval: float = 1.0,
     retry_max_attempts: int = 3,
     delay_floor_for: DelayFloor = no_delay_floor,
-) -> RalphWorkflowEngine:
+    outbound_gate: OutboundContentGate | None = None,
+    repositories=(),
+    max_concurrent_watches=4,
+    red_rerun_max_attempts=0,
+) -> AuthoredDeliveryCoordinator:
     if quality_gate is None:
         quality_gate = FakeQualityGate(
             events=[
                 AssistantTextEvent(text="done", model="m"),
             ],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         )
     service = AgentService(
@@ -151,8 +159,11 @@ def _make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
-        gate=PassThroughGate(),
+    return make_authored_workflow(
+        repositories=repositories,
+        max_concurrent_watches=max_concurrent_watches,
+        red_rerun_max_attempts=red_rerun_max_attempts,
+        gate=PassThroughGate() if outbound_gate is None else outbound_gate,
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
         service=service,
@@ -187,7 +198,7 @@ async def test_workflow_single_iteration_accepted() -> None:
     """Agent succeeds on first try — all criteria pass."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -196,11 +207,12 @@ async def test_workflow_single_iteration_accepted() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -225,11 +237,12 @@ async def test_workflow_max_iterations_exhausted() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -245,7 +258,7 @@ async def test_workflow_streams_events_per_node() -> None:
     """Events stream incrementally, not batched at the end."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="working", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="c" * 40,
     )
@@ -254,11 +267,12 @@ async def test_workflow_streams_events_per_node() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -277,7 +291,7 @@ async def test_workflow_accepted_calls_merger() -> None:
     merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -286,11 +300,12 @@ async def test_workflow_accepted_calls_merger() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -327,7 +342,7 @@ async def test_workflow_merge_failure_reports_error() -> None:
     )
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -336,11 +351,12 @@ async def test_workflow_merge_failure_reports_error() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -358,7 +374,7 @@ async def test_workflow_merge_success_has_no_error() -> None:
     merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -367,11 +383,12 @@ async def test_workflow_merge_success_has_no_error() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -397,11 +414,12 @@ async def test_workflow_rejected_does_not_merge() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -428,7 +446,7 @@ async def test_concurrent_workflow_runs_isolated() -> None:
     """Two concurrent workflows complete independently."""
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="d" * 40,
     )
@@ -438,11 +456,12 @@ async def test_concurrent_workflow_runs_isolated() -> None:
         return [
             e
             async for e in engine.run(
+                scope=None,
                 prompt=prompt,
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -460,7 +479,7 @@ async def test_quality_gate_receives_correct_params() -> None:
     """Verify the quality gate is called with the right parameters."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -469,11 +488,12 @@ async def test_quality_gate_receives_correct_params() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -503,11 +523,12 @@ async def test_workflow_run_rejects_acceptance_criteria_kwarg() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
                 **extra_kwargs,
@@ -519,7 +540,7 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     """Workflow generates acceptance criteria and passes them to the quality gate."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -528,11 +549,12 @@ async def test_workflow_generates_criteria_before_loop() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -549,11 +571,12 @@ async def test_workflow_streams_criteria_event() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -572,11 +595,12 @@ async def test_workflow_criteria_event_before_iteration_event() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -626,10 +650,11 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -675,11 +700,14 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -706,11 +734,12 @@ async def test_workflow_criteria_generation_failure_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -722,7 +751,7 @@ async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
     """Quality gate always receives a non-empty acceptance_criteria list."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -731,11 +760,12 @@ async def test_workflow_quality_gate_never_receives_empty_criteria() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -752,7 +782,7 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
     merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -761,11 +791,12 @@ async def test_workflow_accepted_cleans_up_ralph_branch() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -791,11 +822,12 @@ async def test_workflow_rejected_does_not_clean_up() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -823,7 +855,7 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
     )
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -832,11 +864,12 @@ async def test_workflow_cleanup_failure_does_not_change_outcome() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -863,11 +896,12 @@ async def test_generate_ticket_runs_in_order() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -892,11 +926,12 @@ async def test_generate_ticket_node_forwards_base_branch() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("develop"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -918,11 +953,14 @@ async def test_criteria_receives_formatted_ticket() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -946,11 +984,12 @@ async def test_criteria_receives_formatted_ticket() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -987,7 +1026,7 @@ async def test_quality_gate_receives_formatted_ticket() -> None:
     and does not contain the raw user prompt ('fix it')."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -996,11 +1035,12 @@ async def test_quality_gate_receives_formatted_ticket() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1018,11 +1058,12 @@ async def test_workflow_ticket_event_yielded() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1048,6 +1089,7 @@ async def test_no_ticket_event_raises() -> None:
             repo_path: str | None,
             repo_url: str | None,
             cache_key: str,
+            run_identity: RunIdentity | None = None,
             base_branch: str,
         ) -> AsyncGenerator[AgentEvent, None]:
             self.calls.append(
@@ -1068,11 +1110,12 @@ async def test_no_ticket_event_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -1096,10 +1139,11 @@ class _SequentialReviewExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -1135,11 +1179,9 @@ class _SequentialReviewExecutor:
                                 "criteria": [
                                     {
                                         "text": "Tests pass",
-                                        "criterionClass": "hard_gate",
                                     },
                                     {
                                         "text": "No lint errors",
-                                        "criterionClass": "soft_signal",
                                     },
                                 ],
                                 "reasoning": "Generated.",
@@ -1219,7 +1261,7 @@ async def test_workflow_review_passes_opens_pr() -> None:
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1232,11 +1274,12 @@ async def test_workflow_review_passes_opens_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1303,11 +1346,14 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1334,11 +1380,12 @@ async def test_workflow_review_fails_triggers_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1361,7 +1408,7 @@ async def test_workflow_ci_passes_completes() -> None:
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1374,11 +1421,12 @@ async def test_workflow_ci_passes_completes() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1395,7 +1443,7 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1409,11 +1457,12 @@ async def test_workflow_ci_fails_budget_exhausted_comments() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1432,7 +1481,7 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1445,11 +1494,12 @@ async def test_workflow_no_pr_creator_skips_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1469,7 +1519,7 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
     pr_creator = FakePRCreator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1482,11 +1532,12 @@ async def test_workflow_no_ci_monitor_skips_ci() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1524,11 +1575,12 @@ async def test_workflow_rejected_skips_review() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1551,7 +1603,7 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1564,11 +1616,12 @@ async def test_workflow_complete_event_includes_pr_fields() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1614,11 +1667,14 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1645,11 +1701,12 @@ async def test_workflow_review_fails_budget_exhausted_no_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1678,7 +1735,7 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
     ci_monitor = FakeCIMonitor(passed=False, summary="CI failed: ci/test")
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1693,11 +1750,12 @@ async def test_workflow_ci_fails_budget_remaining_triggers_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1774,11 +1832,14 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     ci_monitor = FakeCIMonitor(passed=False, summary="CI failed: ci/build")
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -1805,11 +1866,12 @@ async def test_workflow_review_fails_exhausted_with_pr_comments() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1841,7 +1903,7 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
     ci_monitor = FakeCIMonitor(passed=True)
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1854,11 +1916,12 @@ async def test_workflow_repo_url_none_with_protocols_skips_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1882,7 +1945,7 @@ async def test_route_after_review_no_pr_creator_routes_complete() -> None:
     """Review passed, pr_creator=None: routes to complete with pr_url=None."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1895,11 +1958,12 @@ async def test_route_after_review_no_pr_creator_routes_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1917,7 +1981,7 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
     """Review passed, repo_url=None: routes to complete (open_pr requires repo_url)."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1930,11 +1994,12 @@ async def test_route_after_review_no_repo_url_routes_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -1954,9 +2019,10 @@ def test_route_after_ci_no_pr_number_routes_complete() -> None:
         remediator=None,
     )
     state: WorkflowState = {
+        "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
-        "ticket": None,
+        "fire_spec": None,
         "acceptance_criteria": [],
         "accepted": True,
         "total_iterations": 1,
@@ -1983,7 +2049,7 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
     ci_monitor = FakeCIMonitor(passed=False, summary="CI failed: ci/test")
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -1998,11 +2064,12 @@ async def test_route_after_ci_budget_remaining_routes_fix() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2032,11 +2099,12 @@ async def test_workflow_persists_the_ticket_first_then_both_artifacts() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2070,11 +2138,12 @@ async def test_workflow_reports_artifacts_ignored_by_target() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2145,11 +2214,12 @@ async def test_the_artifact_persister_is_handed_the_base_the_run_was_fired_with(
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=spec,
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2247,10 +2317,11 @@ class _ScriptedCriteriaExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -2319,11 +2390,12 @@ async def test_a_run_killed_at_criteria_leaves_the_ticket_retrievable(
     events: list[AgentEvent] = []
     with pytest.raises(RuntimeError, match="provider is down"):
         async for event in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         ):
@@ -2360,11 +2432,12 @@ async def test_a_rate_limit_rejection_retries_the_node_instead_of_ending_the_run
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2391,11 +2464,12 @@ async def test_a_deterministic_empty_output_still_ends_the_run_on_one_attempt(
 
     with pytest.raises(NoStructuredOutputError) as excinfo:
         async for _ in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         ):
@@ -2422,11 +2496,12 @@ async def test_an_exhausted_rate_limit_budget_ends_the_run_with_the_cause_named(
 
     with pytest.raises(RateLimitedSoftFailureError) as excinfo:
         async for _ in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         ):
@@ -2466,11 +2541,12 @@ async def test_a_rate_limited_node_waits_the_floor_before_its_next_attempt(
     events = [
         event
         async for event in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2494,11 +2570,12 @@ async def test_workflow_cleans_artifacts_before_pr() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2520,11 +2597,12 @@ async def test_workflow_without_artifact_persister() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="build feature",
             repo_path="/repo",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2545,7 +2623,7 @@ async def test_workflow_success_cleans_backup_branches() -> None:
     merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2554,11 +2632,12 @@ async def test_workflow_success_cleans_backup_branches() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2588,11 +2667,12 @@ async def test_workflow_rejected_skips_backup_cleanup() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2612,7 +2692,7 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     merger = FakeBranchMerger()
     gate = FakeQualityGate(
         events=[AssistantTextEvent(text="done", model="m")],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2621,11 +2701,12 @@ async def test_backup_cleanup_failure_does_not_block_complete() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2666,7 +2747,7 @@ async def test_workflow_consolidation_event_emitted_post_loop() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2675,11 +2756,12 @@ async def test_workflow_consolidation_event_emitted_post_loop() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2718,7 +2800,7 @@ async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() ->
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2727,11 +2809,12 @@ async def test_complete_event_final_commit_sha_sources_from_feature_tip_sha() ->
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2754,7 +2837,7 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2762,11 +2845,12 @@ async def test_merge_to_feature_already_integrated_proceeds_to_review() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2791,7 +2875,7 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2799,11 +2883,12 @@ async def test_merge_to_feature_divergent_routes_to_complete_with_merge_error() 
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2827,7 +2912,7 @@ async def test_merge_to_feature_source_missing_raises() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2836,11 +2921,12 @@ async def test_merge_to_feature_source_missing_raises() -> None:
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -2861,7 +2947,7 @@ async def test_review_against_ticket_renders_the_changeset_digest() -> None:
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -2869,11 +2955,12 @@ async def test_review_against_ticket_renders_the_changeset_digest() -> None:
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -2897,7 +2984,7 @@ def _make_engine_with_executor(
     ci_monitor: FakeCIMonitor | None = None,
     remediation_max_rounds: int = 1,
     prompts: RecordingPromptProvider | None = None,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Build an engine wired to a pre-configured executor (e.g. _Sequential)."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -2907,11 +2994,14 @@ def _make_engine_with_executor(
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=prompts if prompts is not None else make_prompt_provider(),
@@ -2966,10 +3056,11 @@ class _SequentialQualityGate:
         ralph_branch: str,
         base_spec: BaseSpec,
         work_base_ref: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         acceptance_criteria: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls.append(
@@ -3040,11 +3131,14 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
     )
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha=feature_tip,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3068,11 +3162,12 @@ async def test_review_uses_review_base_sha_and_review_head_sha_not_branch_refs()
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3119,14 +3214,17 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha=feature_tip,
         ),
@@ -3148,6 +3246,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
     _ = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
@@ -3162,7 +3261,7 @@ async def test_review_of_a_stacked_lane_resolves_its_recorded_base_not_trunk() -
                     ),
                 ),
             ),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3202,11 +3301,14 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
     git = FakeGitService(remote_branch_shas={"main": "b" * 40})
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -3235,12 +3337,13 @@ async def test_a_stale_recorded_base_produces_no_scope_verdict_at_all() -> None:
     events: list[AgentEvent] = []
     with pytest.raises(StaleBaseError) as excinfo:
         async for event in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=recorded,
             implied_base=implied,
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         ):
@@ -3265,9 +3368,10 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
     # from the RunnableConfig configurable, so we build that mapping
     # explicitly.
     state: WorkflowState = {
+        "issue_key": None,
         "feature_branch": "kodezart/test",
         "ralph_branch": "kodezart/test-ralph-abc",
-        "ticket": None,
+        "fire_spec": None,
         "acceptance_criteria": ["Tests pass"],
         "accepted": True,
         "total_iterations": 1,
@@ -3292,12 +3396,12 @@ async def test_review_against_ticket_raises_when_review_shas_missing() -> None:
             "repo_url": None,
             "cache_key": "test-cache",
             "base_spec": trunk_base("main"),
-            "permission_mode": "bypassPermissions",
+            "permission_mode": PermissionMode.UNATTENDED,
             "allowed_tools": ["Bash"],
         }
     }
     with pytest.raises(RuntimeError, match="review_base_sha"):
-        await engine._review_against_ticket_node(state, config)
+        await engine.fire.review.review_against_ticket(state, config)
 
 
 # ---------------------------------------------------------------------------
@@ -3333,13 +3437,14 @@ class TestForgeNodePreconditions:
                 "repo_url": "https://github.com/owner/repo",
                 "cache_key": "test-cache",
                 "base_spec": trunk_base("main"),
-                "permission_mode": "bypassPermissions",
+                "permission_mode": PermissionMode.UNATTENDED,
                 "allowed_tools": ["Bash"],
             }
         }
 
     def _state(self) -> WorkflowState:
         state: WorkflowState = {
+            "issue_key": None,
             "feature_branch": "kodezart/test",
             "ralph_branch": "kodezart/test-ralph-abc",
             "feature_tip_sha": "a" * 40,
@@ -3361,9 +3466,12 @@ class TestForgeNodePreconditions:
         """
         written: list[AgentEvent] = []
         monkeypatch.setattr(
-            ralph_workflow_module,
+            authored_publication_module,
             "get_stream_writer",
             lambda: written.append,
+        )
+        monkeypatch.setattr(
+            authored_checks, "get_stream_writer", lambda: written.append
         )
         return written
 
@@ -3376,7 +3484,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(pr_creator=None)
 
         with pytest.raises(RuntimeError, match="open_pr requires pr_creator"):
-            await engine._open_pr_node(self._state(), self._config())
+            await engine.publication.open_pr(self._state(), self._config())
 
         assert written == []
 
@@ -3389,7 +3497,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(ci_monitor=None)
 
         with pytest.raises(RuntimeError, match="monitor_ci requires ci_monitor"):
-            await engine._monitor_ci_node(self._state(), self._config())
+            await engine.checks.monitor_ci(self._state(), self._config())
 
         assert written == []
 
@@ -3398,7 +3506,7 @@ class TestForgeNodePreconditions:
         engine = _make_engine(pr_creator=None)
 
         with pytest.raises(RuntimeError, match="comment_failure requires pr_creator"):
-            await engine._comment_failure_node(self._state(), self._config())
+            await engine.publication.comment_failure(self._state(), self._config())
 
 
 # ---------------------------------------------------------------------------
@@ -3420,7 +3528,7 @@ class TestCommentFailureContainment:
         engine = _make_engine(
             quality_gate=FakeQualityGate(
                 events=[],
-                evaluation=make_passing_evaluation(),
+                evaluation=make_passing_evaluation_of_fake_criteria(),
                 total_iterations=1,
                 last_commit_sha="a" * 40,
             ),
@@ -3432,11 +3540,12 @@ class TestCommentFailureContainment:
         return [
             event
             async for event in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url="https://github.com/owner/repo",
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -3514,10 +3623,11 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
             *,
             prompt: str,
             cwd: str,
-            permission_mode: str,
+            permission_mode: PermissionMode,
             allowed_tools: list[str],
             skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
             session_type: SessionType = FAKE_SESSION_TYPE,
+            run_identity: RunIdentity | None = None,
             agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
             session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
             session_id: str | None = None,
@@ -3550,14 +3660,17 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -3580,11 +3693,12 @@ async def test_branch_name_generation_failure_raises_no_structured_output_error(
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url=None,
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -3635,11 +3749,12 @@ async def test_terminal_event_always_carries_an_outcome() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3666,11 +3781,12 @@ async def test_terminal_outcome_merge_divergent_on_diverged_consolidation() -> N
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3690,11 +3806,12 @@ async def test_terminal_outcome_ci_passed_on_green_ci() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3708,17 +3825,20 @@ async def test_terminal_outcome_ci_not_configured_when_ci_reports_none() -> None
     """A three-state CI result of None with a summary is ci_not_configured."""
     engine = _make_engine(
         pr_creator=FakePRCreator(),
-        ci_monitor=FakeCIMonitor(passed=None, summary="No CI checks configured."),
+        ci_monitor=FakeCIMonitor(
+            passed=None, declared=False, summary="No CI checks configured."
+        ),
     )
 
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3741,11 +3861,12 @@ async def test_terminal_outcome_loop_not_accepted_when_gate_rejects() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3771,11 +3892,12 @@ async def test_plateaued_run_reports_loop_plateaued_with_actionable_payload() ->
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3806,7 +3928,7 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
     """Both projection sites write WorkflowState['trajectory']."""
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=2,
         last_commit_sha="a" * 40,
         trajectory=_plateaued_trajectory(),
@@ -3816,11 +3938,12 @@ async def test_workflow_state_holds_most_recent_gate_trajectory() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3879,14 +4002,17 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -3911,11 +4037,12 @@ async def test_fix_round_success_leaves_the_ci_status_unchanged() -> None:
     events = [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -3994,11 +4121,12 @@ async def _stalled_run(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=repo_url,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -4143,7 +4271,10 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
     None
 ):
     """No silent fallback: a run that produced commits always lands a PR."""
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         skills=SUPPRESS_ALL_SKILLS,
         prompts=make_prompt_provider(),
@@ -4173,11 +4304,12 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
         _ = [
             e
             async for e in engine.run(
+                scope=None,
                 prompt="fix it",
                 repo_path="/tmp/fake",
                 repo_url="https://github.com/owner/repo",
                 base_spec=trunk_base("main"),
-                permission_mode="bypassPermissions",
+                permission_mode=PermissionMode.UNATTENDED,
                 allowed_tools=["Bash"],
                 cache_key=uuid.uuid4().hex,
             )
@@ -4189,8 +4321,8 @@ async def test_a_forge_without_a_ref_publisher_is_a_wiring_error_not_a_no_pr_pat
 # ---------------------------------------------------------------------------
 
 
-def _graph_nodes(engine: RalphWorkflowEngine) -> set[str]:
-    return set(engine._compiled.get_graph().nodes)
+def _graph_nodes(engine: AuthoredDeliveryCoordinator) -> set[str]:
+    return set(engine.fire.graph.get_graph().nodes)
 
 
 def _failing_gate() -> FakeQualityGate:
@@ -4220,11 +4352,12 @@ async def _failing_run(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url="https://github.com/owner/repo",
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -4267,7 +4400,7 @@ async def test_a_ci_failure_opens_a_round_with_the_ci_summary_as_evidence() -> N
     remediator = FakeRemediator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -4296,7 +4429,7 @@ async def test_both_entries_are_served_by_one_component_and_one_budget() -> None
         remediator=ci_remediator,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -4320,7 +4453,7 @@ async def test_the_round_carries_the_original_ticket_not_its_own_replacement() -
 
     assert len(remediator.calls) == 2
     first, second = remediator.calls
-    assert first.original_ticket == second.original_ticket
+    assert first.original_spec == second.original_spec
     assert second.round_index == 1
 
 
@@ -4391,7 +4524,7 @@ def test_the_round_budget_is_config_read_with_no_literal_in_routing(
         / "src"
         / "kodezart"
         / "chains"
-        / "ralph_workflow.py"
+        / "fire_remediation.py"
     ).read_text(encoding="utf-8")
     assert re.search(r"_remediation_max_rounds\s*[<>=]+\s*\d", engine_source) is None
     assert "remediation_max_rounds=config.remediation_max_rounds" in (
@@ -4448,10 +4581,11 @@ class _ScriptedValidatorExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -4471,11 +4605,9 @@ class _ScriptedValidatorExecutor:
                                 "criteria": [
                                     {
                                         "text": "Tests pass",
-                                        "criterionClass": "hard_gate",
                                     },
                                     {
                                         "text": "No lint errors",
-                                        "criterionClass": "soft_signal",
                                     },
                                 ],
                                 "reasoning": "Generated.",
@@ -4525,11 +4657,12 @@ async def _run_engine(executor: AgentExecutor) -> list[AgentEvent]:
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -4621,10 +4754,11 @@ class _ScriptedReviewExecutor:
         *,
         prompt: str,
         cwd: str,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,
@@ -4644,11 +4778,9 @@ class _ScriptedReviewExecutor:
                                 "criteria": [
                                     {
                                         "text": "Tests pass",
-                                        "criterionClass": "hard_gate",
                                     },
                                     {
                                         "text": "No lint errors",
-                                        "criterionClass": "soft_signal",
                                     },
                                 ],
                                 "reasoning": "Generated.",
@@ -4697,9 +4829,9 @@ async def test_post_merge_review_is_guarded_identically_to_the_evaluator() -> No
     and the holes ride the review event exactly as they ride the loop's
     iteration event.
     """
-    # The answered id is the SOFT signal, so the id that never arrives is
-    # the hard gate — otherwise the fail-closed grading would be invisible
-    # behind a verdict that ships with flags.
+    # One id is answered and one never arrives. Grading is uniform, so the
+    # unanswered id rejects on its own — which is what makes the fail-closed
+    # behaviour visible in the verdict rather than only in the holes.
     partial = _review_results(("AC-2", True))
     executor = _ScriptedReviewExecutor([partial, partial])
 
@@ -4733,7 +4865,7 @@ async def test_a_conforming_review_is_dispatched_once_and_carries_no_report() ->
 
 def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None:
     """KOD-87-AC-5, first half — the second evaluative site, asserted here."""
-    source = chain_source("ralph_workflow.py")
+    source = chain_source("fire_review.py")
     review = source.index('site="post_merge_review"')
     start = source.rindex("self._service.stream", 0, review)
     assert "agents=NO_SUBAGENTS" in source[start:review]
@@ -4743,7 +4875,7 @@ def test_the_post_merge_review_dispatch_passes_an_empty_definition_set() -> None
 def test_the_criteria_dispatch_passes_exactly_the_sets_three_definitions() -> None:
     """KOD-87-AC-5, second half — the lenses come from the set, not from code."""
     block = dispatch_block(
-        chain_source("ralph_workflow.py"), "GENERATED_CRITERIA_SCHEMA"
+        chain_source("fire_specification.py"), "GENERATED_CRITERIA_SCHEMA"
     )
     assert "agents=self._prompts.definitions()" in block
     assert len(v5_provider().definitions()) == 3
@@ -4768,7 +4900,7 @@ def _dispatch_sites() -> list[tuple[str, str]]:
     sites: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        if "template_for(PromptKey." not in source:
+        if ".template_for(" not in source and ".session_policy(" not in source:
             continue
         for opener in (".stream(", ".stream_in_workspace(", ".stream_workflow("):
             start = 0
@@ -4780,7 +4912,19 @@ def _dispatch_sites() -> list[tuple[str, str]]:
 
 #: The dispatch census this suite expects to find, so a site that stops
 #: resolving a template cannot silently leave the check.
-KEYED_DISPATCH_COUNT = 12
+KEYED_DISPATCH_COUNTS = {
+    "audit_sessions.py": 1,
+    "agent_content_scanner.py": 1,
+    "git_change_persister.py": 1,
+    "ralph_loop.py": 2,
+    "fire_specification.py": 3,
+    "fire_review.py": 1,
+    "authored_publication.py": 1,
+    "lane_delivery.py": 1,
+    "remediation.py": 1,
+    "ticket_generation.py": 2,
+    "prompt_pass.py": 1,
+}
 
 
 def test_house_rules_delivered_as_system_prompt_append() -> None:
@@ -4805,7 +4949,9 @@ def test_house_rules_delivered_as_system_prompt_append() -> None:
         assert registry.session_policy(key).system_prompt_append == house_rules
 
     sites = _dispatch_sites()
-    assert len(sites) == KEYED_DISPATCH_COUNT, [name for name, _ in sites]
+    from collections import Counter
+
+    assert Counter(name for name, _ in sites) == KEYED_DISPATCH_COUNTS
 
     carriers = [
         (name, block) for name, block in sites if "session_policy=" not in block
@@ -4879,11 +5025,12 @@ async def _review_failure_round(
     return [
         e
         async for e in engine.run(
+            scope=None,
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
@@ -4900,7 +5047,7 @@ async def test_a_review_entry_round_runs_its_loop_on_the_consolidated_branch() -
     remediator = FakeRemediator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -4923,7 +5070,7 @@ async def test_the_round_is_told_the_ref_its_loop_will_actually_be_cut_from() ->
     remediator = FakeRemediator()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -4946,7 +5093,7 @@ async def test_the_rounds_artifact_write_cuts_the_branch_from_the_same_ref() -> 
     persister = FakeArtifactPersister()
     gate = FakeQualityGate(
         events=[],
-        evaluation=make_passing_evaluation(),
+        evaluation=make_passing_evaluation_of_fake_criteria(),
         total_iterations=1,
         last_commit_sha="a" * 40,
     )
@@ -4983,13 +5130,14 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
                 "repo_url": None,
                 "cache_key": "test-cache",
                 "base_spec": trunk_base("main"),
-                "permission_mode": "bypassPermissions",
+                "permission_mode": PermissionMode.UNATTENDED,
                 "allowed_tools": ["Bash"],
             }
         }
 
     def _state(self, *, accepted: bool) -> WorkflowState:
         state: WorkflowState = {
+            "issue_key": None,
             "feature_branch": "kodezart/test-12345678",
             "ralph_branch": "kodezart/test-12345678-ralph-abcdef01",
             "work_base_ref": "main",
@@ -5000,7 +5148,7 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
         }
         return state
 
-    def _engine(self, merger: FakeBranchMerger) -> RalphWorkflowEngine:
+    def _engine(self, merger: FakeBranchMerger) -> AuthoredDeliveryCoordinator:
         return _make_engine(
             merger=merger,
             git=FakeGitService(remote_branch_shas={"main": "b" * 40}),
@@ -5014,11 +5162,11 @@ class TestWorkBaseRefIsWrittenWhereItBecomesTrue:
         merger: FakeBranchMerger,
     ) -> dict[str, object]:
         monkeypatch.setattr(
-            ralph_workflow_module,
+            fire_consolidation_module,
             "get_stream_writer",
             lambda: lambda _event: None,
         )
-        return await self._engine(merger)._merge_to_feature_node(
+        return await self._engine(merger).fire.consolidation.merge_to_feature(
             self._state(accepted=accepted),
             self._config(),
         )

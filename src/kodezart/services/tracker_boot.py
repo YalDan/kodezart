@@ -79,6 +79,14 @@ def configured_mappings(config: OperationConfig) -> tuple[MappingRef, ...]:
         for name, identifier in sorted(config.queue_states.items())
     )
     refs.extend(
+        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.scope_labels.items())
+    )
+    refs.extend(
+        MappingRef(kind=MappingKind.ISSUE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+    refs.extend(
         MappingRef(
             kind=MappingKind.WORKFLOW_STATE,
             name=stage.value,
@@ -125,6 +133,39 @@ def _queue_state_refs(
     )
 
 
+def _issue_label_refs(
+    config: OperationConfig,
+    containers: tuple[str | None, ...],
+) -> tuple[MappingRef, ...]:
+    """Issue labels use the same native namespaces as the queue vocabulary."""
+    return tuple(
+        MappingRef(
+            kind=MappingKind.ISSUE_LABEL,
+            name=name,
+            identifier=identifier,
+            scope=container,
+        )
+        for container in containers
+        for name, identifier in sorted(config.issue_labels.items())
+    )
+
+
+def _scope_label_refs(
+    config: OperationConfig,
+    _containers: tuple[str | None, ...],
+) -> tuple[MappingRef, ...]:
+    """One workspace ref per scope label, shared across container kinds.
+
+    An initiative and a project have no issue-team namespace. The adapter
+    instates the same configured name in each native label namespace;
+    creating team copies would make the issue spelling ambiguous.
+    """
+    return tuple(
+        MappingRef(kind=MappingKind.SCOPE_LABEL, name=name, identifier=identifier)
+        for name, identifier in sorted(config.scope_labels.items())
+    )
+
+
 def _document_refs(
     config: OperationConfig,
     _containers: tuple[str | None, ...],
@@ -164,6 +205,8 @@ OWNED_REF_BUILDERS: dict[
 ] = {
     "documents": _document_refs,
     "queue_states": _queue_state_refs,
+    "scope_labels": _scope_label_refs,
+    "issue_labels": _issue_label_refs,
 }
 
 

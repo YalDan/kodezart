@@ -10,21 +10,27 @@ remember to route through, because there is no second path.
 
 from collections.abc import AsyncIterator
 
-from kodezart.core.constants import EVAL_PERMISSION_MODE, EVAL_TOOLS_WITH_AGENT
+from kodezart.chains.criteria import current_native_criteria
+from kodezart.core.constants import EVAL_PERMISSION_MODE
 from kodezart.core.errors import soft_failure
 from kodezart.core.logging import BoundLogger, get_logger
-from kodezart.core.protocols import AgentRunner, PromptSetProvider
+from kodezart.core.protocols import AgentRunner, FireCriteriaReader, PromptSetProvider
 from kodezart.core.stream_drain import drain
+from kodezart.domain.prompt_variables import tracker_checks_section
 from kodezart.domain.remediation import done_work_summary
-from kodezart.domain.ticket import format_ticket_as_task
+from kodezart.domain.ticket import format_fire_spec
 from kodezart.types.domain.agent import (
+    REMEDIATION_SCHEMA,
     TICKET_DRAFT_SCHEMA,
     AgentEvent,
     TicketDraftOutput,
     WorkflowRemediationEvent,
 )
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.prompts import PromptKey
-from kodezart.types.domain.session import SessionType
+from kodezart.types.domain.remediation import RemediationPlan
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.session import SessionType, ToolPreset
 from kodezart.types.domain.skills import SkillsSelection
 from kodezart.types.domain.workflow import RemediationRequest
 
@@ -46,8 +52,10 @@ class RemediationChain:
         *,
         prompts: PromptSetProvider,
         skills: SkillsSelection,
+        criteria_reader: FireCriteriaReader | None = None,
     ) -> None:
         self._service: AgentRunner = service
+        self._criteria_reader = criteria_reader
         self._prompts: PromptSetProvider = prompts
         self._skills: SkillsSelection = skills
         self._log: BoundLogger = get_logger(__name__)
@@ -59,16 +67,25 @@ class RemediationChain:
         repo_path: str | None,
         repo_url: str | None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Draft one remediation ticket for *request*."""
         prompt = self._prompts.template_for(PromptKey.REMEDIATION_TICKET).render(
             {
-                "original_ticket": format_ticket_as_task(request.original_ticket),
+                "original_ticket": format_fire_spec(request.original_spec),
                 "done_work": done_work_summary(request),
                 "failure_evidence": request.failure_evidence,
             },
         )
 
+        native = isinstance(request.original_spec, TrackerSpec)
+        spec = request.original_spec
+        if isinstance(spec, TrackerSpec):
+            current = await current_native_criteria(
+                spec=spec,
+                reader=self._criteria_reader,
+            )
+            prompt += "\n\n" + tracker_checks_section(current)
         result_event, rate_limit_rejected = await drain(
             self._service.stream(
                 prompt=prompt,
@@ -76,17 +93,18 @@ class RemediationChain:
                 repo_url=repo_url,
                 branch=request.work_base_ref,
                 permission_mode=EVAL_PERMISSION_MODE,
-                allowed_tools=EVAL_TOOLS_WITH_AGENT,
+                allowed_tools=ToolPreset.DELEGATED_EVALUATION,
                 skills=self._prompts.session_skills(
                     PromptKey.REMEDIATION_TICKET, self._skills
                 ),
                 session_type=SessionType.TICKET_FIRE,
+                run_identity=run_identity,
                 session_policy=self._prompts.session_policy(
                     PromptKey.REMEDIATION_TICKET,
                 ),
                 output_format={
                     "type": "json_schema",
-                    "schema": TICKET_DRAFT_SCHEMA,
+                    "schema": REMEDIATION_SCHEMA if native else TICKET_DRAFT_SCHEMA,
                 },
                 cache_key=cache_key,
             ),
@@ -102,13 +120,17 @@ class RemediationChain:
                 rate_limit_rejected=rate_limit_rejected,
             )
 
-        ticket = TicketDraftOutput.model_validate(result_event.structured_output)
+        ticket = (
+            RemediationPlan.model_validate(result_event.structured_output)
+            if native
+            else TicketDraftOutput.model_validate(result_event.structured_output)
+        )
         await self._log.ainfo(
             "remediation_ticket_drafted",
             entry=request.entry.value,
             round_index=request.round_index,
             base_ref=request.work_base_ref,
-            title=ticket.title,
+            native=native,
         )
         yield WorkflowRemediationEvent(
             entry=request.entry,

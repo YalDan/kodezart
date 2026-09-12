@@ -26,6 +26,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
         with:
+          version: '0.11.6'
           enable-cache: true
 
         # The workflow-script fan-in guard executes the shipped
@@ -37,6 +38,6 @@ jobs:
         with:
           node-version: '22'
 
-      - run: make install
+      - run: uv sync --locked --all-groups
 
       - run: make check

@@ -6,7 +6,16 @@
 http://localhost:8000/api/v1
 ```
 
-The prefix is configurable via `KODEZART_API_V1_PREFIX` (default `/api/v1`).
+The prefix is configurable via `KODEZART_HTTP__API_V1_PREFIX` (default `/api/v1`).
+
+`/agent/fire` and job status declare their existing success models in OpenAPI
+and return those models through FastAPI response validation. Queue-full `429`
+and unknown-job `404` responses retain the `BaseResponse` JSON envelope. Query,
+workflow and job attachment advertise `text/event-stream` and keep streaming
+explicit. The HTTP dependency providers in `api/dependencies.py` read resources
+owned by the lifespan; route tests can replace them with FastAPI dependency
+overrides. A one-shot query has no workflow-queue dependency.
+
 
 ## GET /api/v1/health
 
@@ -76,6 +85,7 @@ Ralph loop, and finalize.
 | `prompt`         | `string`                          | Yes      |                                              | The task prompt (min 1 char)    |
 | `repoPath`       | `string \| null`                  | *        |                                              | Local filesystem path           |
 | `repoUrl`        | `string \| null`                  | *        |                                              | Remote repository URL           |
+| `scope`          | `ScopeRefRequest \| null`         | No       | `null`                                       | Tracker scope address: `kind` and nonempty opaque `key` |
 | `baseBranch`     | `string`                          | No       | `"main"`                                     | Branch to base work on          |
 | `baseSpec`       | `BaseSpec \| null`                | No       | `null`                                       | Recorded base to scope the run against; when present `baseBranch` is not consulted |
 | `impliedBase`    | `BaseSpec \| null`                | No       | `null`                                       | The caller's view of the base; refused with `StaleBaseError` when it differs from the recorded one |
@@ -83,6 +93,17 @@ Ralph loop, and finalize.
 | `allowedTools`   | `string[]`                        | No       | `["Read","Glob","Grep","Bash","Edit","Write"]` | Tools the agent may use       |
 
 \* Exactly one of `repoPath` or `repoUrl` must be provided.
+
+`scope.kind` accepts `initiative`, `project`, `milestone`, or `issue`.
+Omitting `scope` or supplying `null` runs the existing prompt workflow.
+Invalid scope input returns `422` before a job is queued. `baseBranch`
+must be nonempty when no recorded `baseSpec` is supplied.
+
+Scoped graph execution is not yet implemented. A valid scoped job terminates
+with `ScopedExecutionUnavailableError` and outcome `engine_error` when dequeued,
+before tracker reads, repository preparation or judgment sessions. This refusal
+also applies without a configured tracker. An addressed scope never falls back
+to the prompt workflow. These rules also apply to `/fire`.
 
 ### Example
 
@@ -112,7 +133,7 @@ Queue a workflow run and return immediately. Same request body as
 ```
 
 `queuePosition` is `null` once the run has left the queue. A lane at
-`KODEZART_QUEUE_MAX_DEPTH_PER_LANE` rejects the submission with `429`.
+`KODEZART_QUEUE__MAX_DEPTH_PER_LANE` rejects the submission with `429`.
 
 ### Example
 
@@ -126,7 +147,7 @@ curl -X POST http://localhost:8000/api/v1/agent/fire \
 
 Registry facts for a queued or running job, plus the checkpointed run state.
 `404` with a `BaseResponse` error body when the job id is unknown or its
-record has been released (`KODEZART_QUEUE_TERMINAL_RETENTION_SECONDS`).
+record has been released (`KODEZART_QUEUE__TERMINAL_RETENTION_SECONDS`).
 
 ### Example
 
@@ -137,10 +158,10 @@ curl http://localhost:8000/api/v1/jobs/3fa85f6457174562b3fc2c963f66afa6
 ## GET /api/v1/jobs/{jobId}/stream
 
 Attach to a job's event stream. Replays the job's bounded event buffer
-(`KODEZART_QUEUE_EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
+(`KODEZART_QUEUE__EVENT_BUFFER_CAPACITY`) and then goes live, in the same SSE
 format as `/agent/query` and `/agent/workflow`. `404` when the job id is
 unknown. A job whose buffer has been released
-(`KODEZART_QUEUE_EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
+(`KODEZART_QUEUE__EVENT_BUFFER_RETENTION_SECONDS`) is marked `truncated` on its
 record and replays nothing.
 
 ### Example
@@ -210,7 +231,7 @@ stopped externally reports `killed` only here. `terminal` is resolved
 against the SDK's own terminal-status set, so a consumer tracking task
 ids clears them on `terminal` from either frame.
 
-### Workflow Events (15)
+### Workflow Events (18)
 
 | Event Type                     | Key Fields                                      |
 | ------------------------------ | ----------------------------------------------- |
@@ -219,6 +240,7 @@ ids clears them on `terminal` from either frame.
 | `workflow_ticket`              | `ticket`, `reviewRounds`, `approved`, `mode`    |
 | `workflow_scope_base`          | `baseBranch`, `baseRole`, `inputs`              |
 | `workflow_visibility`          | `visibility`, `repoUrl`                         |
+| `node_session_started`         | `invocation`, `sessionId`                       |
 | `workflow_criteria`            | `criteria`, `reasoning`                         |
 | `workflow_criteria_validation` | `regenerationRound`, `validation`, `regenerationTargets`, `correction` (present only when a refused response was re-dispatched) |
 | `workflow_artifacts`           | `status`, `branch`                              |
@@ -229,9 +251,36 @@ ids clears them on `terminal` from either frame.
 | `workflow_pr`                  | `prUrl`, `prNumber`, `featureBranch`, `baseBranch`, `delivered` |
 | `workflow_ci`                  | `ciStatus`, `summary`, `ref`                    |
 | `workflow_complete`            | `featureBranch`, `ralphBranch`, `totalIterations`, `accepted`, `outcome`, `merged`, `finalCommitSha`, `ciStatus`, `mergeError` |
+| `scope_walk`                   | `observation`: scope, tick, ready/dispatched/skipped lane keys, unresolved criterion keys, unapproved lane keys and exclusions |
+| `scope_lane`                   | `laneKey`, `event`: the complete typed inner event, including its discriminator |
+
+An addressed scope request uses one queue job. Each fresh walk reports current
+readiness and remaining obligations; approved lanes run through the native fire
+and delivery graphs. `scope_lane.event` preserves iteration, review and native
+session fields. An inner fire's `workflow_complete` is not a scope terminal event.
+Nested events use their concrete discriminator and retain required null fields,
+so the scope envelope validates against the same schema it emits.
+When this controller invocation finishes, the job is `terminal` with a null
+outcome; this does not certify scope convergence. Unapproved and skipped lanes
+and unresolved criterion keys remain explicit in `scope_walk.observation`.
+
+This request route executes eligible lanes serially once per invocation. Scheduled
+configured-scope lookup, concurrent lane marks, cross-job branch recovery and a
+scope terminal verdict are separate requirements. Same-job checkpoint replay
+validates the original scope, repository, resolved base and run identity, and
+checks current criterion authority before replaying a completed judgment. The
+HTTP API does not yet expose a request to resume an existing job.
 
 `workflow_iteration.verdict` is three-state (`accepted`, `ship_with_flags`,
 `rejected`), not a boolean.
+
+`node_session_started` reports the native session id from an evaluator's SDK
+opening frame. Its invocation preserves the existing fire identity, node key,
+explicit invocation key and declared session count. Iterations, corrective
+dispatches and graph-level retries have distinct invocation keys; repeated frames for the same native
+session produce one occurrence. Issue-less calls do not synthesize a tracker
+identity. This event is emitted on the harness stream and does not certify a
+durable tracker event, an alarm, or completion of the supervisor's event reader.
 
 `workflow_ticket.approved` is three-state (`approved`, `unapproved`,
 `not_reviewed`) and rides beside `mode`. `not_reviewed` says no reviewer ran
@@ -250,6 +299,35 @@ write-back records as the issue's deliverable work ref. `false` is the
 stall exit's do-not-merge best-iteration branch, opened over a run its own
 acceptance gate rejected: it is reported and commented on, and no work ref
 is recorded for it.
+
+### Native Delivery Events (1)
+
+| Event Type      | Key Fields |
+| --------------- | ---------- |
+| `lane_delivery` | `delivery` |
+
+This event appears inside `scope_lane.event`. A `delivery.phase` of `completed`
+holds an actual typed delivery result, while `skipped` holds an existing workflow
+outcome and reason without inventing a PR. The completed result names the lane
+and issue, head/base branches, final commit SHA, PR, coherent check observation,
+red classification and outcome. Completed delivery can still report failed or
+unverifiable checks; it does not establish scope acceptance. Internal pending
+remediation never appears as a terminal delivery event. Consumers evaluating a
+later scope result must use these actual delivery records and current tracker
+obligations.
+
+### Native Amendment Events (1)
+
+| Event Type | Key Fields |
+| ---------- | ---------- |
+| `native_amendment` | `report`, `repeated` |
+
+The native precommit gate reports the actual departure claims it independently
+judged. An upheld record retains the original claim, reason and cited judgment;
+that proposed departure was not committed. Repeated entries count the exact
+subject kind, identity and reason across the current inner loop. This event can
+appear inside `scope_lane.event`. A reproduced ground requiring an unconfirmed
+tracker amendment refuses before commit and does not emit an applied amendment.
 
 ### Job Events (1)
 
