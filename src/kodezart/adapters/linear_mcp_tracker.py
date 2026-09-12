@@ -1730,7 +1730,10 @@ class LinearMcpTracker:
             surface = authorization.surface
             if surface.ref.key != target:
                 raise ValueError("description authority addresses another target")
-            original = await self.read_issue(issue_key=target)
+            self._classification_label(
+                "criterion", stops="cannot select protected description authority"
+            )
+            original = await self.read_planning_issue(issue_key=target)
 
             def require_surface(issue: TrackerIssue) -> None:
                 if (
@@ -1748,7 +1751,7 @@ class LinearMcpTracker:
                 markers = await self._markers_on(
                     _GrantKind.LEASE, targets=(_LEASE_ADDRESSING.target(surface),)
                 )
-                current = await self.read_issue(issue_key=target)
+                current = await self.read_planning_issue(issue_key=target)
                 require_surface(current)
                 if surface.kind is SurfaceKind.CRITERION_SUB_ISSUE:
                     require_criterion_source(
