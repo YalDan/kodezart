@@ -60,12 +60,14 @@ from kodezart.types.domain.audit import TrackerArtifact
 from kodezart.types.domain.criteria import TrackerCriterionSet
 from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.native_execution import NativeAuthoritySnapshot
 from kodezart.types.domain.operation import (
     CheckPrerequisite,
     OperationConfig,
     OperationMemberAbsentError,
     RepoEntry,
 )
+from kodezart.types.domain.persist import PersistResult
 from kodezart.types.domain.prompts import PromptKey
 from kodezart.types.domain.scope import ScopeKind, ScopeRef
 from kodezart.types.domain.session import SessionType
@@ -235,6 +237,15 @@ class _NativeWriterGuard:
         self._base_sha: str | None = None
         self._holder, self._visibility = holder, visibility
 
+    @property
+    def holder(self) -> str:
+        """The actual native job binding, independent of saved checkpoint data."""
+        if self._holder is None or not self._holder.strip():
+            raise NativeWriteRefusalError(
+                "Native writing requires its actual parent holder"
+            )
+        return self._holder
+
     async def begin(self, *, workspace_path: str) -> NativeWriterStart:
         owner = self._owner
         head = await settle(owner._git.current_sha(workspace_path))
@@ -253,6 +264,58 @@ class _NativeWriterGuard:
         start = NativeWriterStart(head_sha=head, instructions=instructions)
         await self.require_current(workspace_path=workspace_path, start=start)
         return start
+
+    def snapshot(self) -> NativeAuthoritySnapshot:
+        """Retain actual source observations, never a newly inferred replay prior."""
+        if (
+            self._criterion_issues is None
+            or self._ruling_records is None
+            or self._base_sha is None
+            or self._holder is None
+        ):
+            raise NativeWriteRefusalError("The native authority is not initialized")
+        return NativeAuthoritySnapshot(
+            spec=self._spec,
+            criteria=self._criteria,
+            criterion_issues=self._criterion_issues,
+            ruling_records=self._ruling_records,
+            archives=self._archives,
+            base_ref=self._base_ref,
+            base_sha=self._base_sha,
+            holder=self._holder,
+        )
+
+    async def restore(
+        self,
+        *,
+        snapshot: NativeAuthoritySnapshot,
+        workspace_path: str,
+        start: NativeWriterStart,
+        receipt: PersistResult | None = None,
+    ) -> None:
+        """Restore original authority and refuse unrelated current source changes."""
+        if (
+            snapshot.spec != self._spec
+            or snapshot.base_ref != self._base_ref
+            or snapshot.holder != self._holder
+        ):
+            raise NativeWriteRefusalError(
+                "The saved native authority belongs to another run"
+            )
+        self._criteria = snapshot.criteria
+        self._criterion_issues = snapshot.criterion_issues
+        self._ruling_records = snapshot.ruling_records
+        self._rulings = tuple(ruling for _, ruling in snapshot.ruling_records)
+        self._archives = snapshot.archives
+        self._base_sha = snapshot.base_sha
+        if receipt is None:
+            await self.require_current(workspace_path=workspace_path, start=start)
+        else:
+            await self.require_publishable(
+                workspace_path=workspace_path,
+                start=start,
+                authorized_commit_sha=receipt.commit_sha,
+            )
 
     async def require_current(
         self,

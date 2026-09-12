@@ -23,6 +23,7 @@ from kodezart.types.domain.criteria import (
 from kodezart.types.domain.delivery import CheckRedClass
 from kodezart.types.domain.fire_spec import FireSpec, TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.ralph_outcome import RalphOutcome
 from kodezart.types.domain.remediation import RemediationEntry, RemediationPlan
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.scope import ScopeRef
@@ -214,6 +215,7 @@ class RalphLoopState(TypedDict):
     verdict: AcceptVerdict
     pending_failures: list[CriterionFailure]
     iteration_records: list[IterationRecord]
+    outcome: RalphOutcome
     iteration_commit_sha: NotRequired[str | None]
     amendment_reports: NotRequired[list[AmendmentReport]]
     amendment_blocked: NotRequired[bool]

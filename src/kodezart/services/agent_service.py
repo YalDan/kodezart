@@ -3,8 +3,6 @@
 import sys
 from collections.abc import AsyncGenerator, Sequence
 
-from pydantic import ValidationError
-
 from kodezart.core.error_egress import build_error_event
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import (
@@ -17,13 +15,11 @@ from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.amendment import NativeWriteRefusalError
 from kodezart.domain.errors import WorkspaceError
 from kodezart.domain.git_url import resolve_repo_url
+from kodezart.services.native_execution import NativeExecution, NativeExecutionRequest
 from kodezart.types.domain.agent import (
-    NATIVE_WRITER_SCHEMA,
     AgentEvent,
-    NativeAmendmentEvent,
     ResultEvent,
 )
-from kodezart.types.domain.amendment import NativeWriterOutput, NativeWriterStart
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.run_records import RunIdentity
 from kodezart.types.domain.session import AllowedTools, PermissionMode, SessionType
@@ -204,6 +200,43 @@ class AgentService:
         if repo_url is not None:
             repo_url = resolve_repo_url(repo_url, self._git_base_url)
 
+        if native_guard is not None:
+            if (
+                self._persister is None
+                or not persist_branch
+                or branch_name != persist_branch
+            ):
+                raise NativeWriteRefusalError(
+                    "Native persistence is not configured for this branch"
+                )
+            execution = NativeExecution(
+                executor=self._executor,
+                workspace=self._workspace,
+                persister=self._persister,
+                guard=native_guard,
+                request=NativeExecutionRequest(
+                    prompt=prompt,
+                    repo_path=repo_path,
+                    repo_url=repo_url,
+                    ref=ref,
+                    branch=persist_branch,
+                    create_branch=create_branch,
+                    permission_mode=permission_mode,
+                    allowed_tools=allowed_tools,
+                    skills=skills,
+                    session_type=session_type,
+                    run_identity=run_identity,
+                    agents=agents,
+                    session_policy=session_policy,
+                    session_id=session_id,
+                    visibility=visibility,
+                    cache_key=cache_key,
+                ),
+            )
+            async for event in execution.stream():
+                yield event
+            return
+
         try:
             workspace_path = await self._workspace.acquire(
                 repo_path=repo_path,
@@ -230,104 +263,28 @@ class AgentService:
             yield build_error_event(exc)
             return
 
-        retain_workspace = False
         try:
-            native_start: NativeWriterStart | None = None
-            if native_guard is not None:
-                if self._persister is None or not persist_branch:
-                    raise NativeWriteRefusalError(
-                        "Native persistence is not configured"
-                    )
-                native_start = await native_guard.begin(workspace_path=workspace_path)
-                prompt += "\n\n" + native_start.instructions
-                output_format = {"type": "json_schema", "schema": NATIVE_WRITER_SCHEMA}
             buffered_result: ResultEvent | None = None
-            try:
-                async for event in self._executor.stream(
-                    prompt=prompt,
-                    cwd=workspace_path,
-                    permission_mode=permission_mode,
-                    allowed_tools=allowed_tools,
-                    skills=skills,
-                    session_type=session_type,
-                    run_identity=run_identity,
-                    agents=agents,
-                    session_policy=session_policy,
-                    session_id=session_id,
-                    output_format=output_format,
-                ):
-                    if isinstance(event, ResultEvent):
-                        buffered_result = event
-                    else:
-                        yield event
-            except BaseException:
-                if native_guard is not None and native_start is not None:
-                    # The executor may fail or be cancelled after moving HEAD.
-                    # Read only local identity; a tracker outage cannot erase
-                    # this workspace or replace the original writer failure.
-                    try:
-                        await native_guard.require_unchanged_head(
-                            workspace_path=workspace_path,
-                            start=native_start,
-                        )
-                    except BaseException:
-                        retain_workspace = True
-                raise
-
-            before_commit = None
-            before_publish = None
-            if native_guard is not None and native_start is not None:
-                await native_guard.require_current(
-                    workspace_path=workspace_path,
-                    start=native_start,
-                )
-                if (
-                    buffered_result is None
-                    or buffered_result.is_error
-                    or buffered_result.structured_output is None
-                ):
-                    raise NativeWriteRefusalError(
-                        "The native writer returned no claim report"
-                    )
-                try:
-                    output = NativeWriterOutput.model_validate(
-                        buffered_result.structured_output
-                    )
-                except ValidationError as exc:
-                    raise NativeWriteRefusalError(
-                        "The native writer claim report is malformed"
-                    ) from exc
-                report = await native_guard.judge(
-                    workspace_path=workspace_path,
-                    start=native_start,
-                    output=output,
-                )
-                yield NativeAmendmentEvent(report=report)
-                if report.upheld:
-                    return
-
-                async def before_commit() -> None:
-                    await native_guard.require_current(
-                        workspace_path=workspace_path,
-                        start=native_start,
-                    )
-
-                async def before_publish(authorized_commit_sha: str) -> None:
-                    nonlocal retain_workspace
-                    # A local commit now exists. Keep its workspace if authority
-                    # or publication fails; only a successful persist clears this.
-                    retain_workspace = True
-                    await native_guard.require_publishable(
-                        workspace_path=workspace_path,
-                        start=native_start,
-                        authorized_commit_sha=authorized_commit_sha,
-                    )
+            async for event in self._executor.stream(
+                prompt=prompt,
+                cwd=workspace_path,
+                permission_mode=permission_mode,
+                allowed_tools=allowed_tools,
+                skills=skills,
+                session_type=session_type,
+                run_identity=run_identity,
+                agents=agents,
+                session_policy=session_policy,
+                session_id=session_id,
+                output_format=output_format,
+            ):
+                if isinstance(event, ResultEvent):
+                    buffered_result = event
+                else:
+                    yield event
 
             if persist_branch and self._persister and buffered_result:
                 backup_ref_id_prefix = (session_id or generate_workspace_id())[:8]
-                # A failed await cannot establish whether persistence committed.
-                # Preserve native evidence until the whole operation returns.
-                retain_workspace = native_guard is not None
                 persist_result = await self._persister.persist(
                     workspace_path=workspace_path,
                     branch=persist_branch,
@@ -335,10 +292,7 @@ class AgentService:
                     backup_ref_id_prefix=backup_ref_id_prefix,
                     skills=skills,
                     visibility=visibility,
-                    before_commit=before_commit,
-                    before_publish=before_publish,
                 )
-                retain_workspace = False
                 if persist_result:
                     buffered_result = buffered_result.model_copy(
                         update={
@@ -346,23 +300,13 @@ class AgentService:
                             "branch": persist_branch,
                         },
                     )
-
             if buffered_result:
                 yield buffered_result
-        except NativeWriteRefusalError:
-            retain_workspace = True
-            raise
         finally:
-            if retain_workspace:
+            try:
+                await self._workspace.release(workspace_path)
+            except Exception as cleanup_exc:
                 await self._log.awarning(
-                    "native_writer_workspace_retained",
-                    workspace_path=workspace_path,
+                    "workspace_cleanup_failed",
+                    error=str(cleanup_exc),
                 )
-            else:
-                try:
-                    await self._workspace.release(workspace_path)
-                except Exception as cleanup_exc:
-                    await self._log.awarning(
-                        "workspace_cleanup_failed",
-                        error=str(cleanup_exc),
-                    )

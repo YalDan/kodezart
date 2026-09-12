@@ -9,11 +9,13 @@ warning rather than a silent ``-backup-<hex>`` push.
 
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from kodezart.core.logging import BoundLogger, get_logger
 from kodezart.core.protocols import GitService, RepoCache
 from kodezart.domain.agent import generate_workspace_id
 from kodezart.domain.errors import GitOperationError, GitRepositoryError, WorkspaceError
+from kodezart.types.domain.workspace import WorkspaceSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +114,87 @@ class GitWorktreeProvider:
         await self._git.remove_worktree(info.repo_path, workspace_path)
         await self._log.ainfo("workspace_released", workspace_id=info.workspace_id)
 
+    async def capture(self, *, workspace_path: str, holder: str) -> WorkspaceSnapshot:
+        """Capture an actual acquisition and fingerprints of its current contents."""
+        info = self._workspaces.get(workspace_path)
+        if info is None or info.branch_name is None or not holder.strip():
+            raise WorkspaceError(
+                "A native checkpoint requires an owned branch workspace"
+            )
+        identity = await self._git.worktree_identity(
+            workspace_path, repository_path=info.repo_path
+        )
+        if identity.branch != info.branch_name:
+            raise WorkspaceError("The owned workspace changed its native branch")
+        repository = Path(info.repo_path).resolve(strict=True)
+        observed = repository.stat()
+        return WorkspaceSnapshot(
+            workspace_path=workspace_path,
+            workspace_id=info.workspace_id,
+            repository_path=str(repository),
+            repository_device=observed.st_dev,
+            repository_inode=observed.st_ino,
+            holder=holder,
+            identity=identity,
+        )
+
+    async def resume(
+        self,
+        *,
+        snapshot: WorkspaceSnapshot,
+        holder: str,
+        repo_path: str | None,
+        repo_url: str | None,
+        cache_key: str | None,
+    ) -> None:
+        """Validate retained Git/filesystem facts before adopting its original lease."""
+        if holder != snapshot.holder or not holder.strip():
+            raise WorkspaceError("The retained workspace belongs to another native job")
+        resolved = await self._resolve(
+            repo_path=repo_path, repo_url=repo_url, cache_key=cache_key
+        )
+        try:
+            requested = Path(resolved).resolve(strict=True)
+            repository = Path(snapshot.repository_path).resolve(strict=True)
+            observed = repository.stat()
+            if (
+                requested != repository
+                or str(repository) != snapshot.repository_path
+                or (
+                    observed.st_dev,
+                    observed.st_ino,
+                )
+                != (snapshot.repository_device, snapshot.repository_inode)
+            ):
+                raise WorkspaceError("The acquired repository was replaced")
+        except OSError as exc:
+            raise WorkspaceError("The retained workspace is unavailable") from exc
+        try:
+            await self._git.validate_repo(str(repository))
+        except (GitRepositoryError, GitOperationError) as exc:
+            raise WorkspaceError("The retained repository is unavailable") from exc
+        identity = await self._git.worktree_identity(
+            snapshot.workspace_path, repository_path=str(repository)
+        )
+        if identity != snapshot.identity:
+            raise WorkspaceError("The retained workspace or its content changed")
+        info = _WorkspaceInfo(
+            repo_path=snapshot.repository_path,
+            workspace_id=snapshot.workspace_id,
+            branch_name=identity.branch,
+        )
+        existing = self._workspaces.get(snapshot.workspace_path)
+        if existing is not None and existing != info:
+            # Relative acquisition paths and resolved ones may differ only in
+            # spelling; compare the actual original repository in that case.
+            if (
+                Path(existing.repo_path).resolve() != repository
+                or existing.workspace_id != info.workspace_id
+                or existing.branch_name != info.branch_name
+            ):
+                raise WorkspaceError("Another acquisition already owns this workspace")
+        self._workspaces[snapshot.workspace_path] = info
+
     async def _log_release_state(
         self,
         workspace_path: str,
@@ -123,8 +206,6 @@ class GitWorktreeProvider:
         release is a programming error elsewhere; surfacing it loudly is
         the new contract.
         """
-        # TODO(resume): re-entering a checkpointed run from this worktree is
-        # not yet wired — see the time-travel TODOs in ralph_loop / ralph_workflow.
         try:
             dirty = await self._git.has_changes(workspace_path)
         except Exception as exc:

@@ -18,6 +18,7 @@ from kodezart.chains import (
     authored_delivery,
     native_amendment,
     native_delivery,
+    native_execution,
     ralph_loop,
     ralph_workflow,
     ticket_generation,
@@ -32,7 +33,7 @@ _GRAPH_BINDINGS = (
 )
 
 # These graph steps include side effects that have no automatic retry authority.
-_NONRETRYING_GRAPHS = (native_amendment,)
+_NONRETRYING_GRAPHS = (native_amendment, native_execution)
 
 
 def _module_source(module: ModuleType) -> str:

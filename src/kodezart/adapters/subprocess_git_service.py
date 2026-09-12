@@ -4,18 +4,25 @@ Git operations via subprocess.
 """
 
 import asyncio
+import hashlib
 import os
 import re
+import stat
+from contextlib import ExitStack
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from kodezart.core.protocols import GitAuth
 from kodezart.domain.errors import (
     GitOperationError,
     GitRepositoryError,
     MergeConflictError,
+    WorkspaceError,
 )
 from kodezart.types.domain.consolidation import ChangesetDigest
 from kodezart.types.domain.git import LsRemoteEntry
+from kodezart.types.domain.workspace import GitWorktreeIdentity
 
 _UNKNOWN_EXIT_CODE = -1
 
@@ -54,6 +61,170 @@ class SubprocessGitService:
         if not ((repo / ".git").exists() or (repo / "HEAD").exists()):
             msg = f"Not a git repository: {repo_path}"
             raise GitRepositoryError(msg)
+
+    async def worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        """Read actual worktree, index and working content without changing Git.
+
+        Ignored untracked files are outside ``git add --all`` and this identity.
+        Gitlinks refuse: their nested working copies require a separate ownership
+        contract. NUL-delimited Git inventories retain arbitrary native filenames.
+        """
+        try:
+            return await self._worktree_identity(cwd, repository_path=repository_path)
+        except (OSError, ValidationError) as exc:
+            raise WorkspaceError("The native worktree identity cannot be read") from exc
+
+    async def _identity_git(self, cwd: str, *args: str) -> bytes:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            *args,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            raise WorkspaceError(
+                f"Native worktree identity read failed: git {args[0]} exited "
+                f"{proc.returncode}"
+            )
+        return stdout
+
+    async def _worktree_identity(
+        self, cwd: str, *, repository_path: str
+    ) -> GitWorktreeIdentity:
+        if Path(cwd).is_symlink():
+            raise WorkspaceError("A native workspace cannot be a substituted symlink")
+
+        async def path(flag: str) -> Path:
+            raw = await self._identity_git(
+                cwd, "rev-parse", "--path-format=absolute", flag
+            )
+            return Path(os.fsdecode(raw.removesuffix(b"\n"))).resolve(strict=True)
+
+        root = await path("--show-toplevel")
+        if root != Path(cwd).resolve(strict=True):
+            raise WorkspaceError("The native workspace is not its worktree root")
+        common = await path("--git-common-dir")
+        repository_common = Path(
+            os.fsdecode(
+                (
+                    await self._identity_git(
+                        repository_path,
+                        "rev-parse",
+                        "--path-format=absolute",
+                        "--git-common-dir",
+                    )
+                ).removesuffix(b"\n")
+            )
+        ).resolve(strict=True)
+        if repository_common != common:
+            raise WorkspaceError("The retained worktree belongs to another repository")
+        git_dir = await path("--git-dir")
+        branch = os.fsdecode(
+            (
+                await self._identity_git(cwd, "symbolic-ref", "--short", "HEAD")
+            ).removesuffix(b"\n")
+        )
+        head = (await self._identity_git(cwd, "rev-parse", "HEAD")).decode().strip()
+        index = await self._identity_git(cwd, "ls-files", "--stage", "-v", "-z")
+        untracked = await self._identity_git(
+            cwd, "ls-files", "--others", "--exclude-standard", "-z"
+        )
+        paths: set[bytes] = set(untracked.split(b"\0")) - {b""}
+        for entry in index.split(b"\0"):
+            if not entry:
+                continue
+            if b"\t" not in entry:
+                raise WorkspaceError("Git returned a malformed index entry")
+            metadata, name = entry.split(b"\t", 1)
+            fields = metadata.split(b" ")
+            if len(fields) != 4:
+                raise WorkspaceError("Git returned malformed index metadata")
+            if fields[1] == b"160000":
+                raise WorkspaceError(
+                    "Native checkpoint ownership of gitlinks is unavailable"
+                )
+            paths.add(name)
+        digest = hashlib.sha256()
+
+        def add(value: bytes) -> None:
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+
+        add(index)
+        for name in sorted(paths):
+            if name.startswith(b"/") or any(
+                part in {b"", b".", b".."} for part in name.split(b"/")
+            ):
+                raise WorkspaceError("Git returned an invalid relative worktree path")
+            add(name)
+            # Open every directory component without following links. Protecting
+            # only the final file would still traverse a substituted parent link.
+            with ExitStack() as descriptors:
+                directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                descriptors.callback(os.close, directory)
+                parts = name.split(b"/")
+                try:
+                    for part in parts[:-1]:
+                        directory = os.open(
+                            part,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=directory,
+                        )
+                        descriptors.callback(os.close, directory)
+                    leaf = parts[-1]
+                    info = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    add(b"missing")
+                    continue
+                add(str(info.st_mode).encode())
+                if stat.S_ISLNK(info.st_mode):
+                    add(os.readlink(leaf, dir_fd=directory))
+                elif stat.S_ISREG(info.st_mode):
+                    descriptor = os.open(
+                        leaf, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory
+                    )
+                    with os.fdopen(descriptor, "rb") as content:
+                        file_digest = hashlib.file_digest(content, "sha256").digest()
+                    add(file_digest)
+                elif not stat.S_ISDIR(info.st_mode):
+                    raise WorkspaceError(
+                        "A native worktree contains an unsupported file type"
+                    )
+        roster = await self._identity_git(
+            repository_path, "worktree", "list", "--porcelain", "-z"
+        )
+        registrations = [
+            record.split(b"\0")
+            for record in roster.split(b"\0\0")
+            if record.split(b"\0", 1)[0] == b"worktree " + os.fsencode(root)
+        ]
+        if (
+            len(registrations) != 1
+            or b"HEAD " + head.encode("ascii") not in registrations[0]
+            or b"branch refs/heads/" + os.fsencode(branch) not in registrations[0]
+        ):
+            raise WorkspaceError(
+                "The native path is not the repository's registered branch worktree"
+            )
+        root_stat, common_stat, git_stat = root.stat(), common.stat(), git_dir.stat()
+        return GitWorktreeIdentity(
+            root=str(root),
+            root_device=root_stat.st_dev,
+            root_inode=root_stat.st_ino,
+            common_dir=str(common),
+            common_device=common_stat.st_dev,
+            common_inode=common_stat.st_ino,
+            git_dir=str(git_dir),
+            git_device=git_stat.st_dev,
+            git_inode=git_stat.st_ino,
+            branch=branch,
+            head_sha=head,
+            content_digest=digest.hexdigest(),
+        )
 
     def is_repo(self, path: str) -> bool:
         """Check if path is an existing git repo (regular or bare)."""

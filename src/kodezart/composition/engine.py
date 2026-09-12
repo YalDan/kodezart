@@ -202,14 +202,16 @@ def build_workflow_engine(
     # Authored construction needs no tracker. Native entry refuses without
     # this capability, and each consumer independently requires its reader.
     delay_floor_for = rate_limit_delay_floor(config)
+    native_source = SubprocessGitSourceReader()
     ralph_loop = RalphLoop(
+        source=native_source,
         amendments=(
             NativeAmendments(
                 tracker=scope_tracker,
                 operation=operation,
                 criteria=criteria,
                 git=git,
-                source=SubprocessGitSourceReader(),
+                source=native_source,
                 workspace=workspace,
                 runner=agent_service,
                 prompts=prompts,
