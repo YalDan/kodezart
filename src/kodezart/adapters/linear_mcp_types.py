@@ -290,13 +290,16 @@ class LinearCommentWire(LinearWireModel):
     itself stays REQUIRED — a payload that dropped it would be saying
     nothing about authorship rather than saying there is none — and an
     author that is present but malformed still refuses.
+
+    The native reply link is also required, including explicit null for a
+    top-level comment. A missing link cannot establish thread provenance.
     """
 
     id: str
     author: LinearCommentAuthorWire | None
     body: str
     created_at: datetime
-    parent_id: str | None = None
+    parent_id: str | None
 
 
 class LinearCommentEntryWire(LinearCommentWire):
@@ -312,25 +315,6 @@ class LinearCommentEntryWire(LinearCommentWire):
     """
 
     updated_at: datetime
-
-
-class LinearThreadCommentWire(LinearCommentEntryWire):
-    """Resolution requires the measured reply link, including explicit null.
-
-    The live escalation/decision proof reports parentId on both comments.
-    An omitted link cannot establish that a decision addresses its parent.
-    Legacy generic comment reads retain their less demanding contract.
-    """
-
-    parent_id: str | None
-
-
-class LinearThreadCommentListWire(LinearWireModel):
-    """A complete resolution page must report every comment's reply link."""
-
-    comments: list[LinearThreadCommentWire]
-    has_next_page: bool
-    cursor: str | None = None
 
 
 class LinearCommentListWire(LinearWireModel):
