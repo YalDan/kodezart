@@ -33,9 +33,6 @@ def dependencies(tmp_path):
     fields = declared_operation().model_dump()
     fields["issue_labels"]["decision"] = "needs decision"
     fields["marker_prefixes"]["escalation"] = "organize-question"
-    for mandate in fields["organize_mandates"]:
-        mandate["rubric_prompt_key"] = "organize_assess"
-        mandate["admission_prompt_key"] = "organize_assess"
     fields["organize_scopes"] = [
         {
             "scope": {"kind": "issue", "key": CLAIMED_ISSUE},

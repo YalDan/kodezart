@@ -373,8 +373,8 @@ unknown fields and requires these fields:
 | -- | -- |
 | `kind` | `groom`, `ticket` or `criteria` |
 | `gate_label_key` | A qualified `scope_labels.<key>` or `issue_labels.<key>` reference |
-| `rubric_prompt_key` | A registered `PromptKey` value |
-| `admission_prompt_key` | A registered `PromptKey` value |
+| `rubric_prompt_key` | A registered key with an explicit rubric supplier in the selected set |
+| `admission_prompt_key` | `organize_assess`, the native admission role |
 | `terminal_marker_key` | A qualified `issue_labels.<key>` reference |
 
 Keys name entries in the operation's label mappings; they never contain
@@ -407,6 +407,29 @@ The configured native Organize owner dispatches these roles and owns tracker
 mutation through the narrow declared surfaces. The shared `write_back_verify`
 role independently checks the exact reread artifact through the canonical
 write-back repair loop.
+
+The selected set declares native rubric sources in its `[rubrics]` metadata,
+keyed by existing prompt keys: `grooming_pass` supplies the organizational GROOM
+predicate, `ticket_review` the TICKET dry-implementation predicate, and
+`criteria_validation` the CRITERIA feasibility predicate. Configure those rubric
+keys for their respective phases and `admission_prompt_key = "organize_assess"`
+for each. The associated scheduled or authored session template bodies retain
+their own consumers and are never used as native rubric fallbacks.
+
+The production Organize factory checks the selected rubric supplier, admission
+role and available native input bindings before it constructs a scheduled owner.
+A missing supplier, an unrelated admission key, or an unavailable input such as
+`task`, `draft_md`, or `record_title` raises `PromptResolutionError` at boot.
+Conditional references are checked as well. Rubrics cannot depend on their own
+`mandate_rubric` output. A per-key set override selects that set's explicit rubric;
+an explicit template-file override declares only a session body and supplies no
+implicit rubric. Native use of a key without a rubric refuses configuration.
+
+Rubric source metadata is not a set fragment or an operation binding. Only the
+selected source is rendered per call with current native inputs and carried in
+the existing `mandate_rubric` binding. GROOM uses all four organizational checks:
+cross-container blockers, decisions asked of their owners, verified dates and
+order, and measurable issue goals. Its judgment supplies no human approval.
 
 The rubric and issue evidence vary per call: `mandate_rubric`, `issue_body`,
 `linked_issue_bodies`, `criterion_issue_bodies`, `refusal_evidence`, and

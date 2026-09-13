@@ -3,6 +3,7 @@
 # new sections are added by extending PromptSetMetadata additively.
 
 name = "anthropic_v5"
+
 engines = ["opus-5", "fable-5", "sonnet-5"]
 
 # Roles that carry no reasoning-depth instruction: they emit a name, a
@@ -233,3 +234,46 @@ keys = ["implementation", "fix"]
 effort = "low"
 skills = []
 keys = ["branch_name", "commit_message", "pr_description", "knowledge_map"]
+
+# Shared native Organize rubric sources. These are selected per call by an
+# existing PromptKey and are never composed into the associated session body.
+[rubrics]
+grooming_pass = """
+Judge organizational readiness across the current scope, not dry implementation.
+All four conditions must hold; failure of any one prevents GROOM convergence:
+1. Blockers are organized across projects, milestones, issues and sub-issues.
+   Check actual dependencies, ownership and ordering across container boundaries.
+2. Every open decision has been asked of its owner with the unresolved choice
+   explicit. An agent's opinion or an unasked question is not a human ruling.
+3. Dates, deadlines, priorities and execution order have been verified against
+   current source evidence. Missing evidence is not a successful verification.
+4. Every issue ends in a measurable statement of its own goal, with an observable
+   completion condition. A vague activity or another issue's goal does not suffice.
+Inspect all four conditions, including the instructions that cause defects to
+recur. Name each failing condition and its concrete current evidence. Report
+repairable organizational gaps as spec_gap; reserve human_decision for an actual
+unresolved choice. Use buildable only when this organizational rubric holds.
+This judgment grants no write authority and never supplies human scope approval.
+"""
+ticket_review = """
+Judge whether this issue can be implemented from its own specification without
+inventing a decision, and demonstrated in its declared grading environment.
+Try a dry implementation: require evidence-grounded context, falsifiable
+requirements, a concrete verification story, self-sufficient inputs, real
+source-backed dependency edges, and traceable provenance. Identify omitted
+interfaces, ambiguous criteria, missing call sites and contradictions with the
+committed design. A body meeting only a label or a general quality heading is
+insufficient. Report the precise invented choice and distinguish a repairable
+spec_gap from a human_decision; never invent the missing choice.
+"""
+criteria_validation = """
+Judge the native criterion sub-issues against the issue specification and the
+actual repository base. Each criterion must have a concrete feasible Check and
+Do, a stable native identity, and an observable verification story. Preserve
+criterion identities and judge the conjunction: independently feasible criteria
+must also be jointly satisfiable. Reject criteria outside the declared task or
+requiring a forbidden behavior. Missing evidence is unverifiable, with the actual
+missing artifact and existing pending blocker identified; the caller checks that
+edge. Do not manufacture an authored-ticket artifact or prior validation result.
+A criterion set is admitted only under this feasibility and conjunction rubric.
+"""

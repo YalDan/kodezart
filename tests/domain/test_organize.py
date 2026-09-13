@@ -471,7 +471,7 @@ def mandate_fields(**overrides):
         "kind": "groom",
         "gate_label_key": "scope_labels.triage",
         "rubric_prompt_key": "grooming_pass",
-        "admission_prompt_key": "ticket_review",
+        "admission_prompt_key": "organize_assess",
         "terminal_marker_key": "issue_labels.groomed",
         **overrides,
     }
@@ -597,11 +597,13 @@ def mandate_operation_fields():
             mandate_fields(),
             mandate_fields(
                 kind="ticket",
+                rubric_prompt_key="ticket_review",
                 gate_label_key="issue_labels.groomed",
                 terminal_marker_key="issue_labels.body",
             ),
             mandate_fields(
                 kind="criteria",
+                rubric_prompt_key="criteria_validation",
                 gate_label_key="issue_labels.body",
                 terminal_marker_key="issue_labels.criteria",
             ),

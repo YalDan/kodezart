@@ -158,6 +158,11 @@ class InRepoPromptRegistry:
                 key=key,
                 source=source,
                 body=composed,
+                rubric_body=(
+                    None
+                    if key.value in template_overrides
+                    else owning_metadata.rubrics.get(key)
+                ),
                 bindings={
                     **bindings,
                     _SKILLS_FRAGMENT: _skills_fragment(owning_metadata, key),

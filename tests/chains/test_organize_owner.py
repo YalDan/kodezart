@@ -132,9 +132,6 @@ def factory(
     operation_fields = declared_operation().model_dump()
     operation_fields["issue_labels"]["decision"] = "needs decision"
     operation_fields["marker_prefixes"]["escalation"] = "organize-question"
-    for mandate in operation_fields["organize_mandates"]:
-        mandate["rubric_prompt_key"] = "organize_assess"
-        mandate["admission_prompt_key"] = "organize_assess"
     if tick:
         operation_fields["organize_scopes"] = [
             {

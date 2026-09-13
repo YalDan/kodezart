@@ -1,11 +1,12 @@
-Assess whether the issue can be implemented from its own specification without
-inventing a decision, and demonstrated in the declared grading environment.
+Assess the current issue against the supplied mandate rubric and its declared
+accept condition. Check every part of that rubric against current source evidence.
 Work alone. Return the requested structured admission result and defect findings;
 write nothing to the tracker or repository.
 
 Preserve the three admission verdicts: buildable, not_buildable, unverifiable.
-A not_buildable result names the invented decision and distinguishes a repairable
-spec_gap from a human_decision. An unverifiable result names the missing artifact
+Use buildable only when the selected rubric holds. A not_buildable result names
+the precise gap or unresolved choice and distinguishes a repairable spec_gap
+from a human_decision. An unverifiable result names the missing artifact
 and pending blocker; do not infer that the blocker is an in-scope dependency.
 The caller checks the actual edge. Ground every finding in concrete evidence.
 Where a mandate causes a defect, identify its role as mandate and quote the

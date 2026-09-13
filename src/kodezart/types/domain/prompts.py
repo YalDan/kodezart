@@ -6,7 +6,7 @@ a directory of data files, never Python.
 """
 
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -163,6 +163,11 @@ class PromptSetMetadata(BaseModel):
     #: Per-KEY skill loadouts.  A set declares these OR session roles, never
     #: both: two tables deciding one loadout is two answers that can differ.
     skills: dict[str, list[str]] = Field(default_factory=dict)
+    #: Rubric source selected per mandate, never a globally bound set fragment.
+    #: The associated session template remains independent of this source.
+    rubrics: dict[PromptKey, Annotated[str, Field(min_length=1, pattern=r"\S")]] = (
+        Field(default_factory=dict)
+    )
     #: Per-ROLE session policy, keyed by role.  Empty means the set declares
     #: none and its dispatches carry no session-scoped decision at all.
     session_roles: dict[SessionRole, SessionRolePolicy] = Field(default_factory=dict)

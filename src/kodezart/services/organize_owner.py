@@ -248,22 +248,26 @@ class OrganizeOwner:
             )
         ]
         criteria = await self._tracker.read_criteria(issue_key=issue.issue_key)
-        rubric = self._prompts.template_for(phase.spec.rubric_prompt_key).render(
-            {
-                **organize_variables(
-                    graph_context=(
-                        await self._context.read(scope=scope)
-                    ).model_dump_json(),
-                    mandate_rubric="",
-                    issue_body=issue.body,
-                    linked_issue_bodies=[i.body for i in linked],
-                    criterion_issue_bodies=[i.body for i in criteria],
-                    refusal_evidence=None,
-                    defect_classes=tuple(sorted(classes)),
-                ),
-                "issue_key": issue.issue_key,
-                "base_ref": base_ref,
-            }
+        rubric = (
+            self._prompts.template_for(phase.spec.rubric_prompt_key)
+            .rubric_template()
+            .render(
+                {
+                    **organize_variables(
+                        graph_context=(
+                            await self._context.read(scope=scope)
+                        ).model_dump_json(),
+                        mandate_rubric="",
+                        issue_body=issue.body,
+                        linked_issue_bodies=[i.body for i in linked],
+                        criterion_issue_bodies=[i.body for i in criteria],
+                        refusal_evidence=None,
+                        defect_classes=tuple(sorted(classes)),
+                    ),
+                    "issue_key": issue.issue_key,
+                    "base_ref": base_ref,
+                }
+            )
         )
         return OrganizeAdmissionRequest(
             scope=scope,

@@ -15,10 +15,10 @@ false ``{{#if}}`` block is a legal runtime state and is never reported.
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
-from kodezart.core.errors import PromptRenderError
+from kodezart.core.errors import PromptRenderError, PromptResolutionError
 from kodezart.types.domain.prompts import PromptKey
 
 _TAG: Final[re.Pattern[str]] = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
@@ -199,6 +199,17 @@ class PromptTemplate:
     source: str
     body: str
     bindings: Mapping[str, object]
+    rubric_body: str | None = None
+
+    def rubric_template(self) -> "PromptTemplate":
+        """Select the explicitly declared rubric, never the session body."""
+        if self.rubric_body is None:
+            raise PromptResolutionError(
+                "Native Organize requires an explicitly declared rubric supplier",
+                failing_keys=(self.key.value,),
+                available_sets=(self.source,),
+            )
+        return replace(self, body=self.rubric_body, rubric_body=None)
 
     def render(self, variables: Mapping[str, object]) -> str:
         """Render this template with *variables* layered over its bindings."""
