@@ -491,6 +491,40 @@ class RecordDestination(OperationModel):
                 raise ValueError("the outcome property must have its own record column")
         return self
 
+def check_chain_failures(steps: Sequence[CheckStep]) -> list[str]:
+    """Every structural failure in one repository's check chain.
+
+    A chain that names a step twice, depends on a step that is not in it,
+    or closes a cycle cannot be classified into roots and cascades at all,
+    so it is rejected at load rather than mis-reported at run time.
+    """
+    failures: list[str] = []
+    seen: set[str] = set()
+    for step in steps:
+        if step.name in seen:
+            failures.append(f"duplicate step name {step.name!r}")
+        seen.add(step.name)
+
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.depends_on is None:
+            continue
+        if step.depends_on not in by_name:
+            failures.append(
+                f"step {step.name!r} depends on unknown step {step.depends_on!r}",
+            )
+            continue
+        walked: set[str] = {step.name}
+        cursor: str | None = step.depends_on
+        while cursor is not None:
+            if cursor in walked:
+                failures.append(f"step {step.name!r} closes a dependency cycle")
+                break
+            walked.add(cursor)
+            ancestor = by_name.get(cursor)
+            cursor = None if ancestor is None else ancestor.depends_on
+    return failures
+
 
 
 

@@ -15,37 +15,54 @@ it is chosen by the same predicate.
 """
 
 import ast
+import asyncio
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
 
+import httpx
 import pytest
 
 from kodezart.adapters.github_api import GitHubAPIClient
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.composition.engine import (
     OriginRoutedWorkflowEngine,
     build_workflow_engine,
 )
-from kodezart.composition.forge import build_forge_client
+from kodezart.composition.forge import (
+    build_forge_client,
+    pr_state_reader_for_origin,
+)
+from kodezart.composition.jobs import build_job_queue
 from kodezart.core import protocols
 from kodezart.core.config import AppConfig
+from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import (
     CIMonitor,
     DeliveryProbe,
+    ForgeQuery,
     PRCreator,
+    PRStateReader,
     RepoVisibilityResolver,
     WorkflowEngine,
 )
+from kodezart.domain.errors import ScopedExecutionUnavailableError
 from kodezart.services.agent_service import AgentService
 from kodezart.types.domain.agent import (
     AgentEvent,
+    ErrorEvent,
     WorkflowCompleteEvent,
     WorkflowPREvent,
 )
 from kodezart.types.domain.branch import trunk_base
+from kodezart.types.domain.check_observation import ObservedChecks
 from kodezart.types.domain.gating import RepoVisibility
+from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
+from kodezart.types.domain.scope import ScopeKind, ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.ticket_review import TicketReviewMode
+from kodezart.types.domain.workflow import WorkflowSubmission
 from tests.fakes import (
     SUPPRESS_ALL_SKILLS,
     FakeAgentExecutor,
@@ -59,15 +76,17 @@ from tests.fakes import (
     FakeTicketGenerator,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 #: The origin the hundred-minute fire ran over: a local bare repository,
 #: the sanctioned smoke shape, with no forge behind it to be asked.
 FILE_ORIGIN = "file:///tmp/smoke-origin.git"
 FORGE_ORIGIN = "https://github.com/owner/repo"
+SETTLE_SECONDS = 5.0
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "kodezart"
 COMPOSITION = SRC / "composition"
@@ -89,12 +108,15 @@ FAKE_TOKEN = "not-a-real-token"
 
 #: Every protocol the forge adapter answers, against the per-origin
 #: selection that covers it.  ``DeliveryProbe`` is the dispatch tick's,
-#: repaired under KOD-145; the other three are the engine's.
+#: repaired under KOD-145; three are the engine's and queries have an
+#: explicit per-origin selector for their downstream consumer.
 COVERED_BY_ORIGIN: dict[type, str] = {
     PRCreator: "pr_creator",
     CIMonitor: "ci_monitor",
     RepoVisibilityResolver: "visibility_resolver",
     DeliveryProbe: "delivery",
+    PRStateReader: "pr_state",
+    ForgeQuery: "forge_query",
 }
 
 
@@ -136,18 +158,27 @@ class RecordingForge:
         *,
         repo_url: str,
         ref: str,
-    ) -> tuple[bool | None, str]:
+    ) -> ObservedChecks:
         self.calls.append("wait_for_checks")
-        return (True, "All CI checks passed.")
+        return ObservedChecks(
+            commit_sha="a" * 40,
+            checks_passed=True,
+            check_names=frozenset({"unit"}),
+            failed_check_names=frozenset(),
+            summary="All CI checks passed.",
+        )
 
     async def resolve_visibility(self, *, repo_url: str) -> RepoVisibility:
         self.calls.append("resolve_visibility")
         return RepoVisibility.PUBLIC
 
 
-def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
+def _arm(*, forge: RecordingForge | None) -> AuthoredDeliveryCoordinator:
     """One engine arm, wired exactly as the composition root wires it."""
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=AgentService(
             git_base_url="https://github.com",
             executor=FakeAgentExecutor(events=[]),
@@ -156,7 +187,7 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
         ),
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             total_iterations=1,
             last_commit_sha="a" * 40,
         ),
@@ -183,9 +214,10 @@ def _arm(*, forge: RecordingForge | None) -> RalphWorkflowEngine:
 
 
 async def _drive(
-    engine: OriginRoutedWorkflowEngine,
+    engine: WorkflowEngine,
     *,
     repo_url: str,
+    scope: ScopeRef | None = None,
 ) -> list[AgentEvent]:
     return [
         event
@@ -193,12 +225,87 @@ async def _drive(
             prompt="fix it",
             repo_path="/tmp/fake",
             repo_url=repo_url,
+            scope=scope,
             base_spec=trunk_base("main"),
-            permission_mode="bypassPermissions",
+            permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key=uuid.uuid4().hex,
         )
     ]
+
+
+class ForbiddenWorkflowEngine:
+    """A scoped entry must never select a legacy execution arm."""
+
+    def run(self, *, scope: ScopeRef | None, **_: object) -> AsyncIterator[AgentEvent]:
+        raise AssertionError("a scoped submission entered the legacy workflow arm")
+
+
+@pytest.mark.parametrize("kind", tuple(ScopeKind))
+@pytest.mark.parametrize("repo_url", [FILE_ORIGIN, FORGE_ORIGIN])
+async def test_scoped_queue_jobs_publish_typed_refusal_without_resolving(
+    kind: ScopeKind,
+    repo_url: str,
+) -> None:
+    """Unsupported scopes fail at dequeue before I/O or the legacy pipeline."""
+    ref = ScopeRef(kind=kind, key="opaque-address")
+    queue = build_job_queue(
+        settings=AppConfig().queue,
+        workflow_engine=OriginRoutedWorkflowEngine(
+            forge_arm=ForbiddenWorkflowEngine(),
+            forge_less_arm=ForbiddenWorkflowEngine(),
+        ),
+    )
+    await queue.start()
+    try:
+        record = await queue.submit(
+            lane=DEFAULT_LANE,
+            request=WorkflowSubmission(
+                prompt="execute the scope",
+                repo_path=None,
+                repo_url=repo_url,
+                base_spec=trunk_base("main"),
+                implied_base=None,
+                scope=ref,
+                permission_mode=PermissionMode.UNATTENDED,
+                allowed_tools=["Read"],
+            ),
+        )
+        async with asyncio.timeout(SETTLE_SECONDS):
+            events = [event async for event in queue.attach(job_id=record.job_id)]
+        (error,) = events
+        assert isinstance(error, ErrorEvent)
+        assert error.error_kind == "ScopedExecutionUnavailableError"
+        assert f"scope: {ref.kind.value}:{ref.key}" in error.error
+        assert "not implemented" in error.error
+        terminal = await queue.get(job_id=record.job_id)
+        assert terminal is not None
+        assert terminal.state is JobState.TERMINAL
+        assert terminal.outcome is WorkflowOutcome.engine_error
+    finally:
+        await queue.stop()
+
+
+async def test_scope_without_a_tracker_refuses_before_selecting_a_legacy_arm() -> None:
+    ref = ScopeRef(kind=ScopeKind.ISSUE, key="ENG-1")
+    engine = OriginRoutedWorkflowEngine(
+        forge_arm=ForbiddenWorkflowEngine(),
+        forge_less_arm=ForbiddenWorkflowEngine(),
+    )
+
+    with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
+        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+
+
+async def test_direct_legacy_engine_calls_cannot_drop_an_addressed_scope() -> None:
+    forge = RecordingForge()
+    engine = _arm(forge=forge)
+    ref = ScopeRef(kind=ScopeKind.PROJECT, key="project-address")
+
+    with pytest.raises(ScopedExecutionUnavailableError, match="scope entry pipeline"):
+        await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+
+    assert forge.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -279,25 +386,31 @@ def test_everything_else_keeps_the_forge_arm(repo_url: str | None) -> None:
     assert engine.arm_for(repo_url) is forge_arm
 
 
-async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
+@pytest.mark.parametrize("kind", tuple(ScopeKind))
+async def test_the_builder_wires_both_arms_and_refuses_scope_without_io(kind) -> None:
     """The composition root's own builder, not a hand-assembled analogue."""
     client = build_forge_client(config=AppConfig(github_token=FAKE_TOKEN))
     assert client is not None
+    executor = FakeAgentExecutor(events=[])
+    workspace = FakeWorkspaceProvider()
+    cache = FakeRepoCache()
+    git = FakeGitService()
     try:
         engine = build_workflow_engine(
             # The shared prompt fixture resolves its set for the reviewed
             # mode, and the ticket loop refuses a config that asks for a
             # guarantee the resolved set cannot deliver.
+            repositories=(),
             config=AppConfig(ticket_review_mode=TicketReviewMode.REVIEWED),
             agent_service=AgentService(
                 git_base_url="https://github.com",
-                executor=FakeAgentExecutor(events=[]),
-                workspace=FakeWorkspaceProvider(),
+                executor=executor,
+                workspace=workspace,
                 persister=FakeChangePersister(),
             ),
-            git=FakeGitService(),
-            cache=FakeRepoCache(),
-            workspace=FakeWorkspaceProvider(),
+            git=git,
+            cache=cache,
+            workspace=workspace,
             merger=FakeBranchMerger(),
             artifact_persister=FakeArtifactPersister(),
             ref_publisher=FakeRefPublisher(),
@@ -311,6 +424,13 @@ async def test_the_builder_wires_both_arms_and_routes_between_them() -> None:
         assert isinstance(engine, OriginRoutedWorkflowEngine)
         assert engine.arm_for(FILE_ORIGIN) is not engine.arm_for(FORGE_ORIGIN)
         assert engine.arm_for(None) is engine.arm_for(FORGE_ORIGIN)
+        ref = ScopeRef(kind=kind, key="opaque-scope")
+        with pytest.raises(ScopedExecutionUnavailableError, match="not implemented"):
+            await _drive(engine, repo_url=FORGE_ORIGIN, scope=ref)
+        assert executor.calls == []
+        assert workspace.calls == []
+        assert cache.calls == []
+        assert git.calls == []
     finally:
         await client.close()
 
@@ -387,15 +507,19 @@ def test_no_engine_forge_slot_is_bound_to_the_forge_client() -> None:
             )
 
 
-def test_only_the_engine_builder_binds_an_engine_forge_slot() -> None:
-    """One selection site for the set, findable by this test."""
+def test_only_delivery_builders_bind_the_engine_forge_slots() -> None:
+    """Authored and native builders receive the one selected capability set."""
     binding = sorted(
         module.name
         for module in COMPOSITION.glob("*.py")
         if _forge_slot_keywords(module)
     )
 
-    assert binding == ["engine.py"]
+    assert binding == ["delivery.py", "engine.py"]
+    assert {
+        ast.unparse(keyword.value)
+        for keyword in _forge_slot_keywords(COMPOSITION / "delivery.py")
+    } == {"forge"}
 
 
 def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
@@ -421,3 +545,30 @@ def test_the_delivery_capability_is_selected_by_the_same_predicate() -> None:
     assert isinstance(delivery.value, ast.Call)
     assert isinstance(delivery.value.func, ast.Name)
     assert delivery.value.func.id == "delivery_probe_for"
+
+
+async def test_native_pr_state_reader_is_selected_before_any_forge_read():
+    from tests.adapters.test_github_api import _make_client
+    from tests.adapters.test_pr_state_reader import REPO, payload
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload())
+
+    client = _make_client(handler)
+    try:
+        assert pr_state_reader_for_origin(client=None, repo_url=REPO) is None
+        assert pr_state_reader_for_origin(client=client, repo_url=FILE_ORIGIN) is None
+        assert requests == []
+        selected = pr_state_reader_for_origin(client=client, repo_url=REPO)
+        assert selected is client
+        observed = await selected.read_pr_state(repo_url=REPO, pr_number=7)
+        assert observed.url == f"{REPO}/pull/7"
+        assert observed.head_repo_url == REPO
+        assert [(request.method, request.url.path) for request in requests] == [
+            ("GET", "/repos/example/project/pulls/7")
+        ]
+    finally:
+        await client.close()
