@@ -125,6 +125,7 @@ class AgentHandler:
             msg = "Job queue not configured"
             raise RuntimeError(msg)
         submission = WorkflowSubmission(
+            scope=None,
             prompt=request.prompt,
             repo_path=request.repo_path,
             repo_url=request.repo_url,

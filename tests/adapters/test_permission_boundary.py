@@ -181,7 +181,7 @@ def test_domain_construction_rejects_vendor_modes_and_unknown_values(model, mode
         "allowed_tools": TOOLS,
     }
     if model is WorkflowSubmission:
-        fields.update(implied_base=None)
+        fields.update(implied_base=None, scope=None)
     else:
         fields.update(cache_key="checkpoint-key")
     with pytest.raises(ValidationError, match="permission_mode"):

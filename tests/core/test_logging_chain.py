@@ -175,6 +175,7 @@ async def test_the_queues_failure_event_carries_the_traceback() -> None:
             record = await queue.submit(
                 lane=LANE,
                 request=WorkflowSubmission(
+                    scope=None,
                     prompt="do the thing",
                     repo_path="/tmp/fake",
                     repo_url=None,

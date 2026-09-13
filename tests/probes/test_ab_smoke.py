@@ -377,6 +377,7 @@ async def run_arm(
 
     repo = await fixture_repo(root)
     request = WorkflowSubmission(
+        scope=None,
         prompt=TICKET,
         repo_path=str(repo),
         repo_url=None,

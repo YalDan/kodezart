@@ -58,6 +58,15 @@ ORGANIZE_INPUT_TAGS = (
 )
 
 ARTIFACT_TAGS: dict[str, tuple[str, ...]] = {
+    "native_writer_contract": ("pinned_rulings",),
+    "amendment_judge": ("claim", "current_criteria", "pinned_rulings", "base_sha"),
+    "amendment_author": (
+        "claim",
+        "independent_judgment",
+        "exact_prior_artifact",
+        "write_back_finding",
+        "preserve_subject",
+    ),
     "organize_assess": ORGANIZE_INPUT_TAGS,
     "organize_verify": ORGANIZE_INPUT_TAGS,
     "organize_author": (*ORGANIZE_INPUT_TAGS, "refusal_evidence"),

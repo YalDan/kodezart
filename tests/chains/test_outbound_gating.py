@@ -6,7 +6,7 @@ import pytest
 
 from kodezart.adapters.pattern_outbound_gate import PatternOutboundContentGate
 from kodezart.adapters.regex_content_scanner import RegexContentScanner
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.domain.errors import OutboundContentBlockedError
 from kodezart.services.agent_service import AgentService
@@ -37,10 +37,11 @@ from tests.fakes import (
     FakeVisibilityResolver,
     FakeWorkspaceProvider,
     PassThroughGate,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 
 def make_engine(
@@ -51,7 +52,8 @@ def make_engine(
     ci_monitor: FakeCIMonitor | None = None,
     artifact_persister: FakeArtifactPersister | None = None,
     executor: FakeAgentExecutor | None = None,
-) -> RalphWorkflowEngine:
+    ticket_generator: FakeTicketGenerator | None = None,
+) -> AuthoredDeliveryCoordinator:
     """Build a workflow engine wired to fakes, with a real gate."""
     service = AgentService(
         git_base_url="https://github.com",
@@ -59,14 +61,17 @@ def make_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
-        ticket_generator=FakeTicketGenerator(),
+        ticket_generator=ticket_generator or FakeTicketGenerator(),
         merger=FakeBranchMerger(),
         git_base_url="https://github.com",
         git_remote="origin",
@@ -89,7 +94,7 @@ def make_engine(
 
 
 async def run_engine(
-    engine: RalphWorkflowEngine,
+    engine: AuthoredDeliveryCoordinator,
     *,
     repo_url: str | None = "https://github.com/owner/repo",
     repo_path: str | None = None,
@@ -98,6 +103,7 @@ async def run_engine(
     return [
         event
         async for event in engine.run(
+            scope=None,
             prompt="do the thing",
             repo_path=repo_path,
             repo_url=repo_url,

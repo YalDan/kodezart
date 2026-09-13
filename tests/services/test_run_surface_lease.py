@@ -161,6 +161,7 @@ async def test_composed_outcome_comment_is_held_by_the_actual_queue_job_id(monke
         record = await queue.submit(
             lane="fixture",
             request=WorkflowSubmission(
+                scope=None,
                 prompt="Run the fixture",
                 repo_path=None,
                 repo_url="https://github.com/example/fixture.git",

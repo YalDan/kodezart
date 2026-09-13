@@ -34,9 +34,12 @@ from kodezart.types.domain.agent import (
     TicketDraftOutput,
     TicketReviewOutput,
 )
+from kodezart.types.domain.amendment import AmendmentJudgment, NativeWriterOutput
+from kodezart.types.domain.amendment_write import AmendmentTextOutput
 from kodezart.types.domain.criteria import CRITERION_ID_PATTERN
 from kodezart.types.domain.organize import AdmissionJudgment
 from kodezart.types.domain.organize_owner import OrganizeProposal
+from kodezart.types.domain.remediation import RemediationPlan
 from kodezart.types.domain.write_back import WriteBackFinding
 from tests.types.schema_nodes import DEFS, schema_nodes
 
@@ -63,6 +66,10 @@ CALLER_SUPPLIED_SCHEMA = "request.output_schema"
 #: parametrizes over ``WIRE_SCHEMAS`` and indexes this, so a roster entry
 #: with no model here fails rather than going unchecked.
 WIRE_MODELS: dict[str, type[BaseModel]] = {
+    "NATIVE_WRITER_SCHEMA": NativeWriterOutput,
+    "AMENDMENT_JUDGMENT_SCHEMA": AmendmentJudgment,
+    "AMENDMENT_TEXT_SCHEMA": AmendmentTextOutput,
+    "REMEDIATION_SCHEMA": RemediationPlan,
     "COMMIT_MESSAGE_SCHEMA": CommitMessageOutput,
     "ACCEPTANCE_CRITERIA_SCHEMA": AcceptanceCriteriaOutput,
     "BRANCH_NAME_SCHEMA": BranchNameOutput,
@@ -319,6 +326,18 @@ def audit_schema_bindings(source: str, *, relative_path: str):
 
 
 AUDIT_SCHEMA_BINDINGS = [
+    (
+        "services/amendment_writeback.py",
+        ("AmendmentWriteBack", "_author"),
+        "judge_in_workspace",
+        "AMENDMENT_TEXT_SCHEMA",
+    ),
+    (
+        "services/native_amendments.py",
+        ("_NativeWriterGuard", "_judge_claim"),
+        "judge_in_workspace",
+        "AMENDMENT_JUDGMENT_SCHEMA",
+    ),
     (
         "chains/organize.py",
         ("OrganizeAdmission", "_judge"),

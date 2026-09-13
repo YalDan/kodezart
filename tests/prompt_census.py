@@ -12,7 +12,7 @@ restatement of the enum they are checking.
 
 from typing import Final
 
-PROMPT_FUNCTION_COUNT: Final[int] = 23
+PROMPT_FUNCTION_COUNT: Final[int] = 26
 
 
 def configured_investigation_cap() -> int:

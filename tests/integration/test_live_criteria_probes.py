@@ -102,8 +102,6 @@ def _probe_service(tmp_path: Path) -> AgentService:
     workspace = GitWorktreeProvider(
         git=git,
         cache=cache,
-        committer_name="kodezart-live-probe",
-        committer_email="probe@kodezart-test.invalid",
     )
     executor = ClaudeClientExecutor(
         model=config.model,
@@ -163,7 +161,7 @@ async def _generate_live(
     # The probe transcript of record: every generated criterion, in full,
     # so the recorded verdict is re-derivable from the run's own output.
     for criterion in criteria:
-        print(f"{criterion.id} [{criterion.criterion_class.value}] {criterion.text}")
+        print(f"{criterion.id} {criterion.text}")
     return criteria
 
 
@@ -221,10 +219,7 @@ Criteria:
 
 
 def _judge_lines(criteria: Sequence[GeneratedCriterion]) -> str:
-    return "\n\n".join(
-        f"{criterion.id} [{criterion.criterion_class.value}]: {criterion.text}"
-        for criterion in criteria
-    )
+    return "\n\n".join(f"{criterion.id}: {criterion.text}" for criterion in criteria)
 
 
 def _reconciled(

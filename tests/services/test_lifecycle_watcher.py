@@ -461,6 +461,7 @@ class TestThePremiseAgainstTheShippedQueue:
             record = await queue.submit(
                 lane="lane",
                 request=WorkflowSubmission(
+                    scope=None,
                     prompt="do the thing",
                     repo_url=REPO_URL,
                     repo_path=None,
@@ -516,6 +517,7 @@ class TestThePremiseAgainstTheShippedQueue:
             record = await queue.submit(
                 lane="lane",
                 request=WorkflowSubmission(
+                    scope=None,
                     prompt="do the thing",
                     repo_url=REPO_URL,
                     repo_path=None,
@@ -592,6 +594,7 @@ class TestGracefulShutdownHandsTheClaimBack:
         record = await queue.submit(
             lane="lane",
             request=WorkflowSubmission(
+                scope=None,
                 prompt="do the thing",
                 repo_url=REPO_URL,
                 repo_path=None,

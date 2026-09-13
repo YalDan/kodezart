@@ -442,6 +442,7 @@ async def _shutdown(
             record = await queue.submit(
                 lane=LANE,
                 request=WorkflowSubmission(
+                    scope=None,
                     prompt=key,
                     repo_url=REPO_URL,
                     repo_path=None,

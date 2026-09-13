@@ -3,7 +3,6 @@
 import pytest
 
 from kodezart.chains.ralph_loop import RalphLoop
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
 from kodezart.composition.preflight import (
     preflight_prompt_skill_loadouts,
     preflight_skills,
@@ -28,11 +27,12 @@ from tests.fakes import (
     FakeWorkspaceProvider,
     PassThroughGate,
     make_criteria,
-    make_passing_evaluation,
+    make_passing_evaluation_of_fake_criteria,
     make_prompt_provider,
     no_delay_floor,
 )
 from tests.prompts.test_prompt_wiring import RENDER_CASES, load_registry
+from tests.workflow_factory import make_authored_workflow
 
 UTILITY_KEYS = (
     PromptKey.BRANCH_NAME,
@@ -43,6 +43,7 @@ UTILITY_KEYS = (
     PromptKey.GROOMING_PASS,
     PromptKey.CONTENT_AUDIT,
     PromptKey.KNOWLEDGE_MAP,
+    PromptKey.NATIVE_WRITER_CONTRACT,
 )
 
 
@@ -225,12 +226,15 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    engine = RalphWorkflowEngine(
+    engine = make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         gate=PassThroughGate(),
         service=service,
         quality_gate=FakeQualityGate(
             events=[],
-            evaluation=make_passing_evaluation(),
+            evaluation=make_passing_evaluation_of_fake_criteria(),
             last_commit_sha="a" * 40,
         ),
         ticket_generator=FakeTicketGenerator(),
@@ -256,6 +260,7 @@ async def test_configured_skills_reach_the_executor_through_chain_dispatch() -> 
             repo_path="/tmp/fake",
             repo_url=None,
             base_spec=trunk_base("main"),
+            scope=None,
             permission_mode=PermissionMode.UNATTENDED,
             allowed_tools=["Bash"],
             cache_key="k",

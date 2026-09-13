@@ -86,7 +86,8 @@ async def test_real_local_source_and_sdk_policy_are_owned_fresh_and_released(
     cache_path = tmp_path / "must-not-create-a-remote-cache"
     cache = LocalBareRepoCache(git=git, base_dir=str(cache_path))
     workspace = GitWorktreeProvider(
-        git=git, cache=cache, committer_name="test", committer_email="test@test.dev"
+        git=git,
+        cache=cache,
     )
     executor = ClaudeClientExecutor(
         setting_sources=DEFAULT_SETTING_SOURCES, knowledge_grant=NO_KNOWLEDGE_GRANT

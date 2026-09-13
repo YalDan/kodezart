@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from kodezart.adapters.asyncio_job_queue import AsyncioJobQueue
 from kodezart.adapters.langgraph_run_state_reader import LangGraphRunStateReader
-from kodezart.chains.ralph_workflow import RalphWorkflowEngine
+from kodezart.chains.authored_delivery import AuthoredDeliveryCoordinator
 from kodezart.core.config import AppConfig
 from kodezart.core.constants import DEFAULT_LANE
 from kodezart.core.protocols import JobQueue, JobRegistry
@@ -40,11 +40,15 @@ from kodezart.types.domain.branch import (
     WorkRefRole,
     trunk_base,
 )
+from kodezart.types.domain.criteria import ExecutionCriterion
+from kodezart.types.domain.fire_spec import TrackerSpec
 from kodezart.types.domain.gating import RepoVisibility
 from kodezart.types.domain.job import JobState
 from kodezart.types.domain.outcome import WorkflowOutcome
 from kodezart.types.domain.run import RunState
-from kodezart.types.domain.session import PermissionMode, ToolPreset
+from kodezart.types.domain.run_records import RunIdentity
+from kodezart.types.domain.scope import ScopeRef
+from kodezart.types.domain.session import PermissionMode
 from kodezart.types.domain.workflow import WorkflowSubmission
 from kodezart.types.requests.agent import WorkflowRequest
 from tests.fakes import (
@@ -64,6 +68,7 @@ from tests.fakes import (
     make_prompt_provider,
     no_delay_floor,
 )
+from tests.workflow_factory import make_authored_workflow
 
 _BODY: dict[str, object] = {"prompt": "fix", "repoPath": "/tmp/fake"}
 
@@ -102,10 +107,13 @@ class GatedWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.started.append(prompt)
         self.cache_keys.append(cache_key)
@@ -129,10 +137,13 @@ class ChattyWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.cache_keys.append(cache_key)
         for event in self._events:
@@ -235,8 +246,9 @@ def _request(prompt: str) -> WorkflowSubmission:
         repo_url=None,
         base_spec=trunk_base("main"),
         implied_base=None,
+        scope=None,
         permission_mode=PermissionMode.UNATTENDED,
-        allowed_tools=ToolPreset.IMPLEMENTATION,
+        allowed_tools=["Read", "Glob", "Grep", "Bash", "Edit", "Write"],
     )
 
 
@@ -245,14 +257,19 @@ def _request(prompt: str) -> WorkflowSubmission:
 # ---------------------------------------------------------------------------
 
 
-def _real_engine(checkpointer: InMemorySaver | None = None) -> RalphWorkflowEngine:
+def _real_engine(
+    checkpointer: InMemorySaver | None = None,
+) -> AuthoredDeliveryCoordinator:
     service = AgentService(
         git_base_url="https://github.com",
         executor=FakeAgentExecutor(events=[]),
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=FakeQualityGate(
             events=[AssistantTextEvent(text="done", model="m")],
@@ -315,10 +332,13 @@ class GatedQualityGate:
         base_spec: BaseSpec,
         work_base_ref: str,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
-        acceptance_criteria: list[str],
+        acceptance_criteria: list[ExecutionCriterion],
+        tracker_spec: TrackerSpec | None = None,
         cache_key: str,
+        run_identity: RunIdentity | None = None,
+        surface_holder: str | None = None,
         repo_visibility: RepoVisibility = RepoVisibility.UNKNOWN,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.calls += 1
@@ -336,7 +356,10 @@ class GatedQualityGate:
             permission_mode=permission_mode,
             allowed_tools=allowed_tools,
             acceptance_criteria=acceptance_criteria,
+            tracker_spec=tracker_spec,
             cache_key=cache_key,
+            run_identity=run_identity,
+            surface_holder=surface_holder,
             repo_visibility=repo_visibility,
         ):
             yield event
@@ -345,7 +368,7 @@ class GatedQualityGate:
 def _mid_run_engine(
     checkpointer: InMemorySaver,
     quality_gate: GatedQualityGate,
-) -> RalphWorkflowEngine:
+) -> AuthoredDeliveryCoordinator:
     """Engine whose first post-merge review fails, forcing one fix round.
 
     The scripted executor answers the review schema: failing first, then
@@ -405,7 +428,10 @@ def _mid_run_engine(
         workspace=FakeWorkspaceProvider(),
         persister=FakeChangePersister(),
     )
-    return RalphWorkflowEngine(
+    return make_authored_workflow(
+        repositories=(),
+        max_concurrent_watches=4,
+        red_rerun_max_attempts=0,
         service=service,
         quality_gate=quality_gate,
         ticket_generator=FakeTicketGenerator(),
@@ -769,10 +795,13 @@ class RaisingWorkflowEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         for event in self._events:
             yield event
@@ -1611,10 +1640,13 @@ class BaseRecordingEngine:
         repo_path: str | None,
         repo_url: str | None,
         base_spec: BaseSpec,
+        scope: ScopeRef | None,
+        issue_key: str | None = None,
         implied_base: BaseSpec | None = None,
-        permission_mode: str,
+        permission_mode: PermissionMode,
         allowed_tools: list[str],
         cache_key: str,
+        run_identity: RunIdentity | None = None,
     ) -> AsyncGenerator[AgentEvent, None]:
         self.base_specs.append(base_spec)
         self.implied.append(implied_base)

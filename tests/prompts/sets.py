@@ -58,6 +58,29 @@ ORGANIZE_CASE: dict[str, object] = {
 
 
 EXTENDED_CASES: dict[str, tuple[PromptKey, dict[str, object]]] = {
+    "native_writer_contract": (
+        PromptKey.NATIVE_WRITER_CONTRACT,
+        {"pinned_rulings": "Current pinned ruling fixture"},
+    ),
+    "amendment_judge": (
+        PromptKey.AMENDMENT_JUDGE,
+        {
+            "claim": "Exact native criterion claim",
+            "criteria": "Current tracker Check",
+            "pinned_rulings": "Current pinned ruling fixture",
+            "base_sha": "a" * 40,
+        },
+    ),
+    "amendment_author": (
+        PromptKey.AMENDMENT_AUTHOR,
+        {
+            "claim": "Exact native criterion claim",
+            "judgment": "Independent base judgment",
+            "prior": "Exact prior tracker artifact",
+            "finding": "Fresh readback finding",
+            "preserve_subject": True,
+        },
+    ),
     "organize_assess": (PromptKey.ORGANIZE_ASSESS, ORGANIZE_CASE),
     "organize_author": (PromptKey.ORGANIZE_AUTHOR, ORGANIZE_CASE),
     "organize_verify": (PromptKey.ORGANIZE_VERIFY, ORGANIZE_CASE),

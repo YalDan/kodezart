@@ -130,7 +130,6 @@ from kodezart.types.domain.run_records import RunIdentity, RunOutcome, RunRecord
 from kodezart.types.domain.scope import ScopeContainer, ScopeKind, ScopeRef
 from kodezart.types.domain.self_writes import IssueMovementSnapshot, field_values
 from kodezart.types.domain.session import (
-    AllowedTools,
     KnowledgeGrant,
     PermissionMode,
     SessionType,
@@ -931,9 +930,10 @@ class FakeRaisingExecutor:
         prompt: str,
         cwd: str,
         permission_mode: PermissionMode,
-        allowed_tools: AllowedTools,
+        allowed_tools: list[str],
         skills: SkillsSelection = SUPPRESS_ALL_SKILLS,
         session_type: SessionType = FAKE_SESSION_TYPE,
+        run_identity: RunIdentity | None = None,
         agents: Sequence[AgentDefinition] = NO_SUBAGENTS,
         session_policy: SessionPolicy = UNCONFIGURED_SESSION_POLICY,
         session_id: str | None = None,

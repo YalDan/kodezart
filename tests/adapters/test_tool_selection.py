@@ -52,7 +52,7 @@ def context(model, selection):
     fields.update(
         {"cache_key": "checkpoint-key"}
         if model is ExecutionContext
-        else {"implied_base": None}
+        else {"implied_base": None, "scope": None}
     )
     return model.model_validate(fields)
 
