@@ -808,7 +808,6 @@ class _CriterionCreation:
     saved: TrackerIssue
 
 
-
 class LinearMcpTracker:
     """``TrackerPort`` over the Linear MCP server.
 
